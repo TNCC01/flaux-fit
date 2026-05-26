@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FIT">
+<meta name="theme-color" content="#0d9488">
+<title>FIT — Flaux workout timer</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #050a0a;
+    --bg-2: #0a1414;
+    --card: #0f1c1c;
+    --card-hi: #14292a;
+    --border: #1f3333;
+    --text: #f0fdfa;
+    --muted: #94a3b8;
+
+    --teal:        #14b8a6;
+    --teal-deep:   #0d9488;
+    --teal-bright: #2dd4bf;
+
+    --work:    #ef4444;
+    --rest:    #14b8a6;
+    --warmup:  #0d9488;
+    --accent:  #14b8a6;
+    --accent-b:#fbbf24;
+
+    --whole:      #f59e0b;
+    --upper:      #22d3ee;
+    --lower:      #10b981;
+    --core:       #f43f5e;
+    --stretching: #a855f7;
+
+    --grad-primary:    linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+    --grad-primary-hi: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%);
+    --glow-teal:       0 6px 22px rgba(20,184,166,0.25);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background:
+      radial-gradient(1200px 600px at 20% -10%, rgba(20,184,166,0.10), transparent 60%),
+      radial-gradient(900px 500px at 90% 110%, rgba(13,148,136,0.08), transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+  body { padding: env(safe-area-inset-top, 0.75rem) 0.75rem env(safe-area-inset-bottom, 1rem); }
+
+  .app { max-width: 1100px; margin: 0 auto; }
+  .view { display: none; flex-direction: column; gap: 0.85rem; }
+  .view.active { display: flex; }
+
+  button {
+    background: var(--grad-primary);
+    color: #fff;
+    border: none;
+    padding: 1rem;
+    font-size: 1.15rem;
+    font-weight: 800;
+    border-radius: 1rem;
+    cursor: pointer;
+    font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    box-shadow: var(--glow-teal), inset 0 1px 0 rgba(255,255,255,0.12);
+  }
+  button.secondary {
+    background: var(--card);
+    color: var(--text);
+    border: 2px solid var(--border);
+    box-shadow: none;
+  }
+  button:active { transform: scale(0.97); }
+  button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 6px 22px rgba(245,158,11,0.25); }
+
+  /* ============== Menu view ============== */
+  .brand-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 1rem 1.15rem;
+    background:
+      linear-gradient(135deg, rgba(20,184,166,0.14), rgba(13,148,136,0.05) 60%),
+      var(--card);
+    border: 1px solid rgba(20,184,166,0.22);
+    border-radius: 1.25rem;
+    box-shadow: 0 8px 28px rgba(20,184,166,0.08);
+  }
+  .brand-icon {
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    color: var(--teal-bright);
+    filter: drop-shadow(0 2px 6px rgba(20,184,166,0.4));
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1; }
+  .brand-name {
+    font-size: 2.1rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 0.95;
+    background: linear-gradient(135deg, #5eead4, #14b8a6 70%);
+    -webkit-background-clip: text;
+            background-clip: text;
+    color: transparent;
+  }
+  .brand-sub {
+    font-size: 0.78rem;
+    color: var(--muted);
+    letter-spacing: 0.28em;
+    margin-top: 0.35rem;
+    font-weight: 700;
+  }
+
+  .menu-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.25rem 0.25rem;
+  }
+  .menu-title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .menu-sub {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+
+  .picker-row {
+    background: var(--card);
+    border-radius: 1rem;
+    padding: 0.85rem 1rem;
+  }
+  .picker-label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+    margin-bottom: 0.55rem;
+  }
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+  .chip {
+    background: var(--bg);
+    color: var(--text);
+    border: 2px solid var(--border);
+    padding: 0.55rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .chip:active { transform: scale(0.97); }
+  .chip.active {
+    background: var(--grad-primary);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 2px 10px rgba(20,184,166,0.3);
+  }
+  .people-chip { min-width: 95px; text-align: center; font-size: 1.05rem; }
+
+  .workout-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+  }
+  .workout-card {
+    background:
+      linear-gradient(135deg, rgba(20,184,166,0.06) 0%, transparent 50%),
+      var(--card);
+    border: 2px solid var(--border);
+    border-left-width: 6px;
+    border-radius: 1rem;
+    padding: 1rem 1.1rem;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text);
+    -webkit-tap-highlight-color: transparent;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    box-shadow: none;
+    transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s;
+  }
+  .workout-card:active { transform: scale(0.98); }
+  .workout-card:hover {
+    border-color: rgba(20,184,166,0.35);
+    box-shadow: 0 8px 28px rgba(20,184,166,0.12);
+  }
+  .workout-card.whole { border-left-color: var(--whole); }
+  .workout-card.upper { border-left-color: var(--upper); }
+  .workout-card.lower { border-left-color: var(--lower); }
+  .workout-card.core  { border-left-color: var(--core); }
+  .workout-card.stretching { border-left-color: var(--stretching); }
+  .card-name {
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .card-tagline {
+    color: var(--muted);
+    font-size: 0.95rem;
+    font-style: italic;
+  }
+  .card-meta {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 0.15rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 600;
+    flex-wrap: wrap;
+  }
+  .card-meta .duration { color: var(--text); }
+  .card-meta .focus-tag.whole { color: var(--whole); }
+  .card-meta .focus-tag.upper { color: var(--upper); }
+  .card-meta .focus-tag.lower { color: var(--lower); }
+  .card-meta .focus-tag.core  { color: var(--core); }
+  .card-meta .focus-tag.stretching { color: var(--stretching); }
+  .card-blurb {
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.35;
+  }
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--muted);
+    padding: 2rem;
+  }
+
+  /* ============== Workout view ============== */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.25rem;
+  }
+  .back-btn {
+    background: var(--card);
+    color: var(--text);
+    border: 2px solid var(--border);
+    padding: 0.55rem 0.9rem;
+    border-radius: 0.75rem;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .workout-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .people-badge {
+    color: var(--muted);
+    font-size: 0.85rem;
+    background: var(--card);
+    padding: 0.4rem 0.7rem;
+    border-radius: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .progress-bar-wrap {
+    background: var(--card);
+    border-radius: 999px;
+    height: 6px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    background: var(--accent);
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  .block-info {
+    background: var(--card);
+    padding: 0.75rem 1rem;
+    border-radius: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .block-name {
+    font-weight: 700;
+    font-size: 1.15rem;
+    line-height: 1.25;
+  }
+  .round-dots {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .round-dots .label {
+    color: var(--muted);
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: transparent;
+    border: 2px solid var(--border);
+  }
+  .dot.done { background: var(--muted); border-color: var(--muted); }
+  .dot.current { background: var(--accent); border-color: var(--accent); transform: scale(1.2); }
+
+  .timer-card {
+    background: var(--card);
+    border-radius: 1.5rem;
+    padding: 1.25rem 1rem;
+    text-align: center;
+    border: 5px solid var(--border);
+    transition: border-color 0.25s;
+  }
+  .timer-card.work { border-color: var(--work); }
+  .timer-card.rest { border-color: var(--rest); }
+  .timer-card.blockrest { border-color: var(--rest); }
+  .timer-card.warmup { border-color: var(--warmup); }
+  .timer-card.cooldown { border-color: var(--warmup); }
+  .timer-card.stretch { border-color: var(--stretching); }
+
+  .phase-label {
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--muted);
+  }
+  .timer-card.work .phase-label { color: var(--work); }
+  .timer-card.rest .phase-label,
+  .timer-card.blockrest .phase-label { color: var(--rest); }
+  .timer-card.warmup .phase-label,
+  .timer-card.cooldown .phase-label { color: var(--warmup); }
+  .timer-card.stretch .phase-label { color: var(--stretching); }
+
+  .time-display {
+    font-size: 8rem;
+    font-weight: 900;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    margin: 0.25rem 0;
+    letter-spacing: -0.05em;
+  }
+  .total-time {
+    color: var(--muted);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .exercise-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  .exercise-grid.solo { grid-template-columns: 1fr; }
+  .person {
+    background: var(--card);
+    border-radius: 1.25rem;
+    padding: 1.1rem;
+    border: 2px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 120px;
+  }
+  .person.a { border-top: 6px solid var(--accent); }
+  .person.b { border-top: 6px solid var(--accent-b); }
+  .exercise-grid.solo .person.a { border-top-color: var(--accent); }
+  .person-label {
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 0.35rem;
+  }
+  .person.a .person-label { color: var(--accent); }
+  .person.b .person-label { color: var(--accent-b); }
+  .exercise {
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .alternative {
+    font-size: 0.95rem;
+    color: var(--muted);
+    line-height: 1.4;
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+    display: none;
+  }
+  body.show-alternatives .alternative.has-alt { display: block; }
+  .alternative::before {
+    content: 'Injury alt: ';
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .upcoming {
+    padding: 0.6rem 1rem;
+    background: var(--card);
+    border-radius: 1rem;
+    color: var(--muted);
+    font-size: 0.95rem;
+    text-align: center;
+  }
+  .upcoming strong { color: var(--text); }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 0.6rem;
+  }
+  .toggle-row {
+    display: flex;
+    justify-content: space-around;
+    gap: 1rem;
+    padding: 0.7rem 1rem;
+    background: var(--card);
+    border-radius: 1rem;
+    font-size: 0.95rem;
+    flex-wrap: wrap;
+  }
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle input {
+    width: 1.25rem; height: 1.25rem;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  @media (max-width: 700px) {
+    .time-display { font-size: 5.5rem; }
+    .exercise-grid { grid-template-columns: 1fr; }
+    .exercise { font-size: 1.2rem; }
+    .menu-title { font-size: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============== MENU VIEW ============== -->
+  <div class="view active" id="menuView">
+    <div class="brand-bar">
+      <svg class="brand-icon" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="32" cy="42" r="16" fill="currentColor"/>
+        <path d="M20 22 V14 a4 4 0 0 1 4-4 h16 a4 4 0 0 1 4 4 V22" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+      </svg>
+      <div class="brand-text">
+        <div class="brand-name">FIT</div>
+        <div class="brand-sub">BY FLAUX</div>
+      </div>
+    </div>
+
+    <div class="menu-header">
+      <div class="menu-title">Pick your workout</div>
+      <div class="menu-sub">All workouts respect your equipment: 15kg KB, 10kg KB, 10kg barbell, dumbbells, skipping rope, rings, gravel driveway.</div>
+    </div>
+
+    <div class="picker-row">
+      <div class="picker-label">How many of you?</div>
+      <div class="chip-row" id="peoplePicker">
+        <button class="chip people-chip" data-people="1">1 person</button>
+        <button class="chip people-chip" data-people="2">2 people</button>
+      </div>
+    </div>
+
+    <div class="picker-row">
+      <div class="picker-label">Time</div>
+      <div class="chip-row" id="timeFilter"></div>
+    </div>
+
+    <div class="picker-row">
+      <div class="picker-label">Focus</div>
+      <div class="chip-row" id="focusFilter"></div>
+    </div>
+
+    <div class="workout-grid" id="workoutGrid"></div>
+  </div>
+
+  <!-- ============== WORKOUT VIEW ============== -->
+  <div class="view" id="workoutView">
+    <div class="top-bar">
+      <button class="back-btn" id="btnBack">← Menu</button>
+      <div class="workout-title" id="workoutTitle">—</div>
+      <div class="people-badge" id="peopleBadge">2 people</div>
+    </div>
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="overallProgress"></div>
+    </div>
+
+    <div class="block-info">
+      <div class="block-name" id="blockName">—</div>
+      <div class="round-dots" id="roundDots"></div>
+    </div>
+
+    <div class="timer-card warmup" id="timerCard">
+      <div class="phase-label" id="phaseLabel">Press start</div>
+      <div class="time-display" id="timeDisplay">--:--</div>
+      <div class="total-time" id="totalTime">Total 0:00</div>
+    </div>
+
+    <div class="exercise-grid" id="exerciseGrid">
+      <div class="person a">
+        <div class="person-label" id="labelA">Person A</div>
+        <div class="exercise" id="exerciseA">—</div>
+        <div class="alternative" id="alternativeA"></div>
+      </div>
+      <div class="person b" id="personB">
+        <div class="person-label">Person B</div>
+        <div class="exercise" id="exerciseB">—</div>
+        <div class="alternative" id="alternativeB"></div>
+      </div>
+    </div>
+
+    <div class="upcoming" id="upcoming"></div>
+
+    <div class="controls">
+      <button id="btnStart">Start</button>
+      <button class="secondary" id="btnSkip">Skip block</button>
+      <button class="secondary" id="btnReset">Reset</button>
+    </div>
+
+    <div class="toggle-row">
+      <label class="toggle">
+        <input type="checkbox" id="showAlts">
+        Show injury alternatives
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="muteAudio">
+        Mute audio
+      </label>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// =====================================================================
+// WORKOUT LIBRARY
+// Equipment available: 15kg KB, 10kg KB, 10kg barbell, dumbbells (set),
+// skipping rope, gymnastic rings, gravel driveway (~1 min round trip).
+// Constraint: never assign a single-instance item to both people in the
+// same round.
+// =====================================================================
+
+// --- Block helpers ----------------------------------------------------
+// Both people do the same exercise (no equipment conflict).
+function blockSame(name, ex) {
+  return {
+    name,
+    duo:  () => ({ a: ex, b: ex }),
+    solo: () => ex
+  };
+}
+
+// Two exercises alternate between A and B each round.
+// Solo mode alternates the two exercises round-by-round.
+function blockAlt(name, exA, exB) {
+  return {
+    name,
+    duo: (round) => (round % 2 === 1)
+      ? { a: exA, b: exB }
+      : { a: exB, b: exA },
+    solo: (round) => (round % 2 === 1) ? exA : exB
+  };
+}
+
+// Single exercise with two weights — swap between A and B at round 5.
+function blockSwap(name, heavy, light, alt) {
+  return {
+    name,
+    duo: (round) => {
+      const swap = round > 4;
+      return {
+        a: { task: swap ? light : heavy, alt },
+        b: { task: swap ? heavy : light, alt }
+      };
+    },
+    solo: (round) => {
+      const swap = round > 4;
+      return { task: swap ? light : heavy, alt };
+    }
+  };
+}
+
+// --- Workouts ---------------------------------------------------------
+const workouts = [
+  {
+    id: 'quick-spark',
+    name: 'Quick Spark',
+    tagline: 'No gear, max sweat',
+    duration: 10,
+    focus: 'whole-body',
+    blurb: 'Bodyweight full-body. Get in, get sweaty, get out.',
+    format: 'tabata',
+    warmupSec: 60, cooldownSec: 30, blockRestSec: 30,
+    blocks: [
+      blockAlt('Squats & Push-ups',
+        { task: 'Air squats', alt: 'Box squat to a chair' },
+        { task: 'Push-ups', alt: 'Incline push-ups (hands on bench)' }
+      ),
+      blockAlt('Climbers & Plank',
+        { task: 'Mountain climbers', alt: 'Slow controlled climbers' },
+        { task: 'Plank hold (forearm or high)', alt: 'Knees plank' }
+      )
+    ]
+  },
+
+  {
+    id: 'sunrise-stretch',
+    name: 'Sunrise Stretch',
+    tagline: 'Open up the day',
+    duration: 10,
+    focus: 'stretching',
+    blurb: 'Slow mobility — hold and breathe. Wake the body up.',
+    format: 'stretch',
+    stretches: [
+      { name: 'Standing forward fold', hold: 60, alt: 'Seated forward fold' },
+      { name: 'Downward dog',          hold: 60, alt: 'Hands on a bench, hips back' },
+      { name: 'Low lunge — left',      hold: 60, alt: 'Half-kneeling, hands on shin' },
+      { name: 'Low lunge — right',     hold: 60, alt: 'Half-kneeling, hands on shin' },
+      { name: 'Pigeon — left',         hold: 60, alt: 'Figure-4 on the ground' },
+      { name: 'Pigeon — right',        hold: 60, alt: 'Figure-4 on the ground' },
+      { name: "Child's pose",          hold: 60, alt: '' },
+      { name: 'Cobra / upward dog',    hold: 60, alt: 'Sphinx on forearms' },
+      { name: 'Cat-cow flow',          hold: 60, alt: '' },
+      { name: 'Standing chest opener', hold: 60, alt: 'Doorway pec stretch' }
+    ]
+  },
+
+  {
+    id: 'core-crusher',
+    name: 'Core Crusher',
+    tagline: 'Burn the middle',
+    duration: 15,
+    focus: 'core',
+    blurb: 'Three blocks focused on the trunk — climbers, holds, twists.',
+    format: 'tabata',
+    warmupSec: 60, cooldownSec: 60, blockRestSec: 30,
+    blocks: [
+      blockSame('Mountain climbers',
+        { task: 'Mountain climbers (fast)', alt: 'Slow controlled climbers' }
+      ),
+      blockAlt('Hollow holds & Russian twists',
+        { task: 'Hollow body hold', alt: 'Tucked hollow hold (knees in)' },
+        { task: 'Russian twists — 10kg KB', alt: 'Russian twists bodyweight' }
+      ),
+      blockSame('Plank rotations (15s each: forearm / high / side-L / side-R)',
+        { task: 'Plank rotation — change position every 15s', alt: 'Knees plank, rotate same positions' }
+      )
+    ]
+  },
+
+  {
+    id: 'cool-mobile',
+    name: 'Cool & Mobile',
+    tagline: 'Recovery & mobility',
+    duration: 15,
+    focus: 'stretching',
+    blurb: 'Full-body mobility flow — perfect after a workout or before bed.',
+    format: 'stretch',
+    stretches: [
+      { name: 'Cat-cow flow',                  hold: 60, alt: '' },
+      { name: 'Thread the needle — left',      hold: 60, alt: '' },
+      { name: 'Thread the needle — right',     hold: 60, alt: '' },
+      { name: 'Downward dog',                  hold: 60, alt: 'Hands on bench' },
+      { name: 'Low lunge — left',              hold: 60, alt: '' },
+      { name: 'Low lunge — right',             hold: 60, alt: '' },
+      { name: 'Pigeon — left',                 hold: 60, alt: 'Figure-4 on back' },
+      { name: 'Pigeon — right',                hold: 60, alt: 'Figure-4 on back' },
+      { name: 'Seated forward fold',           hold: 60, alt: '' },
+      { name: 'Supine spinal twist — left',    hold: 60, alt: '' },
+      { name: 'Supine spinal twist — right',   hold: 60, alt: '' },
+      { name: '90/90 hip — left',              hold: 60, alt: '' },
+      { name: '90/90 hip — right',             hold: 60, alt: '' },
+      { name: 'Glute bridge hold',             hold: 60, alt: '' },
+      { name: 'Savasana / deep breathing',     hold: 60, alt: '' }
+    ]
+  },
+
+  {
+    id: 'calisthenics-core',
+    name: 'Calisthenics Core',
+    tagline: 'Bodyweight abs blast',
+    duration: 15,
+    focus: 'core',
+    blurb: 'No equipment needed — just gravity and effort.',
+    format: 'tabata',
+    warmupSec: 60, cooldownSec: 60, blockRestSec: 30,
+    blocks: [
+      blockAlt('Hollow rocks & V-sits',
+        { task: 'Hollow body rocks', alt: 'Hollow hold (no rocking)' },
+        { task: 'V-sits', alt: 'Tucked V-sit (knees bent)' }
+      ),
+      blockAlt('Climbers & Dead bugs',
+        { task: 'Mountain climbers', alt: 'Slow controlled climbers' },
+        { task: 'Dead bug (opposite arm + leg)', alt: 'Dead bug one limb at a time' }
+      ),
+      blockAlt('Plank & Leg raises',
+        { task: 'Plank (forearm)', alt: 'Knees plank' },
+        { task: 'Lying leg raises', alt: 'Bent-knee leg raises' }
+      )
+    ]
+  },
+
+  {
+    id: 'lunchbreak-burn',
+    name: 'Lunchbreak Burn',
+    tagline: 'Big sweat in 16',
+    duration: 16,
+    focus: 'whole-body',
+    blurb: 'Bodyweight conditioning. No gear, no fuss, just go.',
+    format: 'tabata',
+    warmupSec: 60, cooldownSec: 120, blockRestSec: 30,
+    blocks: [
+      blockAlt('Squats & Push-ups',
+        { task: 'Air squats', alt: 'Box squat to chair' },
+        { task: 'Push-ups', alt: 'Incline push-ups' }
+      ),
+      blockAlt('Lunges & Tricep dips',
+        { task: 'Reverse lunges (alternate legs)', alt: 'Static split squats' },
+        { task: 'Tricep dips on a bench', alt: 'Bench dips, feet closer (easier)' }
+      ),
+      blockAlt('Burpees & Hollow rocks',
+        { task: 'Burpees', alt: 'Step-back burpees (no jump)' },
+        { task: 'Hollow body rocks', alt: 'Hollow hold' }
+      )
+    ]
+  },
+
+  {
+    id: 'iron-legs',
+    name: 'Iron Legs',
+    tagline: 'Lower-body strength + grit',
+    duration: 20,
+    focus: 'lower-body',
+    blurb: 'Squats, hinges, lunges, jumps. Wake up the legs.',
+    format: 'tabata',
+    warmupSec: 90, cooldownSec: 60, blockRestSec: 30,
+    blocks: [
+      blockSwap('Goblet squats', 'Goblet squat — 15kg KB', 'Goblet squat — 10kg KB',
+                'Bodyweight squat with a slow 3s descent'),
+      blockSwap('KB swings', 'KB swings — 15kg', 'KB swings — 10kg',
+                'KB Romanian deadlift (hinge only, no swing)'),
+      blockAlt('Lunges & Step-ups',
+        { task: 'Reverse lunges with dumbbells', alt: 'Bodyweight reverse lunges' },
+        { task: 'Step-ups on a bench/box', alt: 'Toe taps to a low step' }
+      ),
+      blockAlt('Squat jumps & Wall sit',
+        { task: 'Squat jumps', alt: 'Explosive bodyweight squat, no jump' },
+        { task: 'Wall sit (thighs parallel)', alt: 'Higher wall sit (less depth)' }
+      )
+    ]
+  },
+
+  {
+    id: 'upper-storm',
+    name: 'Upper Storm',
+    tagline: 'Press, pull, push',
+    duration: 20,
+    focus: 'upper-body',
+    blurb: 'Four blocks across the upper body — press, row, push, hold.',
+    format: 'tabata',
+    warmupSec: 90, cooldownSec: 60, blockRestSec: 30,
+    blocks: [
+      blockAlt('Barbell press & Plank',
+        { task: 'Strict press — 10kg barbell', alt: 'Dumbbell shoulder press' },
+        { task: 'Plank hold (forearm or high)', alt: 'Knees plank' }
+      ),
+      blockAlt('Ring rows & Push-ups',
+        { task: 'Ring rows (set foot position for difficulty)', alt: 'Bent-over dumbbell rows' },
+        { task: 'Push-ups', alt: 'Incline push-ups' }
+      ),
+      blockSwap('Dumbbell press', 'Dumbbell shoulder press (heavier pair)',
+                'Dumbbell shoulder press (lighter pair)',
+                'Slow tempo lighter weight'),
+      blockAlt('Ring dips & DB curls',
+        { task: 'Ring dips (or bench dips)', alt: 'Bench dips with feet on floor' },
+        { task: 'Dumbbell bicep curls', alt: 'Hammer curls, slower tempo' }
+      )
+    ]
+  },
+
+  {
+    id: 'engine-builder',
+    name: 'Engine Builder',
+    tagline: 'Build the cardio engine',
+    duration: 25,
+    focus: 'whole-body',
+    blurb: 'Five blocks of mixed strength + conditioning. Steady, deliberate, hard.',
+    format: 'tabata',
+    warmupSec: 60, cooldownSec: 60, blockRestSec: 45,
+    blocks: [
+      blockSwap('Goblet squats', 'Goblet squat — 15kg KB', 'Goblet squat — 10kg KB',
+                'Bodyweight squat slow tempo'),
+      blockSwap('KB swings', 'KB swings — 15kg', 'KB swings — 10kg',
+                'KB Romanian deadlift'),
+      blockAlt('Push-ups & Climbers',
+        { task: 'Push-ups', alt: 'Incline push-ups' },
+        { task: 'Mountain climbers', alt: 'Slow controlled climbers' }
+      ),
+      blockAlt('Burpees & Plank',
+        { task: 'Burpees', alt: 'Step-back burpees (no jump)' },
+        { task: 'Plank hold', alt: 'Knees plank' }
+      ),
+      blockAlt('Ring rows & DB curls',
+        { task: 'Ring rows', alt: 'Bent-over dumbbell rows' },
+        { task: 'Dumbbell curls', alt: 'Hammer curls, lighter' }
+      )
+    ]
+  },
+
+  {
+    id: 'driveway-demon',
+    name: 'Driveway Demon',
+    tagline: 'Sprint, swing, suffer',
+    duration: 30,
+    focus: 'whole-body',
+    blurb: 'Six blocks — sprints, KBs, bodyweight, hold. Use the whole driveway.',
+    format: 'tabata',
+    warmupSec: 90, cooldownSec: 45, blockRestSec: 45,
+    blocks: [
+      blockSwap('Goblet squats', 'Goblet squat — 15kg KB', 'Goblet squat — 10kg KB',
+                'Bodyweight squat slow tempo'),
+      blockSwap('KB swings', 'KB swings — 15kg', 'KB swings — 10kg',
+                'KB Romanian deadlift'),
+      blockAlt('Driveway sprint & KB hold',
+        { task: 'Sprint to mailbox & back', alt: 'Brisk walk to mailbox & back' },
+        { task: 'KB front rack hold — 15kg', alt: 'Dumbbell suitcase hold' }
+      ),
+      blockSame('Mountain climbers',
+        { task: 'Mountain climbers (fast)', alt: 'Slow controlled climbers' }
+      ),
+      blockAlt('Push-ups & Plank',
+        { task: 'Push-ups', alt: 'Incline push-ups' },
+        { task: 'Plank hold', alt: 'Knees plank' }
+      ),
+      blockAlt('Ring rows & Hollow rocks',
+        { task: 'Ring rows', alt: 'Bent-over dumbbell rows' },
+        { task: 'Hollow body rocks', alt: 'Hollow hold' }
+      )
+    ]
+  },
+
+  {
+    id: 'backyard-strength',
+    name: 'Backyard Strength',
+    tagline: 'The original 45',
+    duration: 45,
+    focus: 'whole-body',
+    blurb: 'Eight blocks across every movement pattern. The full workout.',
+    format: 'tabata',
+    warmupSec: 180, cooldownSec: 180, blockRestSec: 60,
+    blocks: [
+      blockSwap('Goblet squats', 'Goblet squat — 15kg KB', 'Goblet squat — 10kg KB',
+                'Bodyweight squat slow tempo'),
+      blockAlt('Ring rows & Push-ups',
+        { task: 'Ring rows (set foot position for difficulty)', alt: 'Bent-over dumbbell rows' },
+        { task: 'Push-ups', alt: 'Incline push-ups' }
+      ),
+      blockSwap('KB swings', 'KB swings — 15kg', 'KB swings — 10kg',
+                'KB Romanian deadlift'),
+      blockAlt('Skipping & Push-ups',
+        { task: 'Skipping rope', alt: 'High knees in place' },
+        { task: 'Push-ups', alt: 'Incline push-ups' }
+      ),
+      blockAlt('Barbell press & Plank',
+        { task: 'Strict press — 10kg barbell', alt: 'Dumbbell shoulder press' },
+        { task: 'Plank hold (forearm or high)', alt: 'Knees plank' }
+      ),
+      blockAlt('Driveway sprint & KB hold',
+        { task: 'Sprint to mailbox & back', alt: 'Brisk walk to mailbox & back' },
+        { task: 'KB front rack hold — 15kg', alt: 'Dumbbell suitcase hold' }
+      ),
+      blockAlt('Ring hangs & Suitcase carry',
+        { task: 'Ring tuck holds (or hanging knee raises)', alt: 'Lying leg raises or dead bugs' },
+        { task: 'Dumbbell suitcase carry — driveway', alt: 'Dumbbell suitcase hold in place' }
+      ),
+      {
+        // Custom: alternates left/right arm + weight swap at round 5
+        name: 'KB clean & press (alt arms)',
+        duo: (round) => {
+          const swap = round > 4;
+          const arm = round % 2 === 1 ? '(left arm)' : '(right arm)';
+          return {
+            a: { task: `KB clean & press ${arm} — ${swap ? '10kg' : '15kg'}`, alt: 'Dumbbell clean & press (lighter)' },
+            b: { task: `KB clean & press ${arm} — ${swap ? '15kg' : '10kg'}`, alt: 'Dumbbell clean & press (lighter)' }
+          };
+        },
+        solo: (round) => {
+          const swap = round > 4;
+          const arm = round % 2 === 1 ? '(left arm)' : '(right arm)';
+          return { task: `KB clean & press ${arm} — ${swap ? '10kg' : '15kg'}`, alt: 'Dumbbell clean & press (lighter)' };
+        }
+      }
+    ]
+  }
+];
+
+// =====================================================================
+// STATE & PREFS
+// =====================================================================
+const state = {
+  view: 'menu',
+  workout: null,
+  people: 2,
+  filterTime: 'all',
+  filterFocus: 'all',
+  muteAudio: false,
+  showAlts: false,
+
+  // Per-workout runtime
+  sequence: [],
+  totalDuration: 0,
+  currentIdx: 0,
+  remainingInPhase: 0,
+  elapsedTotal: 0,
+  running: false,
+  intervalId: null,
+  wakeLock: null
+};
+
+function loadPrefs() {
+  try {
+    const raw = localStorage.getItem('tabata-prefs');
+    if (raw) {
+      const p = JSON.parse(raw);
+      Object.assign(state, p);
+    }
+  } catch (e) {}
+}
+function savePrefs() {
+  try {
+    localStorage.setItem('tabata-prefs', JSON.stringify({
+      people: state.people,
+      filterTime: state.filterTime,
+      filterFocus: state.filterFocus,
+      muteAudio: state.muteAudio,
+      showAlts: state.showAlts
+    }));
+  } catch (e) {}
+}
+
+// =====================================================================
+// SEQUENCE BUILDER
+// =====================================================================
+const warmupExercise = {
+  task: 'Easy movement — skip / arm circles / squats / lunges / shake out',
+  alt: 'Walk + gentle dynamic stretches'
+};
+const cooldownExercise = {
+  task: 'Walk, deep breaths, stretch hammies / hips / shoulders / chest',
+  alt: ''
+};
+
+function buildSequence(workout, people) {
+  const seq = [];
+  const isDuo = people === 2;
+  const pair = (ex) => isDuo ? { a: ex, b: ex } : { a: ex, b: null };
+
+  if (workout.format === 'tabata') {
+    if (workout.warmupSec > 0) {
+      seq.push({
+        kind: 'warmup',
+        duration: workout.warmupSec,
+        name: `Warm-up — ${Math.round(workout.warmupSec / 60 * 10) / 10} min`,
+        ...pair(warmupExercise)
+      });
+    }
+
+    workout.blocks.forEach((block, blockIdx) => {
+      for (let round = 1; round <= 8; round++) {
+        let work;
+        if (isDuo) {
+          const d = block.duo(round);
+          work = { a: d.a, b: d.b };
+        } else {
+          const s = block.solo(round);
+          work = { a: s, b: null };
+        }
+        seq.push({
+          kind: 'work',
+          duration: 20,
+          blockIdx, round, totalBlocks: workout.blocks.length, totalRounds: 8,
+          name: `Block ${blockIdx + 1} of ${workout.blocks.length}: ${block.name}`,
+          a: work.a, b: work.b
+        });
+        seq.push({
+          kind: 'rest',
+          duration: 10,
+          blockIdx, round, totalBlocks: workout.blocks.length, totalRounds: 8,
+          name: `Block ${blockIdx + 1} of ${workout.blocks.length}: ${block.name}`,
+          ...pair({ task: 'Rest — breathe', alt: '' })
+        });
+      }
+      if (blockIdx < workout.blocks.length - 1) {
+        seq.push({
+          kind: 'blockrest',
+          duration: workout.blockRestSec,
+          blockIdx, totalBlocks: workout.blocks.length,
+          name: `Rest — next: Block ${blockIdx + 2}: ${workout.blocks[blockIdx + 1].name}`,
+          ...pair({ task: 'Hydrate, reset, swap equipment if needed', alt: '' })
+        });
+      }
+    });
+
+    if (workout.cooldownSec > 0) {
+      seq.push({
+        kind: 'cooldown',
+        duration: workout.cooldownSec,
+        name: `Cool-down — ${Math.round(workout.cooldownSec / 60 * 10) / 10} min`,
+        ...pair(cooldownExercise)
+      });
+    }
+  } else if (workout.format === 'stretch') {
+    workout.stretches.forEach((stretch, idx) => {
+      seq.push({
+        kind: 'stretch',
+        duration: stretch.hold,
+        stretchIdx: idx,
+        totalStretches: workout.stretches.length,
+        name: `Stretch ${idx + 1} of ${workout.stretches.length}: ${stretch.name}`,
+        ...pair({ task: stretch.name, alt: stretch.alt })
+      });
+    });
+  }
+  return seq;
+}
+
+// =====================================================================
+// AUDIO (Web Audio API)
+// =====================================================================
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function beep(freq, duration, volume = 0.4) {
+  if (state.muteAudio) return;
+  try {
+    ensureAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.frequency.value = freq;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch (e) {}
+}
+function workChime() { beep(880, 0.18, 0.5); setTimeout(() => beep(1320, 0.25, 0.5), 180); }
+function restChime() { beep(523, 0.25, 0.4); }
+function stretchChime() { beep(660, 0.4, 0.35); }
+function bigBell() {
+  beep(660, 0.25, 0.5);
+  setTimeout(() => beep(880, 0.25, 0.5), 220);
+  setTimeout(() => beep(1320, 0.45, 0.5), 460);
+}
+function tick() { beep(700, 0.08, 0.3); }
+
+// =====================================================================
+// WAKE LOCK
+// =====================================================================
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try { state.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+}
+function releaseWakeLock() {
+  if (state.wakeLock) { state.wakeLock.release(); state.wakeLock = null; }
+}
+
+// =====================================================================
+// ELEMENTS
+// =====================================================================
+const els = {
+  menuView: document.getElementById('menuView'),
+  workoutView: document.getElementById('workoutView'),
+  peoplePicker: document.getElementById('peoplePicker'),
+  timeFilter: document.getElementById('timeFilter'),
+  focusFilter: document.getElementById('focusFilter'),
+  workoutGrid: document.getElementById('workoutGrid'),
+
+  btnBack: document.getElementById('btnBack'),
+  workoutTitle: document.getElementById('workoutTitle'),
+  peopleBadge: document.getElementById('peopleBadge'),
+  overallProgress: document.getElementById('overallProgress'),
+
+  blockName: document.getElementById('blockName'),
+  roundDots: document.getElementById('roundDots'),
+  timerCard: document.getElementById('timerCard'),
+  phaseLabel: document.getElementById('phaseLabel'),
+  timeDisplay: document.getElementById('timeDisplay'),
+  totalTime: document.getElementById('totalTime'),
+
+  exerciseGrid: document.getElementById('exerciseGrid'),
+  labelA: document.getElementById('labelA'),
+  exerciseA: document.getElementById('exerciseA'),
+  alternativeA: document.getElementById('alternativeA'),
+  personB: document.getElementById('personB'),
+  exerciseB: document.getElementById('exerciseB'),
+  alternativeB: document.getElementById('alternativeB'),
+
+  upcoming: document.getElementById('upcoming'),
+  btnStart: document.getElementById('btnStart'),
+  btnSkip: document.getElementById('btnSkip'),
+  btnReset: document.getElementById('btnReset'),
+  showAlts: document.getElementById('showAlts'),
+  muteAudio: document.getElementById('muteAudio')
+};
+
+// =====================================================================
+// MENU RENDERING
+// =====================================================================
+const focusList = [
+  { id: 'all',         label: 'All' },
+  { id: 'whole-body',  label: 'Whole body' },
+  { id: 'upper-body',  label: 'Upper body' },
+  { id: 'lower-body',  label: 'Lower body' },
+  { id: 'core',        label: 'Core' },
+  { id: 'stretching',  label: 'Stretching' }
+];
+
+const focusClassMap = {
+  'whole-body': 'whole',
+  'upper-body': 'upper',
+  'lower-body': 'lower',
+  'core': 'core',
+  'stretching': 'stretching'
+};
+const focusLabelMap = {
+  'whole-body': 'Whole body',
+  'upper-body': 'Upper body',
+  'lower-body': 'Lower body',
+  'core': 'Core',
+  'stretching': 'Stretching'
+};
+
+function uniqueDurations() {
+  const set = new Set(workouts.map(w => w.duration));
+  return Array.from(set).sort((a, b) => a - b);
+}
+
+function renderPeoplePicker() {
+  els.peoplePicker.querySelectorAll('.chip').forEach(chip => {
+    chip.classList.toggle('active', Number(chip.dataset.people) === state.people);
+  });
+}
+
+function renderTimeFilter() {
+  const durations = uniqueDurations();
+  const opts = [{ id: 'all', label: 'All' }, ...durations.map(d => ({ id: String(d), label: `${d} min` }))];
+  els.timeFilter.innerHTML = '';
+  opts.forEach(o => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (String(state.filterTime) === o.id ? ' active' : '');
+    b.textContent = o.label;
+    b.addEventListener('click', () => {
+      state.filterTime = o.id === 'all' ? 'all' : Number(o.id);
+      savePrefs();
+      renderTimeFilter();
+      renderWorkoutGrid();
+    });
+    els.timeFilter.appendChild(b);
+  });
+}
+
+function renderFocusFilter() {
+  els.focusFilter.innerHTML = '';
+  focusList.forEach(f => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (state.filterFocus === f.id ? ' active' : '');
+    b.textContent = f.label;
+    b.addEventListener('click', () => {
+      state.filterFocus = f.id;
+      savePrefs();
+      renderFocusFilter();
+      renderWorkoutGrid();
+    });
+    els.focusFilter.appendChild(b);
+  });
+}
+
+function renderWorkoutGrid() {
+  els.workoutGrid.innerHTML = '';
+  const filtered = workouts.filter(w =>
+    (state.filterTime === 'all' || w.duration === state.filterTime) &&
+    (state.filterFocus === 'all' || w.focus === state.filterFocus)
+  ).sort((a, b) => a.duration - b.duration);
+
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'No workouts match those filters.';
+    els.workoutGrid.appendChild(empty);
+    return;
+  }
+
+  filtered.forEach(w => {
+    const card = document.createElement('button');
+    card.className = 'workout-card ' + focusClassMap[w.focus];
+    card.innerHTML = `
+      <div class="card-name">${w.name}</div>
+      <div class="card-tagline">${w.tagline}</div>
+      <div class="card-meta">
+        <span class="duration">${w.duration} min</span>
+        <span>·</span>
+        <span class="focus-tag ${focusClassMap[w.focus]}">${focusLabelMap[w.focus]}</span>
+      </div>
+      <div class="card-blurb">${w.blurb}</div>
+    `;
+    card.addEventListener('click', () => openWorkout(w));
+    els.workoutGrid.appendChild(card);
+  });
+}
+
+// =====================================================================
+// WORKOUT VIEW
+// =====================================================================
+function openWorkout(workout) {
+  state.workout = workout;
+  state.sequence = buildSequence(workout, state.people);
+  state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
+  state.currentIdx = 0;
+  state.remainingInPhase = state.sequence[0] ? state.sequence[0].duration : 0;
+  state.elapsedTotal = 0;
+  state.running = false;
+
+  els.workoutTitle.textContent = workout.name;
+  els.peopleBadge.textContent = state.people === 1 ? '1 person' : '2 people';
+  els.exerciseGrid.classList.toggle('solo', state.people === 1);
+  els.personB.style.display = state.people === 1 ? 'none' : '';
+  els.labelA.textContent = state.people === 1 ? 'You' : 'Person A';
+
+  setView('workout');
+  render();
+}
+
+function setView(v) {
+  state.view = v;
+  els.menuView.classList.toggle('active', v === 'menu');
+  els.workoutView.classList.toggle('active', v === 'workout');
+}
+
+function goBackToMenu() {
+  stopTimer();
+  setView('menu');
+  state.workout = null;
+}
+
+function fmt(s) {
+  s = Math.max(0, Math.floor(s));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+function setAlt(el, alt) {
+  el.textContent = alt || '';
+  el.classList.toggle('has-alt', !!alt);
+}
+
+function renderRoundDots(phase) {
+  els.roundDots.innerHTML = '';
+  if (phase.totalRounds) {
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = `Round ${phase.round} of ${phase.totalRounds}`;
+    els.roundDots.appendChild(label);
+    for (let i = 1; i <= phase.totalRounds; i++) {
+      const d = document.createElement('div');
+      d.className = 'dot';
+      if (i < phase.round) d.classList.add('done');
+      else if (i === phase.round) d.classList.add('current');
+      els.roundDots.appendChild(d);
+    }
+  } else if (phase.totalStretches) {
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = `${phase.stretchIdx + 1} of ${phase.totalStretches}`;
+    els.roundDots.appendChild(label);
+    for (let i = 0; i < phase.totalStretches; i++) {
+      const d = document.createElement('div');
+      d.className = 'dot';
+      if (i < phase.stretchIdx) d.classList.add('done');
+      else if (i === phase.stretchIdx) d.classList.add('current');
+      els.roundDots.appendChild(d);
+    }
+  } else if (phase.totalBlocks) {
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = `Between blocks — ${phase.blockIdx + 1} → ${phase.blockIdx + 2} of ${phase.totalBlocks}`;
+    els.roundDots.appendChild(label);
+  }
+}
+
+function render() {
+  const phase = state.sequence[state.currentIdx];
+  if (!phase) return;
+
+  els.timerCard.className = 'timer-card ' + phase.kind;
+  els.phaseLabel.textContent = ({
+    work: 'Work', rest: 'Rest', blockrest: 'Block rest',
+    warmup: 'Warm-up', cooldown: 'Cool-down', stretch: 'Stretch'
+  })[phase.kind] || '';
+
+  els.timeDisplay.textContent = fmt(state.remainingInPhase);
+  els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
+  els.blockName.textContent = phase.name;
+  els.overallProgress.style.width = `${Math.min(100, (state.elapsedTotal / state.totalDuration) * 100)}%`;
+
+  renderRoundDots(phase);
+
+  els.exerciseA.textContent = phase.a ? phase.a.task : '—';
+  setAlt(els.alternativeA, phase.a ? phase.a.alt : '');
+  if (state.people === 2 && phase.b) {
+    els.exerciseB.textContent = phase.b.task;
+    setAlt(els.alternativeB, phase.b.alt);
+  }
+
+  // Up next
+  const next = state.sequence[state.currentIdx + 1];
+  if (next) {
+    let preview;
+    if (next.kind === 'rest') preview = 'Rest 10s';
+    else if (next.kind === 'work') {
+      preview = state.people === 2
+        ? `A: ${next.a.task} · B: ${next.b.task}`
+        : next.a.task;
+    } else preview = next.name;
+    els.upcoming.innerHTML = `Up next: <strong>${preview}</strong>`;
+  } else {
+    els.upcoming.innerHTML = '';
+  }
+
+  els.btnStart.textContent = state.running ? 'Pause' : (state.elapsedTotal > 0 ? 'Resume' : 'Start');
+  els.btnStart.classList.toggle('running', state.running);
+}
+
+// =====================================================================
+// TIMER
+// =====================================================================
+function step() {
+  state.remainingInPhase -= 1;
+  state.elapsedTotal += 1;
+  if (state.remainingInPhase === 3 || state.remainingInPhase === 2 || state.remainingInPhase === 1) tick();
+  if (state.remainingInPhase <= 0) advancePhase();
+  render();
+}
+
+function advancePhase() {
+  state.currentIdx++;
+  if (state.currentIdx >= state.sequence.length) { finish(); return; }
+  const next = state.sequence[state.currentIdx];
+  state.remainingInPhase = next.duration;
+  if (next.kind === 'work') workChime();
+  else if (next.kind === 'rest') restChime();
+  else if (next.kind === 'blockrest') bigBell();
+  else if (next.kind === 'cooldown') bigBell();
+  else if (next.kind === 'stretch') stretchChime();
+}
+
+function finish() {
+  stopTimer();
+  bigBell();
+  els.timerCard.className = 'timer-card';
+  els.phaseLabel.textContent = 'Done';
+  els.timeDisplay.textContent = '✓';
+  els.blockName.textContent = 'Workout complete — nice work';
+  els.roundDots.innerHTML = '';
+  els.exerciseA.textContent = 'Well done.';
+  setAlt(els.alternativeA, '');
+  if (state.people === 2) { els.exerciseB.textContent = 'Well done.'; setAlt(els.alternativeB, ''); }
+  els.upcoming.innerHTML = '';
+  els.btnStart.textContent = 'Start over';
+  els.btnStart.classList.remove('running');
+  els.overallProgress.style.width = '100%';
+}
+
+function startTimer() {
+  if (state.running) return;
+  if (state.currentIdx >= state.sequence.length) resetWorkout();
+  ensureAudio();
+  requestWakeLock();
+  state.running = true;
+  workChime();
+  state.intervalId = setInterval(step, 1000);
+  render();
+}
+function pauseTimer() {
+  state.running = false;
+  if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
+  releaseWakeLock();
+  render();
+}
+function stopTimer() {
+  state.running = false;
+  if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
+  releaseWakeLock();
+}
+function resetWorkout() {
+  stopTimer();
+  state.currentIdx = 0;
+  state.remainingInPhase = state.sequence[0] ? state.sequence[0].duration : 0;
+  state.elapsedTotal = 0;
+  render();
+}
+
+function skipBlock() {
+  if (!state.sequence.length) return;
+  const cur = state.sequence[state.currentIdx];
+  let target = state.currentIdx + 1;
+
+  if (cur.kind === 'stretch') {
+    // Stretching: skip to next stretch only
+    // (target is already next)
+  } else {
+    // Tabata: walk to next phase outside this block
+    while (target < state.sequence.length) {
+      const t = state.sequence[target];
+      if (t.blockIdx !== undefined && t.blockIdx === cur.blockIdx && t.kind !== 'blockrest') target++;
+      else break;
+    }
+  }
+  let skipped = state.remainingInPhase;
+  for (let i = state.currentIdx + 1; i < target; i++) skipped += state.sequence[i].duration;
+  state.elapsedTotal += skipped;
+  state.currentIdx = target;
+  if (state.currentIdx >= state.sequence.length) { finish(); return; }
+  state.remainingInPhase = state.sequence[state.currentIdx].duration;
+  const k = state.sequence[state.currentIdx].kind;
+  if (k === 'work') workChime();
+  else if (k === 'blockrest') bigBell();
+  else if (k === 'stretch') stretchChime();
+  render();
+}
+
+// =====================================================================
+// EVENT WIRING
+// =====================================================================
+els.peoplePicker.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    state.people = Number(chip.dataset.people);
+    savePrefs();
+    renderPeoplePicker();
+  });
+});
+
+els.btnBack.addEventListener('click', goBackToMenu);
+
+els.btnStart.addEventListener('click', () => {
+  if (state.running) pauseTimer(); else startTimer();
+});
+
+// Two-tap reset (avoids confirm dialog)
+let resetArmed = false;
+let resetTimer = null;
+els.btnReset.addEventListener('click', () => {
+  if (resetArmed) {
+    clearTimeout(resetTimer);
+    resetArmed = false;
+    els.btnReset.textContent = 'Reset';
+    resetWorkout();
+  } else {
+    resetArmed = true;
+    els.btnReset.textContent = 'Tap again';
+    resetTimer = setTimeout(() => {
+      resetArmed = false;
+      els.btnReset.textContent = 'Reset';
+    }, 2000);
+  }
+});
+els.btnSkip.addEventListener('click', skipBlock);
+
+els.showAlts.addEventListener('change', (e) => {
+  state.showAlts = e.target.checked;
+  document.body.classList.toggle('show-alternatives', state.showAlts);
+  savePrefs();
+});
+els.muteAudio.addEventListener('change', (e) => {
+  state.muteAudio = e.target.checked;
+  savePrefs();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (state.running && document.visibilityState === 'visible') requestWakeLock();
+});
+
+// =====================================================================
+// INIT
+// =====================================================================
+loadPrefs();
+els.showAlts.checked = state.showAlts;
+els.muteAudio.checked = state.muteAudio;
+document.body.classList.toggle('show-alternatives', state.showAlts);
+renderPeoplePicker();
+renderTimeFilter();
+renderFocusFilter();
+renderWorkoutGrid();
+</script>
+</body>
+</html>
