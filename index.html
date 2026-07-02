@@ -181,6 +181,30 @@
     box-shadow: 0 2px 10px rgba(20,184,166,0.3);
   }
   .people-chip { min-width: 95px; text-align: center; font-size: 1.05rem; }
+  .name-inputs {
+    display: flex;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+  }
+  .name-inputs.hidden { display: none; }
+  .name-inputs input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+    color: var(--text);
+    border: 2px solid var(--border);
+    border-radius: 999px;
+    padding: 0.55rem 0.9rem;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+  }
+  .name-inputs input::placeholder { color: var(--muted); font-weight: 500; }
+  .name-inputs input:focus {
+    outline: none;
+    border-color: var(--teal);
+    box-shadow: 0 2px 10px rgba(20,184,166,0.25);
+  }
 
   .workout-grid {
     display: grid;
@@ -566,6 +590,10 @@
         <button class="chip people-chip" data-people="1">1 person</button>
         <button class="chip people-chip" data-people="2">2 people</button>
       </div>
+      <div class="name-inputs" id="nameInputs">
+        <input type="text" id="nameA" placeholder="Person A (optional)" maxlength="14" autocomplete="off" enterkeyhint="done">
+        <input type="text" id="nameB" placeholder="Person B (optional)" maxlength="14" autocomplete="off" enterkeyhint="done">
+      </div>
     </div>
 
     <div class="picker-row">
@@ -616,7 +644,7 @@
         <div class="alternative" id="alternativeA"></div>
       </div>
       <div class="person b" id="personB">
-        <div class="person-label">Person B</div>
+        <div class="person-label" id="labelB">Person B</div>
         <div class="exercise" id="exerciseB">—</div>
         <div class="alternative" id="alternativeB"></div>
       </div>
@@ -1040,6 +1068,8 @@ const state = {
   view: 'menu',
   workout: null,
   people: 2,
+  nameA: '',
+  nameB: '',
   filterTime: 'all',
   filterFocus: 'all',
   equipment: { ...DEFAULT_EQUIPMENT },
@@ -1071,6 +1101,8 @@ function savePrefs() {
   try {
     localStorage.setItem('tabata-prefs', JSON.stringify({
       people: state.people,
+      nameA: state.nameA,
+      nameB: state.nameB,
       filterTime: state.filterTime,
       filterFocus: state.filterFocus,
       equipment: state.equipment,
@@ -1258,6 +1290,9 @@ const els = {
   menuView: document.getElementById('menuView'),
   workoutView: document.getElementById('workoutView'),
   peoplePicker: document.getElementById('peoplePicker'),
+  nameInputs: document.getElementById('nameInputs'),
+  nameA: document.getElementById('nameA'),
+  nameB: document.getElementById('nameB'),
   equipmentPicker: document.getElementById('equipmentPicker'),
   timeFilter: document.getElementById('timeFilter'),
   focusFilter: document.getElementById('focusFilter'),
@@ -1277,6 +1312,7 @@ const els = {
 
   exerciseGrid: document.getElementById('exerciseGrid'),
   labelA: document.getElementById('labelA'),
+  labelB: document.getElementById('labelB'),
   exerciseA: document.getElementById('exerciseA'),
   alternativeA: document.getElementById('alternativeA'),
   personB: document.getElementById('personB'),
@@ -1345,6 +1381,14 @@ function renderPeoplePicker() {
   els.peoplePicker.querySelectorAll('.chip').forEach(chip => {
     chip.classList.toggle('active', Number(chip.dataset.people) === state.people);
   });
+  els.nameInputs.classList.toggle('hidden', state.people !== 2);
+}
+
+// Display names for the two people; falls back to Person A / Person B.
+function personName(which) {
+  const raw = which === 'a' ? state.nameA : state.nameB;
+  const trimmed = (raw || '').trim();
+  return trimmed || (which === 'a' ? 'Person A' : 'Person B');
 }
 
 function renderEquipmentPicker() {
@@ -1453,10 +1497,15 @@ function openWorkout(workout) {
   state.running = false;
 
   els.workoutTitle.textContent = workout.name;
-  els.peopleBadge.textContent = state.people === 1 ? '1 person' : '2 people';
+  els.peopleBadge.textContent = state.people === 1
+    ? '1 person'
+    : ((state.nameA || '').trim() || (state.nameB || '').trim()
+        ? `${personName('a')} & ${personName('b')}`
+        : '2 people');
   els.exerciseGrid.classList.toggle('solo', state.people === 1);
   els.personB.style.display = state.people === 1 ? 'none' : '';
-  els.labelA.textContent = state.people === 1 ? 'You' : 'Person A';
+  els.labelA.textContent = state.people === 1 ? 'You' : personName('a');
+  els.labelB.textContent = personName('b');
 
   if (state.sequence[0]) enterPhase(state.sequence[0].kind, state.remainingInPhase);
   renderPreview();
@@ -1513,6 +1562,13 @@ function fmt(s) {
   const m = Math.floor(s / 60);
   const sec = s % 60;
   return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+// Escape text (e.g. typed names) before it is placed into innerHTML.
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 
 function setAlt(el, alt) {
@@ -1653,11 +1709,15 @@ function render() {
   // Up next
   const next = state.sequence[state.currentIdx + 1];
   if (next) {
+    const shortName = (which, fallback) => {
+      const raw = (which === 'a' ? state.nameA : state.nameB) || '';
+      return raw.trim() || fallback;
+    };
     let preview;
     if (next.kind === 'rest') preview = `Rest ${TABATA.restSec}s`;
     else if (next.kind === 'work') {
       preview = state.people === 2
-        ? `A: ${next.a.task} · B: ${next.b.task}`
+        ? `${shortName('a', 'A')}: ${next.a.task} · ${shortName('b', 'B')}: ${next.b.task}`
         : next.a.task;
     } else preview = next.name;
     const nextColor = PHASE_COLOR[next.kind];
@@ -1666,7 +1726,7 @@ function render() {
       : '';
     els.upcoming.innerHTML = `
       <div class="swatch" style="${swatchStyle}"></div>
-      <div class="txt"><span class="eyebrow">Up next</span><strong>${preview}</strong></div>
+      <div class="txt"><span class="eyebrow">Up next</span><strong>${esc(preview)}</strong></div>
     `;
   } else {
     els.upcoming.innerHTML = '';
@@ -1793,6 +1853,9 @@ els.peoplePicker.querySelectorAll('.chip').forEach(chip => {
   });
 });
 
+els.nameA.addEventListener('input', (e) => { state.nameA = e.target.value; savePrefs(); });
+els.nameB.addEventListener('input', (e) => { state.nameB = e.target.value; savePrefs(); });
+
 els.btnBack.addEventListener('click', goBackToMenu);
 
 els.btnStart.addEventListener('click', () => {
@@ -1837,6 +1900,8 @@ document.addEventListener('visibilitychange', () => {
 // INIT
 // =====================================================================
 loadPrefs();
+els.nameA.value = state.nameA || '';
+els.nameB.value = state.nameB || '';
 els.showAlts.checked = state.showAlts;
 els.muteAudio.checked = state.muteAudio;
 document.body.classList.toggle('show-alternatives', state.showAlts);
