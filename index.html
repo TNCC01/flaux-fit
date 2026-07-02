@@ -482,6 +482,32 @@
     grid-template-columns: 2fr 1fr 1fr;
     gap: 0.6rem;
   }
+  .preview-card {
+    background: var(--card);
+    border-radius: 1rem;
+    padding: 0.9rem 1rem;
+  }
+  .preview-title {
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+    margin-bottom: 0.6rem;
+  }
+  .preview-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  .preview-item-name { font-weight: 700; font-size: 1rem; line-height: 1.3; }
+  .preview-item-sub {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    margin-top: 0.1rem;
+  }
   .toggle-row {
     display: flex;
     justify-content: space-around;
@@ -602,6 +628,11 @@
       <button id="btnStart">Start</button>
       <button class="secondary" id="btnSkip">Skip block</button>
       <button class="secondary" id="btnReset">Reset</button>
+    </div>
+
+    <div class="preview-card" id="previewCard">
+      <div class="preview-title">Workout preview</div>
+      <ol class="preview-list" id="previewList"></ol>
     </div>
 
     <div class="toggle-row">
@@ -1174,8 +1205,32 @@ function beep(freq, duration, volume = 0.4) {
     osc.stop(audioCtx.currentTime + duration);
   } catch (e) {}
 }
-function workChime() { beep(880, 0.18, 0.5); setTimeout(() => beep(1320, 0.25, 0.5), 180); }
-function restChime() { beep(523, 0.25, 0.4); }
+// New round starting: a bright bell ding (fundamental + soft overtone).
+function workChime() {
+  beep(880, 0.12, 0.4);
+  setTimeout(() => { beep(1320, 0.6, 0.5); beep(1980, 0.5, 0.12); }, 140);
+}
+// Round over: a harsh two-oscillator square-wave buzz.
+function restChime() {
+  if (state.muteAudio) return;
+  try {
+    ensureAudio();
+    const duration = 0.45;
+    const gain = audioCtx.createGain();
+    gain.connect(audioCtx.destination);
+    gain.gain.setValueAtTime(0.22, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.22, audioCtx.currentTime + duration - 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    [160, 163].forEach(f => {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.value = f;
+      osc.connect(gain);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    });
+  } catch (e) {}
+}
 function stretchChime() { beep(660, 0.4, 0.35); }
 function bigBell() {
   beep(660, 0.25, 0.5);
@@ -1229,6 +1284,8 @@ const els = {
   alternativeB: document.getElementById('alternativeB'),
 
   upcoming: document.getElementById('upcoming'),
+  previewCard: document.getElementById('previewCard'),
+  previewList: document.getElementById('previewList'),
   btnStart: document.getElementById('btnStart'),
   btnSkip: document.getElementById('btnSkip'),
   btnReset: document.getElementById('btnReset'),
@@ -1402,8 +1459,41 @@ function openWorkout(workout) {
   els.labelA.textContent = state.people === 1 ? 'You' : 'Person A';
 
   if (state.sequence[0]) enterPhase(state.sequence[0].kind, state.remainingInPhase);
+  renderPreview();
   setView('workout');
   render();
+}
+
+// Full exercise list shown before the workout starts (and after a reset).
+// Resolved against the equipment selection active when the workout opened.
+function renderPreview() {
+  const w = state.workout;
+  if (!w) return;
+  els.previewList.innerHTML = '';
+  const add = (name, sub) => {
+    const li = document.createElement('li');
+    const n = document.createElement('div');
+    n.className = 'preview-item-name';
+    n.textContent = name;
+    li.appendChild(n);
+    if (sub) {
+      const s = document.createElement('div');
+      s.className = 'preview-item-sub';
+      s.textContent = sub;
+      li.appendChild(s);
+    }
+    els.previewList.appendChild(li);
+  };
+  if (w.format === 'stretch') {
+    w.stretches.forEach((s, i) => add(`${i + 1}. ${s.name}`, `${s.hold}s hold`));
+  } else {
+    add(`Warm-up — ${Math.round(w.warmupSec / 60)} min`, warmupExercise.task);
+    w.blocks.forEach((b, i) => {
+      const tasks = Array.from(new Set((b.ids || []).map(id => resolveEx(id).task)));
+      add(`Block ${i + 1}: ${b.name}`, tasks.join('  ·  '));
+    });
+    add(`Cool-down — ${Math.round(w.cooldownSec / 60)} min`, cooldownExercise.task);
+  }
 }
 
 function setView(v) {
@@ -1584,6 +1674,8 @@ function render() {
 
   els.btnStart.textContent = state.running ? 'Pause' : (state.elapsedTotal > 0 ? 'Resume' : 'Start');
   els.btnStart.classList.toggle('running', state.running);
+
+  els.previewCard.style.display = (!state.running && state.elapsedTotal === 0) ? '' : 'none';
 }
 
 // =====================================================================
