@@ -29,8 +29,8 @@
     --teal-deep:   #0d9488;
     --teal-bright: #2dd4bf;
 
-    --work:    #ef4444;
-    --rest:    #14b8a6;
+    --work:    #14b8a6;
+    --rest:    #ef4444;
     --warmup:  #0d9488;
     --accent:  #14b8a6;
     --accent-b:#fbbf24;
@@ -63,6 +63,7 @@
   .app { max-width: 1100px; margin: 0 auto; }
   .view { display: none; flex-direction: column; gap: 0.85rem; }
   .view.active { display: flex; }
+  #workoutView.active { background-color: var(--bg); }
 
   button {
     background: var(--grad-primary);
@@ -315,41 +316,47 @@
   }
   .round-dots {
     display: flex;
+    flex-direction: column;
     gap: 0.4rem;
-    align-items: center;
-    flex-wrap: wrap;
   }
-  .round-dots .label {
-    color: var(--muted);
-    font-size: 0.95rem;
-    font-weight: 600;
-    margin-right: 0.5rem;
+  .round-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .round-count {
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
   }
-  .dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: transparent;
-    border: 2px solid var(--border);
+  .round-count .of { color: var(--muted); font-weight: 700; }
+  .remaining-tag {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 700;
+    white-space: nowrap;
   }
-  .dot.done { background: var(--muted); border-color: var(--muted); }
-  .dot.current { background: var(--accent); border-color: var(--accent); transform: scale(1.2); }
+  .seg-row {
+    display: flex;
+    gap: 0.28rem;
+  }
+  .seg {
+    flex: 1;
+    height: 14px;
+    border-radius: 4px;
+    background: rgba(148,163,184,0.22);
+  }
+  .seg.done { background: var(--muted); }
 
   .timer-card {
     background: var(--card);
     border-radius: 1.5rem;
     padding: 1.25rem 1rem;
     text-align: center;
-    border: 5px solid var(--border);
-    transition: border-color 0.25s;
+    border: 2px solid transparent;
   }
-  .timer-card.work { border-color: var(--work); }
-  .timer-card.rest { border-color: var(--rest); }
-  .timer-card.blockrest { border-color: var(--rest); }
-  .timer-card.warmup { border-color: var(--warmup); }
-  .timer-card.cooldown { border-color: var(--warmup); }
-  .timer-card.stretch { border-color: var(--stretching); }
 
   .phase-label {
     text-transform: uppercase;
@@ -428,14 +435,35 @@
   }
 
   .upcoming {
-    padding: 0.6rem 1rem;
-    background: var(--card);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.75rem 1rem;
     border-radius: 1rem;
-    color: var(--muted);
-    font-size: 0.95rem;
-    text-align: center;
+    background: var(--card);
+    border: 2px solid var(--border);
   }
-  .upcoming strong { color: var(--text); }
+  .upcoming .swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .upcoming .txt {
+    font-size: 1.02rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .upcoming .txt strong { font-weight: 800; }
+  .upcoming .eyebrow {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    font-weight: 800;
+    display: block;
+    margin-bottom: 0.1rem;
+  }
 
   .controls {
     display: grid;
@@ -1150,6 +1178,15 @@ const els = {
   muteAudio: document.getElementById('muteAudio')
 };
 
+const PHASE_COLOR = {
+  work:      { hex: '#14b8a6', rgb: '20,184,166' },
+  rest:      { hex: '#ef4444', rgb: '239,68,68' },
+  blockrest: { hex: '#ef4444', rgb: '239,68,68' },
+  warmup:    { hex: '#0d9488', rgb: '13,148,136' },
+  cooldown:  { hex: '#0d9488', rgb: '13,148,136' },
+  stretch:   { hex: '#a855f7', rgb: '168,85,247' }
+};
+
 // =====================================================================
 // MENU RENDERING
 // =====================================================================
@@ -1273,6 +1310,7 @@ function openWorkout(workout) {
   els.personB.style.display = state.people === 1 ? 'none' : '';
   els.labelA.textContent = state.people === 1 ? 'You' : 'Person A';
 
+  if (state.sequence[0]) enterPhase(state.sequence[0].kind, state.remainingInPhase);
   setView('workout');
   render();
 }
@@ -1301,38 +1339,110 @@ function setAlt(el, alt) {
   el.classList.toggle('has-alt', !!alt);
 }
 
+function renderSegBar(current, total, kind) {
+  const row = document.createElement('div');
+  row.className = 'round-row';
+  const count = document.createElement('div');
+  count.className = 'round-count';
+  count.innerHTML = `Round <b>${current}</b><span class="of"> of ${total}</span>`;
+  const remaining = document.createElement('div');
+  remaining.className = 'remaining-tag';
+  remaining.textContent = `${total - current + 1} left`;
+  row.appendChild(count);
+  row.appendChild(remaining);
+  els.roundDots.appendChild(row);
+
+  const segRow = document.createElement('div');
+  segRow.className = 'seg-row';
+  const color = PHASE_COLOR[kind];
+  for (let i = 1; i <= total; i++) {
+    const s = document.createElement('div');
+    s.className = 'seg';
+    if (i < current) s.classList.add('done');
+    else if (i === current && color) {
+      s.classList.add('current');
+      s.style.background = color.hex;
+      s.style.boxShadow = `0 0 10px 2px rgba(${color.rgb},0.6)`;
+    }
+    segRow.appendChild(s);
+  }
+  els.roundDots.appendChild(segRow);
+}
+
 function renderRoundDots(phase) {
   els.roundDots.innerHTML = '';
   if (phase.totalRounds) {
-    const label = document.createElement('div');
-    label.className = 'label';
-    label.textContent = `Round ${phase.round} of ${phase.totalRounds}`;
-    els.roundDots.appendChild(label);
-    for (let i = 1; i <= phase.totalRounds; i++) {
-      const d = document.createElement('div');
-      d.className = 'dot';
-      if (i < phase.round) d.classList.add('done');
-      else if (i === phase.round) d.classList.add('current');
-      els.roundDots.appendChild(d);
-    }
+    renderSegBar(phase.round, phase.totalRounds, phase.kind);
   } else if (phase.totalStretches) {
-    const label = document.createElement('div');
-    label.className = 'label';
-    label.textContent = `${phase.stretchIdx + 1} of ${phase.totalStretches}`;
-    els.roundDots.appendChild(label);
-    for (let i = 0; i < phase.totalStretches; i++) {
-      const d = document.createElement('div');
-      d.className = 'dot';
-      if (i < phase.stretchIdx) d.classList.add('done');
-      else if (i === phase.stretchIdx) d.classList.add('current');
-      els.roundDots.appendChild(d);
-    }
+    renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind);
   } else if (phase.totalBlocks) {
     const label = document.createElement('div');
-    label.className = 'label';
+    label.className = 'round-count';
     label.textContent = `Between blocks — ${phase.blockIdx + 1} → ${phase.blockIdx + 2} of ${phase.totalBlocks}`;
     els.roundDots.appendChild(label);
   }
+}
+
+// =====================================================================
+// PHASE COLOR BLEED
+// Card starts each phase with a bold solid-color border; as the countdown
+// runs, the border bleeds out into an ambient wash behind the whole workout
+// view, finishing fully bled right as the phase ends. Driven by a plain CSS
+// transition (duration = the phase's remaining time) rather than per-tick
+// JS restyling, so it stays smooth regardless of the 1s tick rate.
+// =====================================================================
+function setBleedStartState(kind) {
+  const c = PHASE_COLOR[kind];
+  els.timerCard.style.transition = 'none';
+  els.workoutView.style.transition = 'none';
+  if (!c) {
+    els.timerCard.style.boxShadow = 'none';
+    els.workoutView.style.backgroundImage = 'none';
+    return;
+  }
+  els.timerCard.style.boxShadow =
+    `inset 0 0 0 8px ${c.hex}, 0 0 0 3px rgba(${c.rgb},0.25), 0 0 40px rgba(${c.rgb},0.55)`;
+  els.workoutView.style.backgroundImage =
+    `radial-gradient(1000px 700px at 50% 0%, rgba(${c.rgb},0.06), transparent 65%)`;
+}
+
+function applyBleedEndState(kind) {
+  const c = PHASE_COLOR[kind];
+  if (!c) return;
+  els.timerCard.style.boxShadow =
+    `inset 0 0 0 0px ${c.hex}, 0 0 0 0px rgba(${c.rgb},0), 0 0 60px 16px rgba(${c.rgb},0.55)`;
+  els.workoutView.style.backgroundImage =
+    `radial-gradient(1000px 700px at 50% 0%, rgba(${c.rgb},0.34), transparent 65%)`;
+}
+
+function beginBleed(seconds) {
+  const kind = state.sequence[state.currentIdx] ? state.sequence[state.currentIdx].kind : null;
+  if (!kind || !PHASE_COLOR[kind] || seconds <= 0) return;
+  void els.timerCard.offsetHeight; // force reflow so the transition below actually animates
+  els.timerCard.style.transition = `box-shadow ${seconds}s linear`;
+  els.workoutView.style.transition = `background-image ${seconds}s linear`;
+  applyBleedEndState(kind);
+}
+
+function enterPhase(kind, seconds) {
+  setBleedStartState(kind);
+  if (state.running) beginBleed(seconds);
+}
+
+function freezeBleed() {
+  const cardShadow = getComputedStyle(els.timerCard).boxShadow;
+  const viewBgImage = getComputedStyle(els.workoutView).backgroundImage;
+  els.timerCard.style.transition = 'none';
+  els.workoutView.style.transition = 'none';
+  els.timerCard.style.boxShadow = cardShadow;
+  els.workoutView.style.backgroundImage = viewBgImage;
+}
+
+function clearBleed() {
+  els.timerCard.style.transition = 'none';
+  els.workoutView.style.transition = 'none';
+  els.timerCard.style.boxShadow = 'none';
+  els.workoutView.style.backgroundImage = 'none';
 }
 
 function render() {
@@ -1369,7 +1479,14 @@ function render() {
         ? `A: ${next.a.task} · B: ${next.b.task}`
         : next.a.task;
     } else preview = next.name;
-    els.upcoming.innerHTML = `Up next: <strong>${preview}</strong>`;
+    const nextColor = PHASE_COLOR[next.kind];
+    const swatchStyle = nextColor
+      ? `background:${nextColor.hex};box-shadow:0 0 8px 1px rgba(${nextColor.rgb},0.7)`
+      : '';
+    els.upcoming.innerHTML = `
+      <div class="swatch" style="${swatchStyle}"></div>
+      <div class="txt"><span class="eyebrow">Up next</span><strong>${preview}</strong></div>
+    `;
   } else {
     els.upcoming.innerHTML = '';
   }
@@ -1394,6 +1511,7 @@ function advancePhase() {
   if (state.currentIdx >= state.sequence.length) { finish(); return; }
   const next = state.sequence[state.currentIdx];
   state.remainingInPhase = next.duration;
+  enterPhase(next.kind, next.duration);
   if (next.kind === 'work') workChime();
   else if (next.kind === 'rest') restChime();
   else if (next.kind === 'blockrest') bigBell();
@@ -1404,6 +1522,7 @@ function advancePhase() {
 function finish() {
   stopTimer();
   bigBell();
+  clearBleed();
   els.timerCard.className = 'timer-card';
   els.phaseLabel.textContent = 'Done';
   els.timeDisplay.textContent = '✓';
@@ -1426,9 +1545,11 @@ function startTimer() {
   state.running = true;
   workChime();
   state.intervalId = setInterval(step, 1000);
+  beginBleed(state.remainingInPhase);
   render();
 }
 function pauseTimer() {
+  freezeBleed();
   state.running = false;
   if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
   releaseWakeLock();
@@ -1444,6 +1565,7 @@ function resetWorkout() {
   state.currentIdx = 0;
   state.remainingInPhase = state.sequence[0] ? state.sequence[0].duration : 0;
   state.elapsedTotal = 0;
+  if (state.sequence[0]) enterPhase(state.sequence[0].kind, state.remainingInPhase);
   render();
 }
 
@@ -1470,6 +1592,7 @@ function skipBlock() {
   if (state.currentIdx >= state.sequence.length) { finish(); return; }
   state.remainingInPhase = state.sequence[state.currentIdx].duration;
   const k = state.sequence[state.currentIdx].kind;
+  enterPhase(k, state.remainingInPhase);
   if (k === 'work') workChime();
   else if (k === 'blockrest') bigBell();
   else if (k === 'stretch') stretchChime();
