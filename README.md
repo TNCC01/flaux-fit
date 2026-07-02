@@ -7,18 +7,26 @@ Single static `index.html`. No build step. Deploys to Vercel.
 
 ## What's in the library
 
-- 11 workouts spanning 10–45 minutes
+- 11 workouts, with menu duration labels computed from real phase math
+  (e.g. "23 min · 13 min work + 10 min warm-up/cool-down")
+- A shared exercise dictionary (~60 movements) with equipment tags —
+  workouts reference exercises by id
+- Equipment picker on the menu: tap off gear you don't have and affected
+  exercises swap to bodyweight fallbacks ("Adapted for your equipment")
 - Focus filters: whole body, upper, lower, core, stretching
 - 1-person and 2-person modes — equipment never doubles up on single-instance
   gear (one 15kg KB, one 10kg KB, one 10kg barbell, one set of rings, etc.)
-- Round-by-round assignments per person, with weight swaps mid-block
+- Round-by-round assignments per person, with weight swaps mid-block and
+  exercise cycles for round-to-round variety
+- 5-minute warm-up and cool-down bookends on every tabata workout
 - Injury alternative for every movement
 - Wake lock, audio cues, two-tap reset, screen-on while training
 
-## Equipment assumed
+## Equipment supported
 
 15kg kettlebell · 10kg kettlebell · 10kg barbell · dumbbells (set) ·
 skipping rope · gymnastic rings · gravel driveway (~1 min round trip).
+Bodyweight is always available; deselected gear falls back to it.
 
 ## Local dev
 

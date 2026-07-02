@@ -245,6 +245,18 @@
     font-size: 0.95rem;
     line-height: 1.35;
   }
+  .card-time-detail {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-top: -0.2rem;
+  }
+  .card-adapted {
+    color: var(--teal-bright);
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+  .card-adapted::before { content: '↻ '; }
   .empty-state {
     grid-column: 1 / -1;
     text-align: center;
@@ -519,7 +531,7 @@
 
     <div class="menu-header">
       <div class="menu-title">Pick your workout</div>
-      <div class="menu-sub">All workouts respect your equipment: 15kg KB, 10kg KB, 10kg barbell, dumbbells, skipping rope, rings, gravel driveway.</div>
+      <div class="menu-sub">Tap off any gear you don't have today — workouts adapt to bodyweight versions automatically.</div>
     </div>
 
     <div class="picker-row">
@@ -528,6 +540,11 @@
         <button class="chip people-chip" data-people="1">1 person</button>
         <button class="chip people-chip" data-people="2">2 people</button>
       </div>
+    </div>
+
+    <div class="picker-row">
+      <div class="picker-label">Equipment on hand</div>
+      <div class="chip-row" id="equipmentPicker"></div>
     </div>
 
     <div class="picker-row">
@@ -603,50 +620,169 @@
 
 <script>
 // =====================================================================
-// WORKOUT LIBRARY
-// Equipment available: 15kg KB, 10kg KB, 10kg barbell, dumbbells (set),
+// EXERCISE DICTIONARY
+// Equipment on hand: 15kg KB, 10kg KB, 10kg barbell, dumbbells (set),
 // skipping rope, gymnastic rings, gravel driveway (~1 min round trip).
-// Constraint: never assign a single-instance item to both people in the
-// same round.
+// Each exercise: task, alt (injury alternative), equipment (ids from
+// EQUIPMENT; empty = bodyweight, always available), and bw — the
+// exercise id to swap to when its equipment is deselected in the menu.
+// Constraint: never assign a single-instance item (KBs, barbell, rope,
+// rings) to both people in the same round. Bodyweight fallbacks never
+// add equipment, so adapting can't break this rule.
 // =====================================================================
+const EQUIPMENT = {
+  kb15:      '15kg kettlebell',
+  kb10:      '10kg kettlebell',
+  barbell10: '10kg barbell',
+  dumbbells: 'Dumbbells',
+  rope:      'Skipping rope',
+  rings:     'Rings'
+};
+const DEFAULT_EQUIPMENT = { kb15: true, kb10: true, barbell10: true, dumbbells: true, rope: true, rings: true };
+
+const EXERCISES = {
+  // --- Bodyweight: whole body ----------------------------------------
+  airSquat:        { task: 'Air squats', alt: 'Box squat to a chair', equipment: [] },
+  tempoSquat:      { task: 'Bodyweight squat with a slow 3s descent', alt: 'Box squat to a chair', equipment: [] },
+  pushup:          { task: 'Push-ups', alt: 'Incline push-ups (hands on bench)', equipment: [] },
+  burpee:          { task: 'Burpees', alt: 'Step-back burpees (no jump)', equipment: [] },
+  jumpingJacks:    { task: 'Jumping jacks', alt: 'Step jacks (no jump)', equipment: [] },
+  highKnees:       { task: 'High knees in place', alt: 'Marching in place', equipment: [] },
+  skaterHops:      { task: 'Skater hops side to side', alt: 'Side steps with a reach', equipment: [] },
+  bearCrawl:       { task: 'Bear crawl forward & back', alt: 'Bear hold (knees hovering)', equipment: [] },
+  inchworm:        { task: 'Inchworm walkouts', alt: 'Walkouts, knees down on the return', equipment: [] },
+  sprint:          { task: 'Sprint to mailbox & back', alt: 'Brisk walk to mailbox & back', equipment: [] },
+  squatReach:      { task: 'Squat to overhead reach', alt: 'Slow squat, arms forward', equipment: [] },
+  mountainClimber:     { task: 'Mountain climbers', alt: 'Slow controlled climbers', equipment: [] },
+  mountainClimberFast: { task: 'Mountain climbers (fast)', alt: 'Slow controlled climbers', equipment: [] },
+
+  // --- Bodyweight: lower ----------------------------------------------
+  reverseLunge:    { task: 'Reverse lunges (alternate legs)', alt: 'Static split squats', equipment: [] },
+  stepUp:          { task: 'Step-ups on a bench/box', alt: 'Toe taps to a low step', equipment: [] },
+  squatJump:       { task: 'Squat jumps', alt: 'Explosive bodyweight squat, no jump', equipment: [] },
+  wallSit:         { task: 'Wall sit (thighs parallel)', alt: 'Higher wall sit (less depth)', equipment: [] },
+  gluteBridge:     { task: 'Glute bridges', alt: 'Glute bridge hold', equipment: [] },
+  singleLegBridge: { task: 'Single-leg glute bridge (switch legs at 10s)', alt: 'Glute bridges, both legs', equipment: [] },
+  cossackSquat:    { task: 'Cossack squats (side to side)', alt: 'Shallow lateral lunges', equipment: [] },
+  calfRaises:      { task: 'Calf raises — slow up, slow down', alt: 'Seated calf raises', equipment: [] },
+  goodMorning:     { task: 'Good mornings (hands behind head)', alt: 'Hip hinge with hands on thighs', equipment: [] },
+
+  // --- Bodyweight: upper ----------------------------------------------
+  pikePushup:      { task: 'Pike push-ups', alt: 'Incline pike push-ups', equipment: [] },
+  tricepDips:      { task: 'Tricep dips on a bench', alt: 'Bench dips, feet closer (easier)', equipment: [] },
+  supermanPull:    { task: 'Superman pulls (lat pulldown motion)', alt: 'Superman hold', equipment: [] },
+  supermanHold:    { task: 'Superman hold with pulses', alt: 'Superman hold, no pulses', equipment: [] },
+
+  // --- Bodyweight: core -------------------------------------------------
+  plankHold:       { task: 'Plank hold (forearm or high)', alt: 'Knees plank', equipment: [] },
+  plankForearm:    { task: 'Plank (forearm)', alt: 'Knees plank', equipment: [] },
+  plankRotation:   { task: 'Plank rotation — change position every 15s', alt: 'Knees plank, rotate same positions', equipment: [] },
+  plankShoulderTaps: { task: 'Plank shoulder taps', alt: 'Knees plank shoulder taps', equipment: [] },
+  hollowHold:      { task: 'Hollow body hold', alt: 'Tucked hollow hold (knees in)', equipment: [] },
+  hollowRocks:     { task: 'Hollow body rocks', alt: 'Hollow hold (no rocking)', equipment: [] },
+  vSit:            { task: 'V-sits', alt: 'Tucked V-sit (knees bent)', equipment: [] },
+  deadBug:         { task: 'Dead bug (opposite arm + leg)', alt: 'Dead bug one limb at a time', equipment: [] },
+  birdDog:         { task: 'Bird dog (opposite arm + leg)', alt: 'Bird dog, one limb at a time', equipment: [] },
+  legRaises:       { task: 'Lying leg raises', alt: 'Bent-knee leg raises', equipment: [] },
+  bicycleCrunch:   { task: 'Bicycle crunches', alt: 'Slow bicycles, heels tapping down', equipment: [] },
+  flutterKicks:    { task: 'Flutter kicks', alt: 'Bent-knee flutter kicks', equipment: [] },
+  sidePlankDips:   { task: 'Side plank hip dips (switch sides at 10s)', alt: 'Side plank hold from knees', equipment: [] },
+  russianTwistBw:  { task: 'Russian twists (bodyweight)', alt: 'Seated slow torso twists', equipment: [] },
+
+  // --- Kettlebells -------------------------------------------------------
+  gobletSquat15:  { task: 'Goblet squat — 15kg KB', alt: 'Bodyweight squat with a slow 3s descent', equipment: ['kb15'], bw: 'tempoSquat' },
+  gobletSquat10:  { task: 'Goblet squat — 10kg KB', alt: 'Bodyweight squat with a slow 3s descent', equipment: ['kb10'], bw: 'tempoSquat' },
+  kbSwing15:      { task: 'KB swings — 15kg', alt: 'KB Romanian deadlift (hinge only, no swing)', equipment: ['kb15'], bw: 'goodMorning' },
+  kbSwing10:      { task: 'KB swings — 10kg', alt: 'KB Romanian deadlift (hinge only, no swing)', equipment: ['kb10'], bw: 'goodMorning' },
+  kbDeadlift15:   { task: 'KB deadlift — 15kg', alt: 'KB Romanian deadlift, lighter', equipment: ['kb15'], bw: 'goodMorning' },
+  kbRackHold15:   { task: 'KB front rack hold — 15kg', alt: 'Dumbbell suitcase hold', equipment: ['kb15'], bw: 'wallSit' },
+  kbCleanPress15: { task: 'KB clean & press — 15kg', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb15'], bw: 'squatReach' },
+  kbCleanPress10: { task: 'KB clean & press — 10kg', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb10'], bw: 'squatReach' },
+  russianTwistKb: { task: 'Russian twists — 10kg KB', alt: 'Russian twists bodyweight', equipment: ['kb10'], bw: 'russianTwistBw' },
+
+  // --- Barbell -------------------------------------------------------------
+  barbellPress:   { task: 'Strict press — 10kg barbell', alt: 'Dumbbell shoulder press', equipment: ['barbell10'], bw: 'pikePushup' },
+  barbellRow:     { task: 'Bent-over row — 10kg barbell', alt: 'Bent-over dumbbell rows', equipment: ['barbell10'], bw: 'supermanPull' },
+
+  // --- Dumbbells --------------------------------------------------------------
+  dbPressHeavy:   { task: 'Dumbbell shoulder press (heavier pair)', alt: 'Slow tempo lighter weight', equipment: ['dumbbells'], bw: 'pikePushup' },
+  dbPressLight:   { task: 'Dumbbell shoulder press (lighter pair)', alt: 'Slow tempo lighter weight', equipment: ['dumbbells'], bw: 'pikePushup' },
+  dbLunge:        { task: 'Reverse lunges with dumbbells', alt: 'Bodyweight reverse lunges', equipment: ['dumbbells'], bw: 'reverseLunge' },
+  dbRow:          { task: 'Bent-over dumbbell rows', alt: 'Rows with lighter dumbbells', equipment: ['dumbbells'], bw: 'supermanPull' },
+  dbCurl:         { task: 'Dumbbell bicep curls', alt: 'Hammer curls, slower tempo', equipment: ['dumbbells'], bw: 'supermanPull' },
+  dbLateralRaise: { task: 'Dumbbell lateral raises', alt: 'Lighter dumbbells, slow tempo', equipment: ['dumbbells'], bw: 'plankShoulderTaps' },
+  renegadeRow:    { task: 'Renegade rows on dumbbells', alt: 'Renegade rows from knees', equipment: ['dumbbells'], bw: 'plankShoulderTaps' },
+  dbSuitcaseCarry:{ task: 'Dumbbell suitcase carry — driveway', alt: 'Dumbbell suitcase hold in place', equipment: ['dumbbells'], bw: 'bearCrawl' },
+
+  // --- Rope / rings ---------------------------------------------------------------
+  skipping:       { task: 'Skipping rope', alt: 'High knees in place', equipment: ['rope'], bw: 'highKnees' },
+  ringRow:        { task: 'Ring rows (set foot position for difficulty)', alt: 'Bent-over dumbbell rows', equipment: ['rings'], bw: 'supermanPull' },
+  ringPushup:     { task: 'Ring push-ups', alt: 'Regular push-ups', equipment: ['rings'], bw: 'pushup' },
+  ringDip:        { task: 'Ring dips (or bench dips)', alt: 'Bench dips with feet on floor', equipment: ['rings'], bw: 'tricepDips' },
+  ringTuckHold:   { task: 'Ring tuck holds (or hanging knee raises)', alt: 'Lying leg raises or dead bugs', equipment: ['rings'], bw: 'legRaises' }
+};
+
+// Resolve an exercise id against the equipment currently selected in the
+// menu, walking bw fallbacks until everything required is on hand.
+const hasEquip = (id) => state.equipment[id] !== false;
+function resolveEx(id) {
+  let cur = EXERCISES[id];
+  let adapted = false;
+  let guard = 0;
+  while (cur && !cur.equipment.every(hasEquip) && cur.bw && guard++ < 6) {
+    cur = EXERCISES[cur.bw];
+    adapted = true;
+  }
+  return { task: cur.task, alt: cur.alt, adapted };
+}
 
 // --- Block helpers ----------------------------------------------------
 // Both people do the same exercise (no equipment conflict).
-function blockSame(name, ex) {
+function blockSame(name, exId) {
   return {
-    name,
-    duo:  () => ({ a: ex, b: ex }),
-    solo: () => ex
+    name, ids: [exId],
+    duo:  () => { const ex = resolveEx(exId); return { a: ex, b: ex }; },
+    solo: () => resolveEx(exId)
   };
 }
 
 // Two exercises alternate between A and B each round.
 // Solo mode alternates the two exercises round-by-round.
-function blockAlt(name, exA, exB) {
+function blockAlt(name, idA, idB) {
   return {
-    name,
-    duo: (round) => (round % 2 === 1)
-      ? { a: exA, b: exB }
-      : { a: exB, b: exA },
-    solo: (round) => (round % 2 === 1) ? exA : exB
+    name, ids: [idA, idB],
+    duo: (round) => {
+      const A = resolveEx(idA), B = resolveEx(idB);
+      return (round % 2 === 1) ? { a: A, b: B } : { a: B, b: A };
+    },
+    solo: (round) => resolveEx(round % 2 === 1 ? idA : idB)
+  };
+}
+
+// A list of exercises cycled round-by-round for variety; A and B are
+// always on neighbouring list entries, so single-instance equipment must
+// never appear on two adjacent entries (wrap-around included).
+function blockCycle(name, ids) {
+  return {
+    name, ids,
+    duo: (round) => ({
+      a: resolveEx(ids[(round - 1) % ids.length]),
+      b: resolveEx(ids[round % ids.length])
+    }),
+    solo: (round) => resolveEx(ids[(round - 1) % ids.length])
   };
 }
 
 // Single exercise with two weights — swap between A and B at round 5.
-function blockSwap(name, heavy, light, alt) {
+function blockSwap(name, heavyId, lightId) {
   return {
-    name,
+    name, ids: [heavyId, lightId],
     duo: (round) => {
       const swap = round > 4;
-      return {
-        a: { task: swap ? light : heavy, alt },
-        b: { task: swap ? heavy : light, alt }
-      };
+      const h = resolveEx(heavyId), l = resolveEx(lightId);
+      return swap ? { a: l, b: h } : { a: h, b: l };
     },
-    solo: (round) => {
-      const swap = round > 4;
-      return { task: swap ? light : heavy, alt };
-    }
+    solo: (round) => resolveEx(round > 4 ? lightId : heavyId)
   };
 }
 
@@ -656,20 +792,13 @@ const workouts = [
     id: 'quick-spark',
     name: 'Quick Spark',
     tagline: 'No gear, max sweat',
-    duration: 10,
     focus: 'whole-body',
     blurb: 'Bodyweight full-body. Get in, get sweaty, get out.',
     format: 'tabata',
-    warmupSec: 60, cooldownSec: 30, blockRestSec: 30,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
     blocks: [
-      blockAlt('Squats & Push-ups',
-        { task: 'Air squats', alt: 'Box squat to a chair' },
-        { task: 'Push-ups', alt: 'Incline push-ups (hands on bench)' }
-      ),
-      blockAlt('Climbers & Plank',
-        { task: 'Mountain climbers', alt: 'Slow controlled climbers' },
-        { task: 'Plank hold (forearm or high)', alt: 'Knees plank' }
-      )
+      blockAlt('Squats & Push-ups', 'airSquat', 'pushup'),
+      blockCycle('Climbers, jacks & core', ['mountainClimber', 'plankHold', 'jumpingJacks', 'hollowHold'])
     ]
   },
 
@@ -677,7 +806,6 @@ const workouts = [
     id: 'sunrise-stretch',
     name: 'Sunrise Stretch',
     tagline: 'Open up the day',
-    duration: 10,
     focus: 'stretching',
     blurb: 'Slow mobility — hold and breathe. Wake the body up.',
     format: 'stretch',
@@ -691,6 +819,7 @@ const workouts = [
       { name: "Child's pose",          hold: 60, alt: '' },
       { name: 'Cobra / upward dog',    hold: 60, alt: 'Sphinx on forearms' },
       { name: 'Cat-cow flow',          hold: 60, alt: '' },
+      { name: 'Neck & shoulder rolls', hold: 60, alt: '' },
       { name: 'Standing chest opener', hold: 60, alt: 'Doorway pec stretch' }
     ]
   },
@@ -699,22 +828,14 @@ const workouts = [
     id: 'core-crusher',
     name: 'Core Crusher',
     tagline: 'Burn the middle',
-    duration: 15,
     focus: 'core',
     blurb: 'Three blocks focused on the trunk — climbers, holds, twists.',
     format: 'tabata',
-    warmupSec: 60, cooldownSec: 60, blockRestSec: 30,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
     blocks: [
-      blockSame('Mountain climbers',
-        { task: 'Mountain climbers (fast)', alt: 'Slow controlled climbers' }
-      ),
-      blockAlt('Hollow holds & Russian twists',
-        { task: 'Hollow body hold', alt: 'Tucked hollow hold (knees in)' },
-        { task: 'Russian twists — 10kg KB', alt: 'Russian twists bodyweight' }
-      ),
-      blockSame('Plank rotations (15s each: forearm / high / side-L / side-R)',
-        { task: 'Plank rotation — change position every 15s', alt: 'Knees plank, rotate same positions' }
-      )
+      blockCycle('Climbers & core burners', ['mountainClimberFast', 'bicycleCrunch', 'flutterKicks', 'plankShoulderTaps']),
+      blockAlt('Hollow holds & Russian twists', 'hollowHold', 'russianTwistKb'),
+      blockSame('Plank rotations (15s each: forearm / high / side-L / side-R)', 'plankRotation')
     ]
   },
 
@@ -722,7 +843,6 @@ const workouts = [
     id: 'cool-mobile',
     name: 'Cool & Mobile',
     tagline: 'Recovery & mobility',
-    duration: 15,
     focus: 'stretching',
     blurb: 'Full-body mobility flow — perfect after a workout or before bed.',
     format: 'stretch',
@@ -740,7 +860,9 @@ const workouts = [
       { name: 'Supine spinal twist — right',   hold: 60, alt: '' },
       { name: '90/90 hip — left',              hold: 60, alt: '' },
       { name: '90/90 hip — right',             hold: 60, alt: '' },
+      { name: 'Frog stretch',                  hold: 60, alt: "Wide-knee child's pose" },
       { name: 'Glute bridge hold',             hold: 60, alt: '' },
+      { name: 'Happy baby',                    hold: 60, alt: 'Knees-to-chest rocks' },
       { name: 'Savasana / deep breathing',     hold: 60, alt: '' }
     ]
   },
@@ -749,49 +871,29 @@ const workouts = [
     id: 'calisthenics-core',
     name: 'Calisthenics Core',
     tagline: 'Bodyweight abs blast',
-    duration: 15,
     focus: 'core',
     blurb: 'No equipment needed — just gravity and effort.',
     format: 'tabata',
-    warmupSec: 60, cooldownSec: 60, blockRestSec: 30,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
     blocks: [
-      blockAlt('Hollow rocks & V-sits',
-        { task: 'Hollow body rocks', alt: 'Hollow hold (no rocking)' },
-        { task: 'V-sits', alt: 'Tucked V-sit (knees bent)' }
-      ),
-      blockAlt('Climbers & Dead bugs',
-        { task: 'Mountain climbers', alt: 'Slow controlled climbers' },
-        { task: 'Dead bug (opposite arm + leg)', alt: 'Dead bug one limb at a time' }
-      ),
-      blockAlt('Plank & Leg raises',
-        { task: 'Plank (forearm)', alt: 'Knees plank' },
-        { task: 'Lying leg raises', alt: 'Bent-knee leg raises' }
-      )
+      blockAlt('Hollow rocks & V-sits', 'hollowRocks', 'vSit'),
+      blockCycle('Climbers, dead bugs & bird dogs', ['mountainClimber', 'deadBug', 'birdDog', 'sidePlankDips']),
+      blockAlt('Plank & Leg raises', 'plankForearm', 'legRaises')
     ]
   },
 
   {
     id: 'lunchbreak-burn',
     name: 'Lunchbreak Burn',
-    tagline: 'Big sweat in 16',
-    duration: 16,
+    tagline: 'Big sweat, no gear',
     focus: 'whole-body',
     blurb: 'Bodyweight conditioning. No gear, no fuss, just go.',
     format: 'tabata',
-    warmupSec: 60, cooldownSec: 120, blockRestSec: 30,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
     blocks: [
-      blockAlt('Squats & Push-ups',
-        { task: 'Air squats', alt: 'Box squat to chair' },
-        { task: 'Push-ups', alt: 'Incline push-ups' }
-      ),
-      blockAlt('Lunges & Tricep dips',
-        { task: 'Reverse lunges (alternate legs)', alt: 'Static split squats' },
-        { task: 'Tricep dips on a bench', alt: 'Bench dips, feet closer (easier)' }
-      ),
-      blockAlt('Burpees & Hollow rocks',
-        { task: 'Burpees', alt: 'Step-back burpees (no jump)' },
-        { task: 'Hollow body rocks', alt: 'Hollow hold' }
-      )
+      blockAlt('Squats & Push-ups', 'airSquat', 'pushup'),
+      blockCycle('Lunges, dips & lower mix', ['reverseLunge', 'tricepDips', 'goodMorning', 'calfRaises']),
+      blockCycle('Burpees & core burners', ['burpee', 'hollowRocks', 'skaterHops', 'supermanPull'])
     ]
   },
 
@@ -799,24 +901,15 @@ const workouts = [
     id: 'iron-legs',
     name: 'Iron Legs',
     tagline: 'Lower-body strength + grit',
-    duration: 20,
     focus: 'lower-body',
     blurb: 'Squats, hinges, lunges, jumps. Wake up the legs.',
     format: 'tabata',
-    warmupSec: 90, cooldownSec: 60, blockRestSec: 30,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
     blocks: [
-      blockSwap('Goblet squats', 'Goblet squat — 15kg KB', 'Goblet squat — 10kg KB',
-                'Bodyweight squat with a slow 3s descent'),
-      blockSwap('KB swings', 'KB swings — 15kg', 'KB swings — 10kg',
-                'KB Romanian deadlift (hinge only, no swing)'),
-      blockAlt('Lunges & Step-ups',
-        { task: 'Reverse lunges with dumbbells', alt: 'Bodyweight reverse lunges' },
-        { task: 'Step-ups on a bench/box', alt: 'Toe taps to a low step' }
-      ),
-      blockAlt('Squat jumps & Wall sit',
-        { task: 'Squat jumps', alt: 'Explosive bodyweight squat, no jump' },
-        { task: 'Wall sit (thighs parallel)', alt: 'Higher wall sit (less depth)' }
-      )
+      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
+      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
+      blockCycle('Lunges, step-ups & hinges', ['dbLunge', 'stepUp', 'kbDeadlift15', 'gluteBridge']),
+      blockCycle('Jumps, wall sits & bridges', ['squatJump', 'wallSit', 'cossackSquat', 'singleLegBridge'])
     ]
   },
 
@@ -824,27 +917,15 @@ const workouts = [
     id: 'upper-storm',
     name: 'Upper Storm',
     tagline: 'Press, pull, push',
-    duration: 20,
     focus: 'upper-body',
     blurb: 'Four blocks across the upper body — press, row, push, hold.',
     format: 'tabata',
-    warmupSec: 90, cooldownSec: 60, blockRestSec: 30,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
     blocks: [
-      blockAlt('Barbell press & Plank',
-        { task: 'Strict press — 10kg barbell', alt: 'Dumbbell shoulder press' },
-        { task: 'Plank hold (forearm or high)', alt: 'Knees plank' }
-      ),
-      blockAlt('Ring rows & Push-ups',
-        { task: 'Ring rows (set foot position for difficulty)', alt: 'Bent-over dumbbell rows' },
-        { task: 'Push-ups', alt: 'Incline push-ups' }
-      ),
-      blockSwap('Dumbbell press', 'Dumbbell shoulder press (heavier pair)',
-                'Dumbbell shoulder press (lighter pair)',
-                'Slow tempo lighter weight'),
-      blockAlt('Ring dips & DB curls',
-        { task: 'Ring dips (or bench dips)', alt: 'Bench dips with feet on floor' },
-        { task: 'Dumbbell bicep curls', alt: 'Hammer curls, slower tempo' }
-      )
+      blockCycle('Barbell press, rows & planks', ['barbellPress', 'plankHold', 'barbellRow', 'plankShoulderTaps']),
+      blockCycle('Rows & push-up mix', ['ringRow', 'pushup', 'ringPushup', 'pikePushup']),
+      blockSwap('Dumbbell press', 'dbPressHeavy', 'dbPressLight'),
+      blockCycle('Dips, curls & raises', ['ringDip', 'dbCurl', 'tricepDips', 'dbLateralRaise'])
     ]
   },
 
@@ -852,28 +933,16 @@ const workouts = [
     id: 'engine-builder',
     name: 'Engine Builder',
     tagline: 'Build the cardio engine',
-    duration: 25,
     focus: 'whole-body',
     blurb: 'Five blocks of mixed strength + conditioning. Steady, deliberate, hard.',
     format: 'tabata',
-    warmupSec: 60, cooldownSec: 60, blockRestSec: 45,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 45,
     blocks: [
-      blockSwap('Goblet squats', 'Goblet squat — 15kg KB', 'Goblet squat — 10kg KB',
-                'Bodyweight squat slow tempo'),
-      blockSwap('KB swings', 'KB swings — 15kg', 'KB swings — 10kg',
-                'KB Romanian deadlift'),
-      blockAlt('Push-ups & Climbers',
-        { task: 'Push-ups', alt: 'Incline push-ups' },
-        { task: 'Mountain climbers', alt: 'Slow controlled climbers' }
-      ),
-      blockAlt('Burpees & Plank',
-        { task: 'Burpees', alt: 'Step-back burpees (no jump)' },
-        { task: 'Plank hold', alt: 'Knees plank' }
-      ),
-      blockAlt('Ring rows & DB curls',
-        { task: 'Ring rows', alt: 'Bent-over dumbbell rows' },
-        { task: 'Dumbbell curls', alt: 'Hammer curls, lighter' }
-      )
+      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
+      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
+      blockCycle('Push-ups, climbers & crawls', ['pushup', 'mountainClimber', 'bearCrawl', 'jumpingJacks']),
+      blockAlt('Burpees & Plank', 'burpee', 'plankHold'),
+      blockCycle('Rows, curls & pulls', ['ringRow', 'dbCurl', 'renegadeRow', 'supermanPull'])
     ]
   },
 
@@ -881,83 +950,52 @@ const workouts = [
     id: 'driveway-demon',
     name: 'Driveway Demon',
     tagline: 'Sprint, swing, suffer',
-    duration: 30,
     focus: 'whole-body',
     blurb: 'Six blocks — sprints, KBs, bodyweight, hold. Use the whole driveway.',
     format: 'tabata',
-    warmupSec: 90, cooldownSec: 45, blockRestSec: 45,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 45,
     blocks: [
-      blockSwap('Goblet squats', 'Goblet squat — 15kg KB', 'Goblet squat — 10kg KB',
-                'Bodyweight squat slow tempo'),
-      blockSwap('KB swings', 'KB swings — 15kg', 'KB swings — 10kg',
-                'KB Romanian deadlift'),
-      blockAlt('Driveway sprint & KB hold',
-        { task: 'Sprint to mailbox & back', alt: 'Brisk walk to mailbox & back' },
-        { task: 'KB front rack hold — 15kg', alt: 'Dumbbell suitcase hold' }
-      ),
-      blockSame('Mountain climbers',
-        { task: 'Mountain climbers (fast)', alt: 'Slow controlled climbers' }
-      ),
-      blockAlt('Push-ups & Plank',
-        { task: 'Push-ups', alt: 'Incline push-ups' },
-        { task: 'Plank hold', alt: 'Knees plank' }
-      ),
-      blockAlt('Ring rows & Hollow rocks',
-        { task: 'Ring rows', alt: 'Bent-over dumbbell rows' },
-        { task: 'Hollow body rocks', alt: 'Hollow hold' }
-      )
+      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
+      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
+      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockCycle('Climbers, skaters & crawls', ['mountainClimberFast', 'skaterHops', 'highKnees', 'bearCrawl']),
+      blockAlt('Push-ups & Plank', 'pushup', 'plankHold'),
+      blockAlt('Ring rows & Hollow rocks', 'ringRow', 'hollowRocks')
     ]
   },
 
   {
     id: 'backyard-strength',
     name: 'Backyard Strength',
-    tagline: 'The original 45',
-    duration: 45,
+    tagline: 'The full original',
     focus: 'whole-body',
     blurb: 'Eight blocks across every movement pattern. The full workout.',
     format: 'tabata',
-    warmupSec: 180, cooldownSec: 180, blockRestSec: 60,
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 60,
     blocks: [
-      blockSwap('Goblet squats', 'Goblet squat — 15kg KB', 'Goblet squat — 10kg KB',
-                'Bodyweight squat slow tempo'),
-      blockAlt('Ring rows & Push-ups',
-        { task: 'Ring rows (set foot position for difficulty)', alt: 'Bent-over dumbbell rows' },
-        { task: 'Push-ups', alt: 'Incline push-ups' }
-      ),
-      blockSwap('KB swings', 'KB swings — 15kg', 'KB swings — 10kg',
-                'KB Romanian deadlift'),
-      blockAlt('Skipping & Push-ups',
-        { task: 'Skipping rope', alt: 'High knees in place' },
-        { task: 'Push-ups', alt: 'Incline push-ups' }
-      ),
-      blockAlt('Barbell press & Plank',
-        { task: 'Strict press — 10kg barbell', alt: 'Dumbbell shoulder press' },
-        { task: 'Plank hold (forearm or high)', alt: 'Knees plank' }
-      ),
-      blockAlt('Driveway sprint & KB hold',
-        { task: 'Sprint to mailbox & back', alt: 'Brisk walk to mailbox & back' },
-        { task: 'KB front rack hold — 15kg', alt: 'Dumbbell suitcase hold' }
-      ),
-      blockAlt('Ring hangs & Suitcase carry',
-        { task: 'Ring tuck holds (or hanging knee raises)', alt: 'Lying leg raises or dead bugs' },
-        { task: 'Dumbbell suitcase carry — driveway', alt: 'Dumbbell suitcase hold in place' }
-      ),
+      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
+      blockAlt('Ring rows & Push-ups', 'ringRow', 'pushup'),
+      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
+      blockCycle('Skipping & push-up mix', ['skipping', 'pushup', 'inchworm', 'pikePushup']),
+      blockAlt('Barbell press & Plank', 'barbellPress', 'plankHold'),
+      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockAlt('Ring hangs & Suitcase carry', 'ringTuckHold', 'dbSuitcaseCarry'),
       {
         // Custom: alternates left/right arm + weight swap at round 5
         name: 'KB clean & press (alt arms)',
+        ids: ['kbCleanPress15', 'kbCleanPress10'],
         duo: (round) => {
           const swap = round > 4;
-          const arm = round % 2 === 1 ? '(left arm)' : '(right arm)';
-          return {
-            a: { task: `KB clean & press ${arm} — ${swap ? '10kg' : '15kg'}`, alt: 'Dumbbell clean & press (lighter)' },
-            b: { task: `KB clean & press ${arm} — ${swap ? '15kg' : '10kg'}`, alt: 'Dumbbell clean & press (lighter)' }
-          };
+          const arm = round % 2 === 1 ? ' (left arm)' : ' (right arm)';
+          const withArm = (ex) => ex.adapted ? ex : { ...ex, task: ex.task + arm };
+          const h = resolveEx('kbCleanPress15'), l = resolveEx('kbCleanPress10');
+          return swap ? { a: withArm(l), b: withArm(h) } : { a: withArm(h), b: withArm(l) };
         },
         solo: (round) => {
           const swap = round > 4;
-          const arm = round % 2 === 1 ? '(left arm)' : '(right arm)';
-          return { task: `KB clean & press ${arm} — ${swap ? '10kg' : '15kg'}`, alt: 'Dumbbell clean & press (lighter)' };
+          const arm = round % 2 === 1 ? ' (left arm)' : ' (right arm)';
+          const ex = resolveEx(swap ? 'kbCleanPress10' : 'kbCleanPress15');
+          return ex.adapted ? ex : { ...ex, task: ex.task + arm };
         }
       }
     ]
@@ -973,6 +1011,7 @@ const state = {
   people: 2,
   filterTime: 'all',
   filterFocus: 'all',
+  equipment: { ...DEFAULT_EQUIPMENT },
   muteAudio: false,
   showAlts: false,
 
@@ -993,6 +1032,7 @@ function loadPrefs() {
     if (raw) {
       const p = JSON.parse(raw);
       Object.assign(state, p);
+      state.equipment = Object.assign({}, DEFAULT_EQUIPMENT, p.equipment || {});
     }
   } catch (e) {}
 }
@@ -1002,6 +1042,7 @@ function savePrefs() {
       people: state.people,
       filterTime: state.filterTime,
       filterFocus: state.filterFocus,
+      equipment: state.equipment,
       muteAudio: state.muteAudio,
       showAlts: state.showAlts
     }));
@@ -1020,6 +1061,22 @@ const cooldownExercise = {
   alt: ''
 };
 
+const TABATA = { rounds: 8, workSec: 20, restSec: 10 };
+
+// Real phase math for the menu labels — same numbers buildSequence uses,
+// so the cards can never drift from what the timer actually runs.
+function durationParts(w) {
+  if (w.format === 'stretch') {
+    const total = w.stretches.reduce((s, st) => s + st.hold, 0);
+    return { totalMin: Math.round(total / 60), workMin: null, bookendsMin: null };
+  }
+  const work = w.blocks.length * TABATA.rounds * (TABATA.workSec + TABATA.restSec)
+             + (w.blocks.length - 1) * w.blockRestSec;
+  const workMin = Math.round(work / 60);
+  const bookendsMin = Math.round((w.warmupSec + w.cooldownSec) / 60);
+  return { totalMin: workMin + bookendsMin, workMin, bookendsMin };
+}
+
 function buildSequence(workout, people) {
   const seq = [];
   const isDuo = people === 2;
@@ -1036,7 +1093,7 @@ function buildSequence(workout, people) {
     }
 
     workout.blocks.forEach((block, blockIdx) => {
-      for (let round = 1; round <= 8; round++) {
+      for (let round = 1; round <= TABATA.rounds; round++) {
         let work;
         if (isDuo) {
           const d = block.duo(round);
@@ -1047,15 +1104,15 @@ function buildSequence(workout, people) {
         }
         seq.push({
           kind: 'work',
-          duration: 20,
-          blockIdx, round, totalBlocks: workout.blocks.length, totalRounds: 8,
+          duration: TABATA.workSec,
+          blockIdx, round, totalBlocks: workout.blocks.length, totalRounds: TABATA.rounds,
           name: `Block ${blockIdx + 1} of ${workout.blocks.length}: ${block.name}`,
           a: work.a, b: work.b
         });
         seq.push({
           kind: 'rest',
-          duration: 10,
-          blockIdx, round, totalBlocks: workout.blocks.length, totalRounds: 8,
+          duration: TABATA.restSec,
+          blockIdx, round, totalBlocks: workout.blocks.length, totalRounds: TABATA.rounds,
           name: `Block ${blockIdx + 1} of ${workout.blocks.length}: ${block.name}`,
           ...pair({ task: 'Rest — breathe', alt: '' })
         });
@@ -1146,6 +1203,7 @@ const els = {
   menuView: document.getElementById('menuView'),
   workoutView: document.getElementById('workoutView'),
   peoplePicker: document.getElementById('peoplePicker'),
+  equipmentPicker: document.getElementById('equipmentPicker'),
   timeFilter: document.getElementById('timeFilter'),
   focusFilter: document.getElementById('focusFilter'),
   workoutGrid: document.getElementById('workoutGrid'),
@@ -1215,8 +1273,15 @@ const focusLabelMap = {
 };
 
 function uniqueDurations() {
-  const set = new Set(workouts.map(w => w.duration));
+  const set = new Set(workouts.map(w => durationParts(w).totalMin));
   return Array.from(set).sort((a, b) => a - b);
+}
+
+// True when any exercise in the workout would swap to its bodyweight
+// fallback under the current equipment selection.
+function workoutAdapted(w) {
+  if (w.format === 'stretch') return false;
+  return w.blocks.some(b => (b.ids || []).some(id => resolveEx(id).adapted));
 }
 
 function renderPeoplePicker() {
@@ -1225,8 +1290,25 @@ function renderPeoplePicker() {
   });
 }
 
+function renderEquipmentPicker() {
+  els.equipmentPicker.innerHTML = '';
+  Object.keys(EQUIPMENT).forEach(id => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (hasEquip(id) ? ' active' : '');
+    b.textContent = EQUIPMENT[id];
+    b.addEventListener('click', () => {
+      state.equipment[id] = !hasEquip(id);
+      savePrefs();
+      renderEquipmentPicker();
+      renderWorkoutGrid();
+    });
+    els.equipmentPicker.appendChild(b);
+  });
+}
+
 function renderTimeFilter() {
   const durations = uniqueDurations();
+  if (state.filterTime !== 'all' && !durations.includes(state.filterTime)) state.filterTime = 'all';
   const opts = [{ id: 'all', label: 'All' }, ...durations.map(d => ({ id: String(d), label: `${d} min` }))];
   els.timeFilter.innerHTML = '';
   opts.forEach(o => {
@@ -1262,9 +1344,9 @@ function renderFocusFilter() {
 function renderWorkoutGrid() {
   els.workoutGrid.innerHTML = '';
   const filtered = workouts.filter(w =>
-    (state.filterTime === 'all' || w.duration === state.filterTime) &&
+    (state.filterTime === 'all' || durationParts(w).totalMin === state.filterTime) &&
     (state.filterFocus === 'all' || w.focus === state.filterFocus)
-  ).sort((a, b) => a.duration - b.duration);
+  ).sort((a, b) => durationParts(a).totalMin - durationParts(b).totalMin);
 
   if (filtered.length === 0) {
     const empty = document.createElement('div');
@@ -1275,17 +1357,26 @@ function renderWorkoutGrid() {
   }
 
   filtered.forEach(w => {
+    const parts = durationParts(w);
+    const detail = parts.workMin !== null
+      ? `<div class="card-time-detail">${parts.workMin} min work + ${parts.bookendsMin} min warm-up/cool-down</div>`
+      : '';
+    const adapted = workoutAdapted(w)
+      ? '<div class="card-adapted">Adapted for your equipment</div>'
+      : '';
     const card = document.createElement('button');
     card.className = 'workout-card ' + focusClassMap[w.focus];
     card.innerHTML = `
       <div class="card-name">${w.name}</div>
       <div class="card-tagline">${w.tagline}</div>
       <div class="card-meta">
-        <span class="duration">${w.duration} min</span>
+        <span class="duration">${parts.totalMin} min</span>
         <span>·</span>
         <span class="focus-tag ${focusClassMap[w.focus]}">${focusLabelMap[w.focus]}</span>
       </div>
+      ${detail}
       <div class="card-blurb">${w.blurb}</div>
+      ${adapted}
     `;
     card.addEventListener('click', () => openWorkout(w));
     els.workoutGrid.appendChild(card);
@@ -1473,7 +1564,7 @@ function render() {
   const next = state.sequence[state.currentIdx + 1];
   if (next) {
     let preview;
-    if (next.kind === 'rest') preview = 'Rest 10s';
+    if (next.kind === 'rest') preview = `Rest ${TABATA.restSec}s`;
     else if (next.kind === 'work') {
       preview = state.people === 2
         ? `A: ${next.a.task} · B: ${next.b.task}`
@@ -1658,6 +1749,7 @@ els.showAlts.checked = state.showAlts;
 els.muteAudio.checked = state.muteAudio;
 document.body.classList.toggle('show-alternatives', state.showAlts);
 renderPeoplePicker();
+renderEquipmentPicker();
 renderTimeFilter();
 renderFocusFilter();
 renderWorkoutGrid();
