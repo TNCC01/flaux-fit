@@ -845,6 +845,25 @@ function blockSwap(name, heavyId, lightId) {
   };
 }
 
+// KB clean & press: alternates left/right arm each round, weight swap at
+// round 5. The arm cue is dropped when the exercise adapts to bodyweight.
+function blockCleanPress() {
+  const arm = (round) => round % 2 === 1 ? ' (left arm)' : ' (right arm)';
+  const withArm = (ex, round) => ex.adapted ? ex : { ...ex, task: ex.task + arm(round) };
+  return {
+    name: 'KB clean & press (alt arms)',
+    ids: ['kbCleanPress15', 'kbCleanPress10'],
+    duo: (round) => {
+      const swap = round > 4;
+      const h = resolveEx('kbCleanPress15'), l = resolveEx('kbCleanPress10');
+      return swap
+        ? { a: withArm(l, round), b: withArm(h, round) }
+        : { a: withArm(h, round), b: withArm(l, round) };
+    },
+    solo: (round) => withArm(resolveEx(round > 4 ? 'kbCleanPress10' : 'kbCleanPress15'), round)
+  };
+}
+
 // --- Workouts ---------------------------------------------------------
 const workouts = [
   {
@@ -1039,24 +1058,51 @@ const workouts = [
       blockAlt('Barbell press & Plank', 'barbellPress', 'plankHold'),
       blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
       blockAlt('Ring hangs & Suitcase carry', 'ringTuckHold', 'dbSuitcaseCarry'),
-      {
-        // Custom: alternates left/right arm + weight swap at round 5
-        name: 'KB clean & press (alt arms)',
-        ids: ['kbCleanPress15', 'kbCleanPress10'],
-        duo: (round) => {
-          const swap = round > 4;
-          const arm = round % 2 === 1 ? ' (left arm)' : ' (right arm)';
-          const withArm = (ex) => ex.adapted ? ex : { ...ex, task: ex.task + arm };
-          const h = resolveEx('kbCleanPress15'), l = resolveEx('kbCleanPress10');
-          return swap ? { a: withArm(l), b: withArm(h) } : { a: withArm(h), b: withArm(l) };
-        },
-        solo: (round) => {
-          const swap = round > 4;
-          const arm = round % 2 === 1 ? ' (left arm)' : ' (right arm)';
-          const ex = resolveEx(swap ? 'kbCleanPress10' : 'kbCleanPress15');
-          return ex.adapted ? ex : { ...ex, task: ex.task + arm };
-        }
-      }
+      blockCleanPress()
+    ]
+  },
+
+  {
+    id: 'power-hour',
+    name: 'Power Hour',
+    tagline: 'Every muscle, every toy',
+    focus: 'whole-body',
+    blurb: 'Ten blocks using the whole kit — squats, swings, presses, rows, sprints. The big one.',
+    format: 'tabata',
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 60,
+    blocks: [
+      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
+      blockCycle('Rows & push-up mix', ['ringRow', 'pushup', 'ringPushup', 'pikePushup']),
+      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
+      blockCycle('Barbell press, rows & planks', ['barbellPress', 'plankHold', 'barbellRow', 'plankShoulderTaps']),
+      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockCycle('Skipping & core', ['skipping', 'hollowRocks', 'highKnees', 'bicycleCrunch']),
+      blockSwap('Dumbbell press', 'dbPressHeavy', 'dbPressLight'),
+      blockCycle('Lunges, step-ups & hinges', ['dbLunge', 'stepUp', 'kbDeadlift15', 'gluteBridge']),
+      blockAlt('Ring dips & DB curls', 'ringDip', 'dbCurl'),
+      blockCleanPress()
+    ]
+  },
+
+  {
+    id: 'long-haul',
+    name: 'The Long Haul',
+    tagline: 'Sixty minutes of engine',
+    focus: 'whole-body',
+    blurb: 'Ten blocks of near-nonstop conditioning — jumps, sprints, skips, crawls. Pace yourself.',
+    format: 'tabata',
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 60,
+    blocks: [
+      blockCycle('Jacks, knees & skaters', ['jumpingJacks', 'highKnees', 'skaterHops', 'mountainClimber']),
+      blockAlt('Burpees & Plank', 'burpee', 'plankHold'),
+      blockCycle('Skipping & squats', ['skipping', 'airSquat', 'highKnees', 'squatJump']),
+      blockAlt('Driveway sprint & Wall sit', 'sprint', 'wallSit'),
+      blockCycle('Climbers & core burners', ['mountainClimberFast', 'bicycleCrunch', 'flutterKicks', 'plankShoulderTaps']),
+      blockAlt('Squat jumps & Push-ups', 'squatJump', 'pushup'),
+      blockCycle('Crawls & bridges', ['bearCrawl', 'gluteBridge', 'inchworm', 'singleLegBridge']),
+      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
+      blockAlt('Skipping & Hollow rocks', 'skipping', 'hollowRocks'),
+      blockCycle('Burpee finishers', ['burpee', 'russianTwistBw', 'skaterHops', 'supermanPull'])
     ]
   }
 ];

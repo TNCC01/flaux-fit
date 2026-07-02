@@ -7,7 +7,8 @@ Single static `index.html`. No build step. Deploys to Vercel.
 
 ## What's in the library
 
-- 11 workouts, with menu duration labels computed from real phase math
+- 13 workouts from 10 minutes up to an hour, with menu duration labels
+  computed from real phase math
   (e.g. "23 min · 13 min work + 10 min warm-up/cool-down")
 - A shared exercise dictionary (~60 movements) with equipment tags —
   workouts reference exercises by id
