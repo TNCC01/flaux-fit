@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320">
+<path d="M40,292 L440,292" fill="none" stroke="#1f3333" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+<path d="M240,120 L274,158 L292,202" fill="none" stroke="#2dd4bf" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+<path d="M240,194 L220,240 L206,292" fill="none" stroke="#0d9488" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+<path d="M240,194 L262,240 L274,292" fill="none" stroke="#2dd4bf" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+<path d="M240,120 L240,194" fill="none" stroke="#2dd4bf" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+<circle cx="244" cy="92" r="15" fill="#2dd4bf" stroke="none" stroke-width="6.3" opacity="1.0"/>
+<path d="M279,212 L305,212" fill="none" stroke="#fbbf24" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="1.0"/>
+<circle cx="279" cy="212" r="6" fill="#fbbf24" stroke="none" stroke-width="6.3" opacity="1.0"/>
+<circle cx="305" cy="212" r="6" fill="#fbbf24" stroke="none" stroke-width="6.3" opacity="1.0"/>
+</svg>
