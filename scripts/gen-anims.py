@@ -17,20 +17,51 @@ BORDER = '#1f3333'
 SW = 9                         # limb stroke width
 HEAD_R = 15
 
-# ---------------------------------------------------------------- svg bits
+# --------------------------------------------------------------- palette
+DARK = '#0c2020'        # android body-panel fill
+VISOR = '#a7f3ee'       # helmet visor slit
+ROSE = '#f43f5e'        # active muscle-group glow
+ROSE_DIM = '#8f2a3e'
+GLOW_W = 8              # extra width of the glow edge around a limb
+
+# ------------------------------------------------------- part primitives
+# Parts are dicts so poses can be interpolated numerically before styling.
 def line(pts, color=TEAL, w=SW, opacity=1.0):
-    d = 'M' + ' L'.join(f'{x:.0f},{y:.0f}' for x, y in pts)
-    return (f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{w}" '
-            f'stroke-linecap="round" stroke-linejoin="round" opacity="{opacity}"/>')
+    return {'t': 'path', 'pts': [tuple(map(float, p)) for p in pts],
+            'color': color, 'w': w, 'op': opacity}
 
 def circle(c, r, color=TEAL, fill=True, w=SW * 0.7, opacity=1.0):
-    f = color if fill else 'none'
-    s = 'none' if fill else color
-    return (f'<circle cx="{c[0]:.0f}" cy="{c[1]:.0f}" r="{r}" fill="{f}" '
-            f'stroke="{s}" stroke-width="{w}" opacity="{opacity}"/>')
+    return {'t': 'circle', 'c': (float(c[0]), float(c[1])), 'r': float(r),
+            'color': color, 'fill': fill, 'w': w, 'op': opacity}
+
+def qarc(p0, ctrl, p1, color=AMBER, w=4, n=12):
+    """Quadratic arc sampled to a polyline so it can interpolate."""
+    pts = []
+    for i in range(n + 1):
+        t = i / n
+        x = (1-t)**2*p0[0] + 2*(1-t)*t*ctrl[0] + t*t*p1[0]
+        y = (1-t)**2*p0[1] + 2*(1-t)*t*ctrl[1] + t*t*p1[1]
+        pts.append((x, y))
+    return line(pts, color, w)
 
 def ground(x0=40, x1=440):
     return line([(x0, GY), (x1, GY)], BORDER, 6)
+
+def box(x, y, w, h):
+    return [{'t': 'rect', 'x': float(x), 'y': float(y), 'w': float(w),
+             'h': float(h), 'color': BORDER, 'sw': 6}]
+
+# Android figure: each limb chain becomes a glow edge + dark core capsule;
+# the head is a visor helmet. `roles` let ACTIVE highlight muscle groups.
+_CTX = {'active': set(), 'variant': 'a'}
+
+def _limb(pts, role, far=False):
+    active = role in _CTX['active']
+    glow = (ROSE_DIM if far else ROSE) if active else (TEAL_DIM if far else TEAL)
+    w = 13 if _CTX['variant'] == 'a' else 11
+    if role == 'torso':
+        w += 4
+    return [line(pts, glow, w + GLOW_W, 0.95), line(pts, DARK, w)]
 
 def figure(head, neck, hip, arms, legs, head_r=HEAD_R):
     """arms/legs: list of point-chains starting at the shoulder / hip.
@@ -38,12 +69,21 @@ def figure(head, neck, hip, arms, legs, head_r=HEAD_R):
     out = []
     n = len(arms)
     for i, a in enumerate(arms):
-        out.append(line([neck] + list(a), TEAL_DIM if (n > 1 and i == 0) else TEAL))
+        out += _limb([neck] + list(a), 'arms', far=(n > 1 and i == 0))
     n = len(legs)
     for i, l in enumerate(legs):
-        out.append(line([hip] + list(l), TEAL_DIM if (n > 1 and i == 0) else TEAL))
-    out.append(line([neck, hip]))                 # torso on top of limb joins
-    out.append(circle(head, head_r))
+        out += _limb([hip] + list(l), 'legs', far=(n > 1 and i == 0))
+    out += _limb([neck, hip], 'torso')
+    # visor helmet
+    hx, hy = head
+    active = 'torso' in _CTX['active']
+    out.append(circle(head, head_r + 4, ROSE if active else TEAL, True, 0, 0.95))
+    out.append(circle(head, head_r, DARK))
+    # ponytail on the 'b' (feminine) variant
+    if _CTX['variant'] == 'b':
+        out.append(line([(hx - 2, hy - head_r - 2), (hx - head_r - 6, hy + 2),
+                         (hx - head_r - 2, hy + head_r + 6)], TEAL, 5))
+    out.append(line([(hx - head_r * 0.62, hy - 3), (hx + head_r * 0.62, hy - 3)], VISOR, 5))
     return out
 
 def kb(hand, r=11):
@@ -66,10 +106,6 @@ def barbell_front(y, x0, x1):
             line([(x0 - 22, y - 14), (x0 - 22, y + 14)], AMBER, 9),
             line([(x1 + 22, y - 14), (x1 + 22, y + 14)], AMBER, 9)]
 
-def box(x, y, w, h):
-    return [f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="6" '
-            f'fill="none" stroke="{BORDER}" stroke-width="6"/>']
-
 def rings(hands):
     out = []
     for hx, hy in hands:
@@ -77,9 +113,98 @@ def rings(hands):
         out.append(circle((hx, hy), 10, AMBER, fill=False, w=5))
     return out
 
-def svg(parts):
-    body = '\n'.join(p for chunk in parts for p in (chunk if isinstance(chunk, list) else [chunk]))
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}">\n{body}\n</svg>\n')
+# --------------------------------------------------- render + interpolate
+def flatten(parts):
+    out = []
+    for chunk in parts:
+        out.extend(chunk if isinstance(chunk, list) else [chunk])
+    return out
+
+def resample(pts, n=12):
+    if len(pts) == 1:
+        return pts * n
+    import math
+    segs = [math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    total = sum(segs) or 1.0
+    out = []
+    for k in range(n):
+        d = total * k / (n - 1)
+        acc = 0.0
+        for i, s in enumerate(segs):
+            if acc + s >= d or i == len(segs) - 1:
+                t = 0.0 if s == 0 else (d - acc) / s
+                p0, p1 = pts[i], pts[i + 1]
+                out.append((p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t))
+                break
+            acc += s
+    return out
+
+def lerp_part(a, b, t):
+    if a['t'] != b['t']:
+        raise ValueError('part type mismatch')
+    p = dict(a)
+    if a['t'] == 'path':
+        pa, pb = resample(a['pts']), resample(b['pts'])
+        p['pts'] = [(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)
+                    for (x0, y0), (x1, y1) in zip(pa, pb)]
+    elif a['t'] == 'circle':
+        p['c'] = (a['c'][0] + (b['c'][0] - a['c'][0]) * t,
+                  a['c'][1] + (b['c'][1] - a['c'][1]) * t)
+        p['r'] = a['r'] + (b['r'] - a['r']) * t
+    elif a['t'] == 'rect':
+        for k in 'xywh':
+            p[k] = a[k] + (b[k] - a[k]) * t
+    return p
+
+def emit(p):
+    if p['t'] == 'path':
+        d = 'M' + ' L'.join(f'{x:.1f},{y:.1f}' for x, y in p['pts'])
+        return (f'<path d="{d}" fill="none" stroke="{p["color"]}" stroke-width="{p["w"]}" '
+                f'stroke-linecap="round" stroke-linejoin="round" opacity="{p["op"]}"/>')
+    if p['t'] == 'circle':
+        f = p['color'] if p['fill'] else 'none'
+        s = 'none' if p['fill'] else p['color']
+        return (f'<circle cx="{p["c"][0]:.1f}" cy="{p["c"][1]:.1f}" r="{p["r"]:.1f}" '
+                f'fill="{f}" stroke="{s}" stroke-width="{p["w"]}" opacity="{p["op"]}"/>')
+    if p['t'] == 'rect':
+        return (f'<rect x="{p["x"]:.1f}" y="{p["y"]:.1f}" width="{p["w"]:.1f}" '
+                f'height="{p["h"]:.1f}" rx="6" fill="none" stroke="{p["color"]}" '
+                f'stroke-width="{p["sw"]}"/>')
+    raise ValueError(p['t'])
+
+def smoothstep(u):
+    return u * u * (3 - 2 * u)
+
+def animated_svg(parts0, parts1, dur=2.4):
+    """Interpolate pose0 -> pose1 -> pose0 into a baked flipbook SVG."""
+    if len(parts0) != len(parts1):
+        raise ValueError(f'part count mismatch {len(parts0)} vs {len(parts1)}')
+    static = [i for i, (a, b) in enumerate(zip(parts0, parts1)) if a == b]
+    moving = [i for i in range(len(parts0)) if i not in static]
+
+    HALF = 9
+    fwd = [smoothstep(k / (HALF - 1)) for k in range(HALF)]
+    ts = fwd + fwd[-2:0:-1]                       # ping-pong, ends not repeated
+    widths = [2 if (t in (0.0, 1.0)) else 1 for t in ts]   # hold the end poses
+    total = sum(widths)
+
+    css, groups, pos = [], [], 0
+    for k, (t, wd) in enumerate(zip(ts, widths)):
+        a, b = 100 * pos / total, 100 * (pos + wd) / total
+        pos += wd
+        if k == 0:
+            css.append(f'@keyframes k{k}{{0%{{opacity:1}}{b:.3f}%{{opacity:0}}100%{{opacity:0}}}}')
+        else:
+            css.append(f'@keyframes k{k}{{0%{{opacity:0}}{a:.3f}%{{opacity:1}}'
+                       + (f'{b:.3f}%{{opacity:0}}' if b < 100 else '')
+                       + '100%{opacity:' + ('1' if b >= 100 else '0') + '}}')
+        css.append(f'.f{k}{{opacity:0;animation:k{k} {dur}s steps(1,end) infinite}}')
+        frame = [emit(lerp_part(parts0[i], parts1[i], t)) for i in moving]
+        groups.append(f'<g class="f{k}">' + ''.join(frame) + '</g>')
+
+    static_body = ''.join(emit(parts0[i]) for i in static)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}">'
+            f'<style>{"".join(css)}</style>{static_body}{"".join(groups)}</svg>\n')
 
 # ---------------------------------------------------------------- poses
 POSES = {}
@@ -269,8 +394,10 @@ def _(i):
 @pose('plankShoulderTaps')
 def _(i):
     f = _plank()
-    if i == 1:
-        f['arms'] = [[(225 + 78, GY)], [(225 + 96, 210)]]
+    if i == 0:
+        f['arms'] = [[(225 + 70, GY)], [(225 + 84, GY)]]
+    else:
+        f['arms'] = [[(225 + 70, GY)], [(225 + 96, 210)]]
     return [ground(), figure(**f)]
 
 @pose('mountainClimber')
@@ -562,8 +689,12 @@ def _(i):
 def _(i):
     if i == 0:
         f = _stand(arm='up')
+        f['legs'] = [[(240 - 6, 240), (240 - 8, GY)], [(240 + 8, 240), (240 + 6, GY)]]
         return [ground(), figure(**f)]
-    return [ground(), figure(**_plank())]
+    x = 225
+    f = _plank()
+    f['legs'] = [[(x - 62, 246), (x - 118, GY - 8)], [(x - 66, 244), (x - 122, GY - 6)]]
+    return [ground(), figure(**f)]
 
 @pose('ropeJumping')
 def _(i):
@@ -571,14 +702,14 @@ def _(i):
     if i == 0:
         f = _stand(x)
         f['arms'] = [[(x - 30, 160), (x - 52, 178)], [(x + 30, 160), (x + 52, 178)]]
-        rope = f'<path d="M{x-52},178 Q{x},{GY+18} {x+52},178" fill="none" stroke="{AMBER}" stroke-width="4"/>'
+        rope = qarc((x - 52, 178), (x, GY + 18), (x + 52, 178))
         return [ground(), figure(**f), rope]
     lift = 22
     neck, hip = (x, 118 - lift), (x, 192 - lift)
     head = (x + 2, 90 - lift)
     legs = [[(x - 6, 236 - lift), (x - 10, 272 - lift)], [(x + 8, 236 - lift), (x + 4, 272 - lift)]]
     arms = [[(x - 30, 160 - lift), (x - 52, 148 - lift)], [(x + 30, 160 - lift), (x + 52, 148 - lift)]]
-    rope = f'<path d="M{x-52},{148-lift} Q{x},{20} {x+52},{148-lift}" fill="none" stroke="{AMBER}" stroke-width="4"/>'
+    rope = qarc((x - 52, 148 - lift), (x, 20), (x + 52, 148 - lift))
     return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs), rope]
 
 @pose('reverseLunge')
@@ -767,11 +898,38 @@ def _(i):
             [(x + 38, 230 - tuck), (x + 46, 256 - tuck)]]
     return [rings(hands), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
 
+# -------------------------------------------------- muscle-group highlight
+# Primary region lit in rose per exercise: arms / legs / torso (core+back).
+ACTIVE = {
+    'arms': ['pushup', 'pikePushup', 'benchDips', 'dbCurl', 'dbPress',
+             'barbellPress', 'lateralRaise', 'kbCleanPress', 'ringDip',
+             'ringPushup', 'ringRow', 'barbellRow', 'dbRow', 'renegadeRow',
+             'farmersWalk', 'kbRackHold', 'bearCrawl'],
+    'legs': ['bwSquat', 'squatReach', 'jumpSquat', 'gobletSquat',
+             'cossackSquat', 'wallSit', 'calfRaise', 'reverseLunge', 'stepUp',
+             'highKnees', 'skaterHops', 'sprint', 'ropeJumping', 'kbDeadlift',
+             'gluteBridge', 'singleLegBridge', 'kbSwing', 'jumpingJacks',
+             'burpee', 'goodMorning'],
+    'torso': ['plank', 'plankShoulderTaps', 'mountainClimber', 'hollow',
+              'vSit', 'deadBug', 'birdDog', 'legRaise', 'flutterKicks',
+              'bicycleCrunch', 'russianTwist', 'sideBridge', 'superman',
+              'inchworm', 'ringTuckHold'],
+}
+ROLE_OF = {b: role for role, bases in ACTIVE.items() for b in bases}
+
 # ---------------------------------------------------------------- main
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
-    for base, fn in sorted(POSES.items()):
-        for i in (0, 1):
-            with open(os.path.join(OUT, f'{base}-{i}.svg'), 'w') as f:
-                f.write(svg(fn(i)))
-    print(f'wrote {len(POSES)} exercises × 2 poses to {OUT}')
+    for stale in os.listdir(OUT):
+        os.remove(os.path.join(OUT, stale))
+    total = 0
+    for idx, (base, fn) in enumerate(sorted(POSES.items())):
+        _CTX['active'] = {ROLE_OF.get(base)}
+        _CTX['variant'] = 'a' if idx % 2 == 0 else 'b'   # mix of body types
+        p0, p1 = flatten(fn(0)), flatten(fn(1))
+        out = animated_svg(p0, p1)
+        path = os.path.join(OUT, f'{base}.svg')
+        with open(path, 'w') as f:
+            f.write(out)
+        total += os.path.getsize(path)
+    print(f'wrote {len(POSES)} animated SVGs, {total / 1024:.0f} KB total')

@@ -473,14 +473,6 @@
     height: 100%;
     object-fit: contain;
   }
-  /* Two-frame "animation": the end-position frame fades in and out over
-     the start-position frame. */
-  .ex-anim img.f1 { opacity: 0; animation: exflip 2.4s ease-in-out infinite; }
-  @keyframes exflip {
-    0%, 40%  { opacity: 0; }
-    55%, 85% { opacity: 1; }
-    100%     { opacity: 0; }
-  }
   .alternative {
     font-size: 0.95rem;
     color: var(--muted);
@@ -1660,7 +1652,7 @@ function setAlt(el, alt) {
   el.classList.toggle('has-alt', !!alt);
 }
 
-// Swap the two-frame stick-figure demo in a person card. render() runs every
+// Swap the animated exercise demo in a person card. render() runs every
 // tick, so only touch the DOM when the exercise's media actually changes —
 // rewriting each second would restart the CSS animation.
 function updateAnim(el, ex) {
@@ -1668,8 +1660,7 @@ function updateAnim(el, ex) {
   if (el.dataset.img === base) return;
   el.dataset.img = base;
   el.innerHTML = base
-    ? `<img src="img/exercises/${base}-0.svg" alt="">` +
-      `<img class="f1" src="img/exercises/${base}-1.svg" alt="">`
+    ? `<img src="img/exercises/${base}.svg" alt="">`
     : '';
 }
 
