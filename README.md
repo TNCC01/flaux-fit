@@ -21,6 +21,11 @@ Single static `index.html`. No build step. Deploys to Vercel.
   exercise cycles for round-to-round variety
 - 5-minute warm-up and cool-down bookends on every tabata workout
 - Injury alternative for every movement
+- Animated Tron-style android demos on the workout screen for every
+  exercise (toggleable): smooth interpolated motion, alternating body
+  types, and the working muscle group lit in rose. Poses are joint
+  coordinates in `scripts/gen-anims.py`, baked to self-animating SVGs in
+  `img/exercises/<base>.svg` — edit and re-run to tweak the look
 - Wake lock, audio cues, two-tap reset, screen-on while training
 
 ## Equipment supported
