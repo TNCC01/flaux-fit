@@ -454,6 +454,33 @@
     font-weight: 700;
     line-height: 1.25;
   }
+  .ex-anim {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3 / 2;
+    max-height: 190px;
+    margin-top: 0.6rem;
+    border-radius: 0.65rem;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .ex-anim:empty { display: none; }
+  body.hide-photos .ex-anim { display: none; }
+  .ex-anim img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /* Two-frame "animation": the end-position frame fades in and out over
+     the start-position frame. */
+  .ex-anim img.f1 { opacity: 0; animation: exflip 2.4s ease-in-out infinite; }
+  @keyframes exflip {
+    0%, 40%  { opacity: 0; }
+    55%, 85% { opacity: 1; }
+    100%     { opacity: 0; }
+  }
   .alternative {
     font-size: 0.95rem;
     color: var(--muted);
@@ -641,11 +668,13 @@
       <div class="person a">
         <div class="person-label" id="labelA">Person A</div>
         <div class="exercise" id="exerciseA">—</div>
+        <div class="ex-anim" id="animA"></div>
         <div class="alternative" id="alternativeA"></div>
       </div>
       <div class="person b" id="personB">
         <div class="person-label" id="labelB">Person B</div>
         <div class="exercise" id="exerciseB">—</div>
+        <div class="ex-anim" id="animB"></div>
         <div class="alternative" id="alternativeB"></div>
       </div>
     </div>
@@ -664,6 +693,10 @@
     </div>
 
     <div class="toggle-row">
+      <label class="toggle">
+        <input type="checkbox" id="showPhotos" checked>
+        Exercise photos
+      </label>
       <label class="toggle">
         <input type="checkbox" id="showAlts">
         Show injury alternatives
@@ -701,84 +734,84 @@ const DEFAULT_EQUIPMENT = { kb15: true, kb10: true, barbell10: true, dumbbells: 
 
 const EXERCISES = {
   // --- Bodyweight: whole body ----------------------------------------
-  airSquat:        { task: 'Air squats', alt: 'Box squat to a chair', equipment: [] },
-  tempoSquat:      { task: 'Bodyweight squat with a slow 3s descent', alt: 'Box squat to a chair', equipment: [] },
-  pushup:          { task: 'Push-ups', alt: 'Incline push-ups (hands on bench)', equipment: [] },
+  airSquat:        { task: 'Air squats', alt: 'Box squat to a chair', equipment: [], img: 'bwSquat' },
+  tempoSquat:      { task: 'Bodyweight squat with a slow 3s descent', alt: 'Box squat to a chair', equipment: [], img: 'bwSquat' },
+  pushup:          { task: 'Push-ups', alt: 'Incline push-ups (hands on bench)', equipment: [], img: 'pushup' },
   burpee:          { task: 'Burpees', alt: 'Step-back burpees (no jump)', equipment: [] },
   jumpingJacks:    { task: 'Jumping jacks', alt: 'Step jacks (no jump)', equipment: [] },
   highKnees:       { task: 'High knees in place', alt: 'Marching in place', equipment: [] },
   skaterHops:      { task: 'Skater hops side to side', alt: 'Side steps with a reach', equipment: [] },
   bearCrawl:       { task: 'Bear crawl forward & back', alt: 'Bear hold (knees hovering)', equipment: [] },
-  inchworm:        { task: 'Inchworm walkouts', alt: 'Walkouts, knees down on the return', equipment: [] },
+  inchworm:        { task: 'Inchworm walkouts', alt: 'Walkouts, knees down on the return', equipment: [], img: 'inchworm' },
   sprint:          { task: 'Sprint to mailbox & back', alt: 'Brisk walk to mailbox & back', equipment: [] },
   squatReach:      { task: 'Squat to overhead reach', alt: 'Slow squat, arms forward', equipment: [] },
-  mountainClimber:     { task: 'Mountain climbers', alt: 'Slow controlled climbers', equipment: [] },
-  mountainClimberFast: { task: 'Mountain climbers (fast)', alt: 'Slow controlled climbers', equipment: [] },
+  mountainClimber:     { task: 'Mountain climbers', alt: 'Slow controlled climbers', equipment: [], img: 'mountainClimber' },
+  mountainClimberFast: { task: 'Mountain climbers (fast)', alt: 'Slow controlled climbers', equipment: [], img: 'mountainClimber' },
 
   // --- Bodyweight: lower ----------------------------------------------
-  reverseLunge:    { task: 'Reverse lunges (alternate legs)', alt: 'Static split squats', equipment: [] },
-  stepUp:          { task: 'Step-ups on a bench/box', alt: 'Toe taps to a low step', equipment: [] },
-  squatJump:       { task: 'Squat jumps', alt: 'Explosive bodyweight squat, no jump', equipment: [] },
+  reverseLunge:    { task: 'Reverse lunges (alternate legs)', alt: 'Static split squats', equipment: [], img: 'rearLunge' },
+  stepUp:          { task: 'Step-ups on a bench/box', alt: 'Toe taps to a low step', equipment: [], img: 'stepUp' },
+  squatJump:       { task: 'Squat jumps', alt: 'Explosive bodyweight squat, no jump', equipment: [], img: 'jumpSquat' },
   wallSit:         { task: 'Wall sit (thighs parallel)', alt: 'Higher wall sit (less depth)', equipment: [] },
-  gluteBridge:     { task: 'Glute bridges', alt: 'Glute bridge hold', equipment: [] },
-  singleLegBridge: { task: 'Single-leg glute bridge (switch legs at 10s)', alt: 'Glute bridges, both legs', equipment: [] },
+  gluteBridge:     { task: 'Glute bridges', alt: 'Glute bridge hold', equipment: [], img: 'gluteBridge' },
+  singleLegBridge: { task: 'Single-leg glute bridge (switch legs at 10s)', alt: 'Glute bridges, both legs', equipment: [], img: 'singleLegBridge' },
   cossackSquat:    { task: 'Cossack squats (side to side)', alt: 'Shallow lateral lunges', equipment: [] },
-  calfRaises:      { task: 'Calf raises — slow up, slow down', alt: 'Seated calf raises', equipment: [] },
-  goodMorning:     { task: 'Good mornings (hands behind head)', alt: 'Hip hinge with hands on thighs', equipment: [] },
+  calfRaises:      { task: 'Calf raises — slow up, slow down', alt: 'Seated calf raises', equipment: [], img: 'calfRaise' },
+  goodMorning:     { task: 'Good mornings (hands behind head)', alt: 'Hip hinge with hands on thighs', equipment: [], img: 'goodMorning' },
 
   // --- Bodyweight: upper ----------------------------------------------
   pikePushup:      { task: 'Pike push-ups', alt: 'Incline pike push-ups', equipment: [] },
-  tricepDips:      { task: 'Tricep dips on a bench', alt: 'Bench dips, feet closer (easier)', equipment: [] },
-  supermanPull:    { task: 'Superman pulls (lat pulldown motion)', alt: 'Superman hold', equipment: [] },
-  supermanHold:    { task: 'Superman hold with pulses', alt: 'Superman hold, no pulses', equipment: [] },
+  tricepDips:      { task: 'Tricep dips on a bench', alt: 'Bench dips, feet closer (easier)', equipment: [], img: 'benchDips' },
+  supermanPull:    { task: 'Superman pulls (lat pulldown motion)', alt: 'Superman hold', equipment: [], img: 'superman' },
+  supermanHold:    { task: 'Superman hold with pulses', alt: 'Superman hold, no pulses', equipment: [], img: 'superman' },
 
   // --- Bodyweight: core -------------------------------------------------
-  plankHold:       { task: 'Plank hold (forearm or high)', alt: 'Knees plank', equipment: [] },
-  plankForearm:    { task: 'Plank (forearm)', alt: 'Knees plank', equipment: [] },
-  plankRotation:   { task: 'Plank rotation — change position every 15s', alt: 'Knees plank, rotate same positions', equipment: [] },
+  plankHold:       { task: 'Plank hold (forearm or high)', alt: 'Knees plank', equipment: [], img: 'plank' },
+  plankForearm:    { task: 'Plank (forearm)', alt: 'Knees plank', equipment: [], img: 'plank' },
+  plankRotation:   { task: 'Plank rotation — change position every 15s', alt: 'Knees plank, rotate same positions', equipment: [], img: 'plank' },
   plankShoulderTaps: { task: 'Plank shoulder taps', alt: 'Knees plank shoulder taps', equipment: [] },
   hollowHold:      { task: 'Hollow body hold', alt: 'Tucked hollow hold (knees in)', equipment: [] },
   hollowRocks:     { task: 'Hollow body rocks', alt: 'Hollow hold (no rocking)', equipment: [] },
-  vSit:            { task: 'V-sits', alt: 'Tucked V-sit (knees bent)', equipment: [] },
-  deadBug:         { task: 'Dead bug (opposite arm + leg)', alt: 'Dead bug one limb at a time', equipment: [] },
+  vSit:            { task: 'V-sits', alt: 'Tucked V-sit (knees bent)', equipment: [], img: 'jackknife' },
+  deadBug:         { task: 'Dead bug (opposite arm + leg)', alt: 'Dead bug one limb at a time', equipment: [], img: 'deadBug' },
   birdDog:         { task: 'Bird dog (opposite arm + leg)', alt: 'Bird dog, one limb at a time', equipment: [] },
-  legRaises:       { task: 'Lying leg raises', alt: 'Bent-knee leg raises', equipment: [] },
-  bicycleCrunch:   { task: 'Bicycle crunches', alt: 'Slow bicycles, heels tapping down', equipment: [] },
-  flutterKicks:    { task: 'Flutter kicks', alt: 'Bent-knee flutter kicks', equipment: [] },
-  sidePlankDips:   { task: 'Side plank hip dips (switch sides at 10s)', alt: 'Side plank hold from knees', equipment: [] },
-  russianTwistBw:  { task: 'Russian twists (bodyweight)', alt: 'Seated slow torso twists', equipment: [] },
+  legRaises:       { task: 'Lying leg raises', alt: 'Bent-knee leg raises', equipment: [], img: 'legRaise' },
+  bicycleCrunch:   { task: 'Bicycle crunches', alt: 'Slow bicycles, heels tapping down', equipment: [], img: 'airBike' },
+  flutterKicks:    { task: 'Flutter kicks', alt: 'Bent-knee flutter kicks', equipment: [], img: 'flutterKicks' },
+  sidePlankDips:   { task: 'Side plank hip dips (switch sides at 10s)', alt: 'Side plank hold from knees', equipment: [], img: 'sideBridge' },
+  russianTwistBw:  { task: 'Russian twists (bodyweight)', alt: 'Seated slow torso twists', equipment: [], img: 'russianTwist' },
 
   // --- Kettlebells -------------------------------------------------------
-  gobletSquat15:  { task: 'Goblet squat — 15kg KB', alt: 'Bodyweight squat with a slow 3s descent', equipment: ['kb15'], bw: 'tempoSquat' },
-  gobletSquat10:  { task: 'Goblet squat — 10kg KB', alt: 'Bodyweight squat with a slow 3s descent', equipment: ['kb10'], bw: 'tempoSquat' },
-  kbSwing15:      { task: 'KB swings — 15kg', alt: 'KB Romanian deadlift (hinge only, no swing)', equipment: ['kb15'], bw: 'goodMorning' },
-  kbSwing10:      { task: 'KB swings — 10kg', alt: 'KB Romanian deadlift (hinge only, no swing)', equipment: ['kb10'], bw: 'goodMorning' },
+  gobletSquat15:  { task: 'Goblet squat — 15kg KB', alt: 'Bodyweight squat with a slow 3s descent', equipment: ['kb15'], bw: 'tempoSquat', img: 'gobletSquat' },
+  gobletSquat10:  { task: 'Goblet squat — 10kg KB', alt: 'Bodyweight squat with a slow 3s descent', equipment: ['kb10'], bw: 'tempoSquat', img: 'gobletSquat' },
+  kbSwing15:      { task: 'KB swings — 15kg', alt: 'KB Romanian deadlift (hinge only, no swing)', equipment: ['kb15'], bw: 'goodMorning', img: 'kbSwing' },
+  kbSwing10:      { task: 'KB swings — 10kg', alt: 'KB Romanian deadlift (hinge only, no swing)', equipment: ['kb10'], bw: 'goodMorning', img: 'kbSwing' },
   kbDeadlift15:   { task: 'KB deadlift — 15kg', alt: 'KB Romanian deadlift, lighter', equipment: ['kb15'], bw: 'goodMorning' },
   kbRackHold15:   { task: 'KB front rack hold — 15kg', alt: 'Dumbbell suitcase hold', equipment: ['kb15'], bw: 'wallSit' },
-  kbCleanPress15: { task: 'KB clean & press — 15kg', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb15'], bw: 'squatReach' },
-  kbCleanPress10: { task: 'KB clean & press — 10kg', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb10'], bw: 'squatReach' },
-  russianTwistKb: { task: 'Russian twists — 10kg KB', alt: 'Russian twists bodyweight', equipment: ['kb10'], bw: 'russianTwistBw' },
+  kbCleanPress15: { task: 'KB clean & press — 15kg', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb15'], bw: 'squatReach', img: 'kbCleanPress' },
+  kbCleanPress10: { task: 'KB clean & press — 10kg', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb10'], bw: 'squatReach', img: 'kbCleanPress' },
+  russianTwistKb: { task: 'Russian twists — 10kg KB', alt: 'Russian twists bodyweight', equipment: ['kb10'], bw: 'russianTwistBw', img: 'russianTwist' },
 
   // --- Barbell -------------------------------------------------------------
-  barbellPress:   { task: 'Strict press — 10kg barbell', alt: 'Dumbbell shoulder press', equipment: ['barbell10'], bw: 'pikePushup' },
-  barbellRow:     { task: 'Bent-over row — 10kg barbell', alt: 'Bent-over dumbbell rows', equipment: ['barbell10'], bw: 'supermanPull' },
+  barbellPress:   { task: 'Strict press — 10kg barbell', alt: 'Dumbbell shoulder press', equipment: ['barbell10'], bw: 'pikePushup', img: 'barbellPress' },
+  barbellRow:     { task: 'Bent-over row — 10kg barbell', alt: 'Bent-over dumbbell rows', equipment: ['barbell10'], bw: 'supermanPull', img: 'barbellRow' },
 
   // --- Dumbbells --------------------------------------------------------------
-  dbPressHeavy:   { task: 'Dumbbell shoulder press (heavier pair)', alt: 'Slow tempo lighter weight', equipment: ['dumbbells'], bw: 'pikePushup' },
-  dbPressLight:   { task: 'Dumbbell shoulder press (lighter pair)', alt: 'Slow tempo lighter weight', equipment: ['dumbbells'], bw: 'pikePushup' },
+  dbPressHeavy:   { task: 'Dumbbell shoulder press (heavier pair)', alt: 'Slow tempo lighter weight', equipment: ['dumbbells'], bw: 'pikePushup', img: 'dbPress' },
+  dbPressLight:   { task: 'Dumbbell shoulder press (lighter pair)', alt: 'Slow tempo lighter weight', equipment: ['dumbbells'], bw: 'pikePushup', img: 'dbPress' },
   dbLunge:        { task: 'Reverse lunges with dumbbells', alt: 'Bodyweight reverse lunges', equipment: ['dumbbells'], bw: 'reverseLunge' },
-  dbRow:          { task: 'Bent-over dumbbell rows', alt: 'Rows with lighter dumbbells', equipment: ['dumbbells'], bw: 'supermanPull' },
-  dbCurl:         { task: 'Dumbbell bicep curls', alt: 'Hammer curls, slower tempo', equipment: ['dumbbells'], bw: 'supermanPull' },
-  dbLateralRaise: { task: 'Dumbbell lateral raises', alt: 'Lighter dumbbells, slow tempo', equipment: ['dumbbells'], bw: 'plankShoulderTaps' },
-  renegadeRow:    { task: 'Renegade rows on dumbbells', alt: 'Renegade rows from knees', equipment: ['dumbbells'], bw: 'plankShoulderTaps' },
-  dbSuitcaseCarry:{ task: 'Dumbbell suitcase carry — driveway', alt: 'Dumbbell suitcase hold in place', equipment: ['dumbbells'], bw: 'bearCrawl' },
+  dbRow:          { task: 'Bent-over dumbbell rows', alt: 'Rows with lighter dumbbells', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbRow' },
+  dbCurl:         { task: 'Dumbbell bicep curls', alt: 'Hammer curls, slower tempo', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbCurl' },
+  dbLateralRaise: { task: 'Dumbbell lateral raises', alt: 'Lighter dumbbells, slow tempo', equipment: ['dumbbells'], bw: 'plankShoulderTaps', img: 'lateralRaise' },
+  renegadeRow:    { task: 'Renegade rows on dumbbells', alt: 'Renegade rows from knees', equipment: ['dumbbells'], bw: 'plankShoulderTaps', img: 'renegadeRow' },
+  dbSuitcaseCarry:{ task: 'Dumbbell suitcase carry — driveway', alt: 'Dumbbell suitcase hold in place', equipment: ['dumbbells'], bw: 'bearCrawl', img: 'farmersWalk' },
 
   // --- Rope / rings ---------------------------------------------------------------
-  skipping:       { task: 'Skipping rope', alt: 'High knees in place', equipment: ['rope'], bw: 'highKnees' },
-  ringRow:        { task: 'Ring rows (set foot position for difficulty)', alt: 'Bent-over dumbbell rows', equipment: ['rings'], bw: 'supermanPull' },
-  ringPushup:     { task: 'Ring push-ups', alt: 'Regular push-ups', equipment: ['rings'], bw: 'pushup' },
-  ringDip:        { task: 'Ring dips (or bench dips)', alt: 'Bench dips with feet on floor', equipment: ['rings'], bw: 'tricepDips' },
-  ringTuckHold:   { task: 'Ring tuck holds (or hanging knee raises)', alt: 'Lying leg raises or dead bugs', equipment: ['rings'], bw: 'legRaises' }
+  skipping:       { task: 'Skipping rope', alt: 'High knees in place', equipment: ['rope'], bw: 'highKnees', img: 'ropeJumping' },
+  ringRow:        { task: 'Ring rows (set foot position for difficulty)', alt: 'Bent-over dumbbell rows', equipment: ['rings'], bw: 'supermanPull', img: 'ringRow' },
+  ringPushup:     { task: 'Ring push-ups', alt: 'Regular push-ups', equipment: ['rings'], bw: 'pushup', img: 'ringPushup' },
+  ringDip:        { task: 'Ring dips (or bench dips)', alt: 'Bench dips with feet on floor', equipment: ['rings'], bw: 'tricepDips', img: 'ringDip' },
+  ringTuckHold:   { task: 'Ring tuck holds (or hanging knee raises)', alt: 'Lying leg raises or dead bugs', equipment: ['rings'], bw: 'legRaises', img: 'hangingLegRaise' }
 };
 
 // Resolve an exercise id against the equipment currently selected in the
@@ -792,7 +825,7 @@ function resolveEx(id) {
     cur = EXERCISES[cur.bw];
     adapted = true;
   }
-  return { task: cur.task, alt: cur.alt, adapted };
+  return { task: cur.task, alt: cur.alt, adapted, img: cur.img || null };
 }
 
 // --- Block helpers ----------------------------------------------------
@@ -1121,6 +1154,7 @@ const state = {
   equipment: { ...DEFAULT_EQUIPMENT },
   muteAudio: false,
   showAlts: false,
+  showPhotos: true,
 
   // Per-workout runtime
   sequence: [],
@@ -1153,7 +1187,8 @@ function savePrefs() {
       filterFocus: state.filterFocus,
       equipment: state.equipment,
       muteAudio: state.muteAudio,
-      showAlts: state.showAlts
+      showAlts: state.showAlts,
+      showPhotos: state.showPhotos
     }));
   } catch (e) {}
 }
@@ -1360,9 +1395,11 @@ const els = {
   labelA: document.getElementById('labelA'),
   labelB: document.getElementById('labelB'),
   exerciseA: document.getElementById('exerciseA'),
+  animA: document.getElementById('animA'),
   alternativeA: document.getElementById('alternativeA'),
   personB: document.getElementById('personB'),
   exerciseB: document.getElementById('exerciseB'),
+  animB: document.getElementById('animB'),
   alternativeB: document.getElementById('alternativeB'),
 
   upcoming: document.getElementById('upcoming'),
@@ -1371,6 +1408,7 @@ const els = {
   btnStart: document.getElementById('btnStart'),
   btnSkip: document.getElementById('btnSkip'),
   btnReset: document.getElementById('btnReset'),
+  showPhotos: document.getElementById('showPhotos'),
   showAlts: document.getElementById('showAlts'),
   muteAudio: document.getElementById('muteAudio')
 };
@@ -1622,6 +1660,19 @@ function setAlt(el, alt) {
   el.classList.toggle('has-alt', !!alt);
 }
 
+// Swap the two-frame demo photos in a person card. render() runs every
+// tick, so only touch the DOM when the exercise's media actually changes —
+// rewriting each second would restart the CSS animation.
+function updateAnim(el, ex) {
+  const base = ex && ex.img ? ex.img : '';
+  if (el.dataset.img === base) return;
+  el.dataset.img = base;
+  el.innerHTML = base
+    ? `<img src="img/exercises/${base}-0.jpg" alt="">` +
+      `<img class="f1" src="img/exercises/${base}-1.jpg" alt="">`
+    : '';
+}
+
 function renderSegBar(current, total, kind) {
   const row = document.createElement('div');
   row.className = 'round-row';
@@ -1747,9 +1798,13 @@ function render() {
 
   els.exerciseA.textContent = phase.a ? phase.a.task : '—';
   setAlt(els.alternativeA, phase.a ? phase.a.alt : '');
+  updateAnim(els.animA, phase.a);
   if (state.people === 2 && phase.b) {
     els.exerciseB.textContent = phase.b.task;
     setAlt(els.alternativeB, phase.b.alt);
+    updateAnim(els.animB, phase.b);
+  } else {
+    updateAnim(els.animB, null);
   }
 
   // Up next
@@ -1819,6 +1874,8 @@ function finish() {
   els.roundDots.innerHTML = '';
   els.exerciseA.textContent = 'Well done.';
   setAlt(els.alternativeA, '');
+  updateAnim(els.animA, null);
+  updateAnim(els.animB, null);
   if (state.people === 2) { els.exerciseB.textContent = 'Well done.'; setAlt(els.alternativeB, ''); }
   els.upcoming.innerHTML = '';
   els.btnStart.textContent = 'Start over';
@@ -1928,6 +1985,11 @@ els.btnReset.addEventListener('click', () => {
 });
 els.btnSkip.addEventListener('click', skipBlock);
 
+els.showPhotos.addEventListener('change', (e) => {
+  state.showPhotos = e.target.checked;
+  document.body.classList.toggle('hide-photos', !state.showPhotos);
+  savePrefs();
+});
 els.showAlts.addEventListener('change', (e) => {
   state.showAlts = e.target.checked;
   document.body.classList.toggle('show-alternatives', state.showAlts);
@@ -1950,7 +2012,9 @@ els.nameA.value = state.nameA || '';
 els.nameB.value = state.nameB || '';
 els.showAlts.checked = state.showAlts;
 els.muteAudio.checked = state.muteAudio;
+els.showPhotos.checked = state.showPhotos !== false;
 document.body.classList.toggle('show-alternatives', state.showAlts);
+document.body.classList.toggle('hide-photos', state.showPhotos === false);
 renderPeoplePicker();
 renderEquipmentPicker();
 renderTimeFilter();

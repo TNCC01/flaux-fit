@@ -21,6 +21,9 @@ Single static `index.html`. No build step. Deploys to Vercel.
   exercise cycles for round-to-round variety
 - 5-minute warm-up and cool-down bookends on every tabata workout
 - Injury alternative for every movement
+- Two-frame demonstration photos on the workout screen for most exercises
+  (toggleable), stored in `img/exercises/` as `<base>-{0,1}.jpg` so richer
+  media (GIF/video) can drop in later
 - Wake lock, audio cues, two-tap reset, screen-on while training
 
 ## Equipment supported
@@ -42,6 +45,12 @@ python3 -m http.server 4173
 ```sh
 vercel deploy --prod
 ```
+
+## Media credits
+
+Exercise demonstration photos are from the
+[Free Exercise DB](https://github.com/yuhonas/free-exercise-db)
+(public domain, Unlicense), resized and bundled locally.
 
 ## Domain
 
