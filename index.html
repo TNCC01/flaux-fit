@@ -489,6 +489,26 @@
     color: var(--accent);
   }
 
+  /* Rest phases: countdown compacts, person cards flip to a big
+     "Up next" preview so there's time to read it and grab equipment. */
+  .next-eyebrow {
+    display: none;
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: var(--work);
+    margin-bottom: 0.3rem;
+  }
+  #workoutView.resting .next-eyebrow { display: block; }
+  #workoutView.resting .timer-card { padding: 0.55rem 1rem; }
+  #workoutView.resting .time-display { font-size: 4.4rem; margin: 0.05rem 0; }
+  #workoutView.resting .phase-label { font-size: 0.9rem; letter-spacing: 0.2em; }
+  #workoutView.resting .total-time { font-size: 0.85rem; }
+  #workoutView.resting .exercise { font-size: 1.85rem; }
+  #workoutView.resting .upcoming { display: none; }
+  #workoutView.resting .person { border-color: rgba(20,184,166,0.4); }
+
   .upcoming {
     display: flex;
     align-items: center;
@@ -579,6 +599,8 @@
     .exercise-grid { grid-template-columns: 1fr; }
     .exercise { font-size: 1.2rem; }
     .menu-title { font-size: 1.5rem; }
+    #workoutView.resting .time-display { font-size: 3.6rem; }
+    #workoutView.resting .exercise { font-size: 1.55rem; }
   }
 </style>
 </head>
@@ -659,12 +681,14 @@
     <div class="exercise-grid" id="exerciseGrid">
       <div class="person a">
         <div class="person-label" id="labelA">Person A</div>
+        <div class="next-eyebrow">Up next</div>
         <div class="exercise" id="exerciseA">—</div>
         <div class="ex-anim" id="animA"></div>
         <div class="alternative" id="alternativeA"></div>
       </div>
       <div class="person b" id="personB">
         <div class="person-label" id="labelB">Person B</div>
+        <div class="next-eyebrow">Up next</div>
         <div class="exercise" id="exerciseB">—</div>
         <div class="ex-anim" id="animB"></div>
         <div class="alternative" id="alternativeB"></div>
@@ -1787,13 +1811,26 @@ function render() {
 
   renderRoundDots(phase);
 
-  els.exerciseA.textContent = phase.a ? phase.a.task : '—';
-  setAlt(els.alternativeA, phase.a ? phase.a.alt : '');
-  updateAnim(els.animA, phase.a);
-  if (state.people === 2 && phase.b) {
-    els.exerciseB.textContent = phase.b.task;
-    setAlt(els.alternativeB, phase.b.alt);
-    updateAnim(els.animB, phase.b);
+  // Rest phases become a big "up next" preview: the countdown compacts
+  // and the person cards show the next exercises (with demos) instead of
+  // "Rest — breathe", so there's time to read them and grab equipment.
+  const restLike = phase.kind === 'rest' || phase.kind === 'blockrest';
+  let dispA = phase.a, dispB = phase.b;
+  if (restLike) {
+    let j = state.currentIdx + 1;
+    while (j < state.sequence.length && state.sequence[j].kind !== 'work') j++;
+    const nxt = state.sequence[j] || state.sequence[state.currentIdx + 1];
+    if (nxt) { dispA = nxt.a; dispB = nxt.b; }
+  }
+  els.workoutView.classList.toggle('resting', restLike);
+
+  els.exerciseA.textContent = dispA ? dispA.task : '—';
+  setAlt(els.alternativeA, dispA ? dispA.alt : '');
+  updateAnim(els.animA, dispA);
+  if (state.people === 2 && dispB) {
+    els.exerciseB.textContent = dispB.task;
+    setAlt(els.alternativeB, dispB.alt);
+    updateAnim(els.animB, dispB);
   } else {
     updateAnim(els.animB, null);
   }
@@ -1858,6 +1895,7 @@ function finish() {
   stopTimer();
   bigBell();
   clearBleed();
+  els.workoutView.classList.remove('resting');
   els.timerCard.className = 'timer-card';
   els.phaseLabel.textContent = 'Done';
   els.timeDisplay.textContent = '✓';
