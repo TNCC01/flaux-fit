@@ -1025,6 +1025,80 @@ const workouts = [
   },
 
   {
+    id: 'kb-blitz',
+    name: 'KB Blitz',
+    tagline: 'Two bells, twenty minutes',
+    focus: 'lower-body',
+    blurb: 'Pure kettlebell — goblet squats and swings, one bell each, swap at halfway.',
+    format: 'tabata',
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
+    blocks: [
+      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
+      blockSwap('KB swings', 'kbSwing15', 'kbSwing10')
+    ]
+  },
+
+  {
+    id: 'ring-rush',
+    name: 'Ring Rush',
+    tagline: 'Hang on tight',
+    focus: 'upper-body',
+    blurb: 'Quick upper-body hit on the rings and dumbbells — pull, press, dip, curl.',
+    format: 'tabata',
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
+    blocks: [
+      blockCycle('Rows & presses', ['ringRow', 'pikePushup', 'dbRow', 'pushup']),
+      blockCycle('Dips & curls', ['ringDip', 'dbCurl', 'ringPushup', 'dbLateralRaise'])
+    ]
+  },
+
+  {
+    id: 'lunchbreak-loaded',
+    name: 'Lunchbreak Loaded',
+    tagline: 'The lunch break, with weights',
+    focus: 'whole-body',
+    blurb: 'Same footprint as Lunchbreak Burn, but with the whole kit — squats, presses, swings, skips.',
+    format: 'tabata',
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
+    blocks: [
+      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
+      blockCycle('Press & pull mix', ['barbellPress', 'pushup', 'dbRow', 'plankShoulderTaps']),
+      blockCycle('Swings & skips', ['kbSwing15', 'skipping', 'kbSwing10', 'highKnees'])
+    ]
+  },
+
+  {
+    id: 'loaded-core',
+    name: 'Loaded Core',
+    tagline: 'Weighted middle management',
+    focus: 'core',
+    blurb: 'Core work with gear — weighted twists, renegade rows, ring hangs, carries.',
+    format: 'tabata',
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
+    blocks: [
+      blockAlt('Russian twists & Renegade rows', 'russianTwistKb', 'renegadeRow'),
+      blockCycle('Hangs, planks & raises', ['ringTuckHold', 'plankShoulderTaps', 'legRaises', 'sidePlankDips']),
+      blockAlt('Suitcase carry & Hollow rocks', 'dbSuitcaseCarry', 'hollowRocks')
+    ]
+  },
+
+  {
+    id: 'half-power',
+    name: 'Half Power',
+    tagline: "Power Hour's little sibling",
+    focus: 'whole-body',
+    blurb: 'Squats, rows, swings and the clean & press finisher — the big one, condensed.',
+    format: 'tabata',
+    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
+    blocks: [
+      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
+      blockCycle('Rows & push-up mix', ['ringRow', 'pushup', 'ringPushup', 'pikePushup']),
+      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
+      blockCleanPress()
+    ]
+  },
+
+  {
     id: 'iron-legs',
     name: 'Iron Legs',
     tagline: 'Lower-body strength + grit',
