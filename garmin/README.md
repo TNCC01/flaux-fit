@@ -8,8 +8,11 @@ warm-up and cool-down, 8 rounds of 20s work / 10s rest per block, and each
 workout's own block rests.
 
 Exercise names use solo mode (one person wearing the watch) with all
-equipment assumed present. Tabata workouts load as Cardio, the two stretch
-flows as Yoga.
+equipment assumed present. The on-screen name and animation for each interval
+come from Garmin's built-in exercise catalog (a Forerunner 255 shows a generic
+"Go / Rest" for a plain custom name), so each movement is mapped to the closest
+catalog exercise. Tabata workouts therefore load as **Strength** (the format
+that renders those names + animations); the two stretch flows load as Yoga.
 
 ## Getting them onto a Forerunner 255 Music (from a Mac)
 
@@ -29,10 +32,11 @@ Android File Transfer).
 
 ## Running a workout on the watch
 
-1. Press **Start**, choose **Cardio** (or **Yoga** for the two stretch flows).
+1. Press **Start**, choose **Strength** (or **Yoga** for the two stretch flows).
 2. Hold **Up** to open the menu, then **Training > Workouts**.
 3. Pick the workout and press **Start**. The watch walks you through every
-   step and vibrates at each change. **Lap** skips ahead a step if needed.
+   step, shows the exercise name + animation, and vibrates at each change.
+   **Lap** skips ahead a step if needed.
 
 ## Regenerating
 
@@ -48,6 +52,11 @@ The generator reads the app's real `EXERCISES` dictionary, block helpers, and
 the app. Files are encoded with Garmin's official FIT SDK (`@garmin/fitsdk`),
 and each gets a unique file id so the watch imports all 18 rather than
 treating them as one duplicate.
+
+Each exercise is mapped to a Garmin catalog entry in `EX_MAP` inside the
+script. If you add a new exercise to `index.html` that isn't mapped, the
+generator stops with an error naming it - add a line to `EX_MAP` (pick the
+closest category + exercise from the FIT SDK) and re-run.
 
 ## Notes on watch limits
 
