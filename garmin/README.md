@@ -8,11 +8,23 @@ warm-up and cool-down, 8 rounds of 20s work / 10s rest per block, and each
 workout's own block rests.
 
 Exercise names use solo mode (one person wearing the watch) with all
-equipment assumed present. The on-screen name and animation for each interval
-come from Garmin's built-in exercise catalog (a Forerunner 255 shows a generic
-"Go / Rest" for a plain custom name), so each movement is mapped to the closest
-catalog exercise. Tabata workouts therefore load as **Strength** (the format
-that renders those names + animations); the two stretch flows load as Yoga.
+equipment assumed present.
+
+**How the name shows on the watch.** A Forerunner 255 does not read a step's
+free-text name (it shows a generic "Go / Rest" for that). It reads the name
+from a separate `exercise_title` (FIT mesg 264) record, matched to each step by
+the `(exercise_category, exercise_name)` pair - confirmed by decoding genuine
+Garmin and known-working sideloaded strength `.fit` files. So each movement is
+mapped to a real Garmin catalog exercise (`EX_MAP` in the generator) and one
+`exercise_title` is emitted per distinct exercise. Weight variants (15kg vs
+10kg) share one exercise and are told apart by the `exercise_weight` field, so
+the watch shows e.g. "Goblet Squat / 15 kg" then ".../ 10 kg". Tabata workouts
+load as **Strength** (which also shows the muscle-group graphic); the two
+stretch flows load as **Yoga** with each pose named verbatim.
+
+Note: the per-exercise demo *animation* only exists for Garmin's own premade
+workouts, not for sideloaded/custom ones - so expect the name, the weight, and
+the category muscle-group graphic, but not a movement-specific animation loop.
 
 ## Getting them onto a Forerunner 255 Music (from a Mac)
 
