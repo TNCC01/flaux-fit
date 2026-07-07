@@ -1,0 +1,12 @@
+{
+  "name": "flaux-fit-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build scripts for FIT — the Garmin .FIT workout export lives here. The web app itself is the dependency-free index.html and needs none of this.",
+  "scripts": {
+    "generate-fit": "node scripts/generate-fit.mjs"
+  },
+  "devDependencies": {
+    "@garmin/fitsdk": "^21.208.0"
+  }
+}

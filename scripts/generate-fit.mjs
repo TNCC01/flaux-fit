@@ -2,7 +2,8 @@
 // Generate Garmin structured-workout .FIT files from the workout library in
 // index.html.  See GARMIN-HANDOFF.md for the data model (Route 1).
 //
-// Usage:  node scripts/generate-fit.mjs
+// Usage:  npm install   (once, to get the Garmin FIT SDK)
+//         node scripts/generate-fit.mjs
 // Output: garmin/<workout-id>.fit (one file per workout)
 //
 // The watch guides each interval: the exercise name shows on screen and the
@@ -11,10 +12,16 @@
 // the web app expands them via buildSequence(workout, 1). Repeated rounds are
 // collapsed into FIT repeat steps so files stay small and under the watch's
 // step cap while every 20s work interval keeps its real exercise name.
+//
+// Files are encoded with Garmin's official FIT SDK (@garmin/fitsdk) so the
+// framing is exactly what watches expect, and each file gets a unique file_id
+// (serial + timestamp) so the watch imports all of them instead of treating
+// them as one duplicate.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Encoder, Profile } from '@garmin/fitsdk';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'garmin');
@@ -24,7 +31,7 @@ const OUT_DIR = join(ROOT, 'garmin');
 // ---------------------------------------------------------------------
 // We pull two verbatim regions out of index.html and evaluate them:
 //   A) EQUIPMENT + EXERCISES + resolveEx + block helpers + workouts
-//   B) TABATA + buildSequence
+//   B) warmup/cooldown exercises + TABATA + buildSequence
 // A minimal `state` with no equipment overrides means resolveEx treats all
 // gear as present (state.equipment[id] !== false is true for undefined), so
 // no bodyweight adaptation happens - the watch files use each exercise's own
@@ -50,110 +57,21 @@ function loadApp() {
 }
 
 // ---------------------------------------------------------------------
-// 2. FIT binary encoder (workout files only, little-endian)
+// 2. Sequence -> compressed step list
 // ---------------------------------------------------------------------
-const CRC_TABLE = [
-  0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
-  0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400
-];
-function crc16(bytes, crc = 0) {
-  for (const byte of bytes) {
-    let tmp = CRC_TABLE[crc & 0xF];
-    crc = (crc >> 4) & 0x0FFF;
-    crc = crc ^ tmp ^ CRC_TABLE[byte & 0xF];
-    tmp = CRC_TABLE[crc & 0xF];
-    crc = (crc >> 4) & 0x0FFF;
-    crc = crc ^ tmp ^ CRC_TABLE[(byte >> 4) & 0xF];
-  }
-  return crc;
-}
-
-const T = {
-  enum:    { code: 0x00, size: 1 },
-  uint16:  { code: 0x84, size: 2 },
-  uint32:  { code: 0x86, size: 4 },
-  uint32z: { code: 0x8C, size: 4 },
-  string:  { code: 0x07, size: 0 }
-};
-
-class FitWriter {
-  constructor() { this.chunks = []; }
-  push(...bytes) { this.chunks.push(Uint8Array.from(bytes)); }
-  pushBuf(buf) { this.chunks.push(buf); }
-
-  definition(localType, globalNum, fields) {
-    this.push(0x40 | localType, 0, 0);
-    const g = new Uint8Array(3);
-    new DataView(g.buffer).setUint16(0, globalNum, true);
-    g[2] = fields.length;
-    this.pushBuf(g);
-    for (const f of fields) {
-      const size = f.type === T.string ? f.strSize : f.type.size;
-      this.push(f.num, size, f.type.code);
-    }
-  }
-
-  data(localType, fields, values) {
-    this.push(localType);
-    fields.forEach((f, i) => {
-      const v = values[i];
-      if (f.type === T.string) {
-        const buf = new Uint8Array(f.strSize);
-        const enc = new TextEncoder().encode(v ?? '');
-        buf.set(enc.slice(0, f.strSize - 1));
-        this.pushBuf(buf);
-      } else {
-        const buf = new Uint8Array(f.type.size);
-        const dv = new DataView(buf.buffer);
-        if (f.type.size === 1) buf[0] = v;
-        else if (f.type.size === 2) dv.setUint16(0, v, true);
-        else dv.setUint32(0, v, true);
-        this.pushBuf(buf);
-      }
-    });
-  }
-
-  toFile() {
-    let dataSize = 0;
-    for (const c of this.chunks) dataSize += c.length;
-    const header = new Uint8Array(14);
-    const dv = new DataView(header.buffer);
-    header[0] = 14;
-    header[1] = 0x10;
-    dv.setUint16(2, 2132, true);
-    dv.setUint32(4, dataSize, true);
-    header.set(new TextEncoder().encode('.FIT'), 8);
-    dv.setUint16(12, crc16(header.slice(0, 12)), true);
-
-    const file = new Uint8Array(14 + dataSize + 2);
-    file.set(header, 0);
-    let off = 14;
-    for (const c of this.chunks) { file.set(c, off); off += c.length; }
-    const fileCrc = crc16(file.slice(0, off));
-    new DataView(file.buffer).setUint16(off, fileCrc, true);
-    return file;
-  }
-}
-
-// ---------------------------------------------------------------------
-// 3. Sequence -> compressed step list
-// ---------------------------------------------------------------------
-const INTENSITY = { active: 0, rest: 1, warmup: 2, cooldown: 3 };
-const DURATION = { time: 0, repeat: 6 };
-const TARGET_OPEN = 2;
-const STEP_NAME_SIZE = 40; // fixed field width; names are truncated to fit
+const MAX_NAME = 32; // keep step names short enough to read on the watch
 
 const clean = (s) => (s || '').replace(/\s+—\s+/g, ' - ').replace(/[—–]/g, '-').trim();
-const shorten = (s, max = STEP_NAME_SIZE - 1) => {
+const shorten = (s, max = MAX_NAME) => {
   s = clean(s);
   return s.length <= max ? s : s.slice(0, max - 1).trimEnd() + '…';
 };
 
 const kindIntensity = (kind) => {
-  if (kind === 'warmup') return INTENSITY.warmup;
-  if (kind === 'cooldown') return INTENSITY.cooldown;
-  if (kind === 'rest' || kind === 'blockrest') return INTENSITY.rest;
-  return INTENSITY.active; // work, stretch
+  if (kind === 'warmup') return 'warmup';
+  if (kind === 'cooldown') return 'cooldown';
+  if (kind === 'rest' || kind === 'blockrest') return 'rest';
+  return 'active'; // work, stretch
 };
 
 // Collapse a block's round names into repeat groups without reordering or
@@ -181,38 +99,34 @@ function compressRounds(names) {
   return names.map((name) => ({ items: [name], reps: 1 }));
 }
 
-// Turn buildSequence(workout, 1) output into FIT steps.
+// Turn buildSequence(workout, 1) output into a flat list of FIT steps.
+// Each step is { name, seconds, intensity } or { repeatFrom, count }.
 function stepsFor(workout, buildSequence) {
   const seq = buildSequence(workout, 1);
   const steps = [];
-  const emitTimed = (name, seconds, intensity) =>
-    steps.push({ name: shorten(name), seconds, intensity });
-
   let i = 0;
   while (i < seq.length) {
     const e = seq[i];
     if (e.kind === 'work') {
-      // Gather this block's consecutive work/rest pairs.
       const pairs = [];
       while (i < seq.length && seq[i].kind === 'work') {
         const work = seq[i];
         const rest = seq[i + 1];
-        pairs.push({ name: work.a.task, workSec: work.duration, restSec: rest.duration });
+        pairs.push({ name: shorten(work.a.task), workSec: work.duration, restSec: rest.duration });
         i += 2;
       }
-      const names = pairs.map((p) => shorten(p.name));
+      const names = pairs.map((p) => p.name);
       for (const group of compressRounds(names)) {
         const firstIdx = steps.length;
         for (const name of group.items) {
-          steps.push({ name, seconds: pairs[0].workSec, intensity: INTENSITY.active });
-          steps.push({ name: 'Rest', seconds: pairs[0].restSec, intensity: INTENSITY.rest });
+          steps.push({ name, seconds: pairs[0].workSec, intensity: 'active' });
+          steps.push({ name: 'Rest', seconds: pairs[0].restSec, intensity: 'rest' });
         }
         if (group.reps > 1) steps.push({ repeatFrom: firstIdx, count: group.reps });
       }
     } else {
-      // warmup / cooldown / blockrest / stretch: one timed step each.
       const label = e.kind === 'stretch' ? e.a.task : e.name;
-      emitTimed(label, e.duration, kindIntensity(e.kind));
+      steps.push({ name: shorten(label), seconds: e.duration, intensity: kindIntensity(e.kind) });
       i += 1;
     }
   }
@@ -220,56 +134,57 @@ function stepsFor(workout, buildSequence) {
 }
 
 // ---------------------------------------------------------------------
-// 4. Encode one workout file
+// 3. Encode one workout file with the official FIT SDK
 // ---------------------------------------------------------------------
-const SPORT_TRAINING = 10;
-const SUB_SPORT = { cardio: 26, yoga: 43 };
-const TIME_CREATED = Math.floor(Date.UTC(2026, 6, 6) / 1000) - 631065600;
+const { MesgNum } = Profile;
+// Base timestamp; each file offsets by its index so every file_id is unique.
+const BASE_TIME = Date.UTC(2026, 6, 6, 0, 0, 0);
 
-function encodeWorkout(workout, buildSequence) {
+function encodeWorkout(workout, buildSequence, index) {
   const steps = stepsFor(workout, buildSequence);
-  const subSport = workout.format === 'tabata' ? SUB_SPORT.cardio : SUB_SPORT.yoga;
-  const w = new FitWriter();
+  const subSport = workout.format === 'tabata' ? 'cardioTraining' : 'yoga';
+  const enc = new Encoder();
 
-  const fileIdFields = [
-    { num: 0, type: T.enum },
-    { num: 1, type: T.uint16 },
-    { num: 2, type: T.uint16 },
-    { num: 3, type: T.uint32z },
-    { num: 4, type: T.uint32 }
-  ];
-  w.definition(0, 0, fileIdFields);
-  w.data(0, fileIdFields, [5, 255, 1, 0x464C5558 /* FLUX */, TIME_CREATED]);
+  // Unique identity per file so the watch imports all 18, not just one.
+  enc.onMesg(MesgNum.FILE_ID, {
+    type: 'workout',
+    manufacturer: 'development',
+    product: 1,
+    serialNumber: 0x464C0000 + index, // "FL" + index, nonzero
+    timeCreated: new Date(BASE_TIME + index * 1000)
+  });
 
-  const nameSize = Math.min(64, new TextEncoder().encode(workout.name).length + 1);
-  const workoutFields = [
-    { num: 4, type: T.enum },
-    { num: 6, type: T.uint16 },
-    { num: 8, type: T.string, strSize: nameSize },
-    { num: 11, type: T.enum }
-  ];
-  w.definition(1, 26, workoutFields);
-  w.data(1, workoutFields, [SPORT_TRAINING, steps.length, workout.name, subSport]);
+  enc.onMesg(MesgNum.WORKOUT, {
+    sport: 'training',
+    subSport,
+    numValidSteps: steps.length,
+    wktName: workout.name
+  });
 
-  const stepFields = [
-    { num: 254, type: T.uint16 },
-    { num: 0, type: T.string, strSize: STEP_NAME_SIZE },
-    { num: 1, type: T.enum },
-    { num: 2, type: T.uint32 },
-    { num: 3, type: T.enum },
-    { num: 4, type: T.uint32 },
-    { num: 7, type: T.enum }
-  ];
-  w.definition(2, 27, stepFields);
   steps.forEach((step, i) => {
     if (step.repeatFrom !== undefined) {
-      w.data(2, stepFields, [i, '', DURATION.repeat, step.repeatFrom, TARGET_OPEN, step.count, INTENSITY.active]);
+      enc.onMesg(MesgNum.WORKOUT_STEP, {
+        messageIndex: i,
+        intensity: 'active',
+        durationType: 'repeatUntilStepsCmplt',
+        durationValue: step.repeatFrom, // step index to loop back to
+        targetType: 'open',
+        targetValue: step.count         // number of repetitions
+      });
     } else {
-      w.data(2, stepFields, [i, step.name, DURATION.time, step.seconds * 1000, TARGET_OPEN, 0, step.intensity]);
+      enc.onMesg(MesgNum.WORKOUT_STEP, {
+        messageIndex: i,
+        wktStepName: step.name,
+        intensity: step.intensity,
+        durationType: 'time',
+        durationValue: step.seconds * 1000, // milliseconds
+        targetType: 'open',
+        targetValue: 0
+      });
     }
   });
 
-  return { bytes: w.toFile(), stepCount: steps.length, steps };
+  return { bytes: enc.close(), stepCount: steps.length, steps };
 }
 
 // Expanded duration in seconds (repeats unrolled) for the summary printout.
@@ -288,15 +203,15 @@ function totalSeconds(steps) {
 }
 
 // ---------------------------------------------------------------------
-// 5. Main
+// 4. Main
 // ---------------------------------------------------------------------
 const { workouts, buildSequence } = loadApp();
 mkdirSync(OUT_DIR, { recursive: true });
 
 console.log(`Generating ${workouts.length} workout files into garmin/\n`);
 let maxSteps = 0;
-for (const workout of workouts) {
-  const { bytes, stepCount, steps } = encodeWorkout(workout, buildSequence);
+workouts.forEach((workout, index) => {
+  const { bytes, stepCount, steps } = encodeWorkout(workout, buildSequence, index);
   maxSteps = Math.max(maxSteps, stepCount);
   writeFileSync(join(OUT_DIR, `${workout.id}.fit`), bytes);
   const mins = (totalSeconds(steps) / 60).toFixed(0);
@@ -304,6 +219,6 @@ for (const workout of workouts) {
     `  ${workout.id.padEnd(20)} ${String(stepCount).padStart(3)} steps  ` +
     `${mins.padStart(3)} min  ${String(bytes.length).padStart(6)} bytes  (${workout.format})`
   );
-}
+});
 console.log(`\nDone. Largest workout: ${maxSteps} steps.`);
 console.log('Copy the .fit files onto the watch: GARMIN/NewFiles (see garmin/README.md).');

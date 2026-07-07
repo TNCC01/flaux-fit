@@ -39,12 +39,15 @@ Android File Transfer).
 After the workouts array in `index.html` changes:
 
 ```
+npm install            # once, to fetch Garmin's FIT SDK
 node scripts/generate-fit.mjs
 ```
 
-No dependencies, just Node. The generator reads the app's real `EXERCISES`
-dictionary, block helpers, and `buildSequence` straight out of `index.html`,
-so the watch files always match the app.
+The generator reads the app's real `EXERCISES` dictionary, block helpers, and
+`buildSequence` straight out of `index.html`, so the watch files always match
+the app. Files are encoded with Garmin's official FIT SDK (`@garmin/fitsdk`),
+and each gets a unique file id so the watch imports all 18 rather than
+treating them as one duplicate.
 
 ## Notes on watch limits
 
