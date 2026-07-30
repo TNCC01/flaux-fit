@@ -84,11 +84,17 @@ body {
   */
   -webkit-user-select: none;
   user-select: none;
+  /* Paired with the above: suppress the long-press callout as well, since it
+     is the other half of the same gesture. Both are applied to the whole
+     shell rather than to individual card classes, because the behaviour is
+     not element-specific. */
+  -webkit-touch-callout: none;
 }
 /* The two places selecting and editing text is the whole point. */
 #scroller input, #scroller textarea {
   -webkit-user-select: text;
   user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /*
