@@ -121,34 +121,34 @@ button {
 /*
   SCROLLING FROM ANYWHERE
 
-  The cards cover most of the screen, so a drag that starts on one has to
-  scroll the page. Three things were working against that:
+  The cards cover most of the screen, so a drag starting on one has to scroll
+  the page.
 
-  - `touch-action: manipulation` on every button. Per spec it still permits
-    panning, and Chromium does pan, but it is the only non-default
-    touch-action in the app and WebKit is less predictable here. Removed
-    above; `auto` is the default and unambiguously scrolls.
-  - a drag beginning on text can start a text selection instead of a scroll,
-    and these cards are mostly text.
-  - a press-and-drag on a button can raise the iOS callout instead.
+  There is deliberately NO `touch-action` anywhere in this file. That is the
+  whole fix. The symptom was precise: on iOS you could flick-scroll from a
+  card but not press-and-drag it. A flick moves far enough, fast enough, that
+  WebKit commits to a pan straight away; a slow drag stays inside the
+  ambiguity window, and on an element with any non-`auto` touch-action it
+  goes down a gesture path that never becomes a scroll. `manipulation` and
+  `pan-y pinch-zoom` are both non-`auto`, so swapping one for the other
+  changed nothing except which elements were affected. Only `auto`, the
+  default, gets the full native scrolling behaviour.
 
-  None of the card text is worth selecting, so selection and the callout are
-  turned off on the interactive surfaces, and vertical panning is stated
-  explicitly rather than left to be inferred.
+  Selection and the long-press callout stay switched off: none of this text
+  is worth selecting, and a drag that begins on text can start a selection
+  instead of a scroll.
 */
 .path-card, .workout-card, .interval-card, .chip, .picker-row, .person,
 .timer-card, .block-info, .upcoming, .preview-card, .toggle-row,
 .brand-bar, .menu-header, .top-bar, .exclude-group, .bodymap {
-  touch-action: pan-y pinch-zoom;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
 }
-/* The one place typing and selecting text is the point. */
+/* The one place selecting text is the point. */
 .name-inputs input, .exclude-panel input[type="search"] {
   -webkit-user-select: text;
   user-select: text;
-  touch-action: auto;
 }
 button.secondary {
   background: var(--card);
@@ -434,6 +434,28 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   color: var(--muted); font-size: 0.85rem; font-weight: 700; text-decoration: underline;
 }
 .empty-state { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 2rem; }
+
+/* ============== Library sections ============== */
+#librarySections { display: flex; flex-direction: column; gap: 1.4rem; }
+.library-section { display: flex; flex-direction: column; gap: 0.7rem; }
+.section-head {
+  display: flex; align-items: baseline; gap: 0.75rem;
+  flex-wrap: wrap; padding: 0 0.25rem;
+}
+.section-title {
+  font-size: 1.15rem; font-weight: 800; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--teal-bright);
+}
+.section-sub { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.section-action { margin-left: auto; }
+
+.history-card { cursor: pointer; }
+.card-actions { display: flex; gap: 0.9rem; margin-top: 0.35rem; flex-wrap: wrap; }
+.card-actions .card-remove { margin-top: 0; }
+.card-remove[disabled] { opacity: 0.5; text-decoration: none; cursor: default; }
+.card-done { color: var(--teal-bright); font-size: 0.85rem; font-weight: 700; }
+.card-done::before { content: '✓ '; }
+.card-part { color: var(--muted); font-size: 0.85rem; font-weight: 700; }
 
 /* ============== Workout view ============== */
 .top-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.25rem; }

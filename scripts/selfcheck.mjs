@@ -297,6 +297,21 @@ if (worstOverlap > 0.5) {
        `,  the recency weighting is not working`);
 }
 
+// ------------------------------- 11. no touch-action in the stylesheet
+// iOS only: any non-`auto` touch-action stops a slow press-and-drag from
+// turning into a page scroll, while a fast flick still works. It cannot be
+// reproduced in Chromium, so guard it here rather than hope to catch it.
+const css = fs.readFileSync(path.join(ROOT, 'css/app.css'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '');          // strip comments
+const touchActions = [...css.matchAll(/touch-action\s*:\s*([^;}]+)/g)]
+  .map(m => m[1].trim())
+  .filter(v => v !== 'auto');
+if (touchActions.length) {
+  fail(`css/app.css sets touch-action: ${touchActions.join(', ')}. Anything other ` +
+       `than "auto" breaks press-and-drag scrolling on iOS (flick still works, ` +
+       `which is what makes it easy to miss).`);
+}
+
 // ------------------------------------------------------------- report
 const reused = ids.filter(id => EXERCISES[id].equipment.length === 0).length;
 console.log(`exercises          ${ids.length} (${reused} bodyweight)`);

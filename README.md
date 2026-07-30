@@ -13,7 +13,8 @@ The home screen asks how you want to train:
 - **Let me choose**: the same, plus which areas of the body to target and
   anything you'd rather not do.
 - **Stretch & mobility**: three mobility routines, no gear, no pressure.
-- **The classics**: the 16 named workouts, plus anything you've saved.
+- **Workouts**: what you did recently, anything you saved, and the 16
+  named classics.
 
 Workouts in the first two paths are **generated on the spot** rather than
 pulled from a table of presets. The input space (6 equipment items × 8
@@ -59,6 +60,11 @@ rather than hardcoded.
   10-minute workout in 10 minutes of walking
 - Injury alternative for every movement
 - Adjustable exercise text size, for reading across a room
+- Workout history, so a generated session you liked but forgot to save is
+  still there afterwards, with one tap to reopen it or save it properly.
+  Deliberately browser-only: it sits in localStorage with the other
+  preferences, there is no account and no server, and clearing the browser
+  clears it too
 - Wall-clock timer, wake lock, audio cues, two-tap reset
 
 Two people never get handed the same single-instance item (one 15kg KB, one
@@ -100,6 +106,11 @@ bodyweight fallback, that no block hands one item to two people in any
 round of either interval style, that duration labels match what the timer
 actually runs, and that all 496 generator input combinations either build a
 valid workout or refuse for a good reason.
+
+It also asserts the stylesheet sets no `touch-action`. Anything other than
+`auto` stops a slow press-and-drag from becoming a page scroll on iOS while
+a fast flick still works, which is subtle enough to be worth a guard, and it
+cannot be reproduced in a desktop browser.
 
 After editing poses:
 

@@ -6,6 +6,10 @@
 
 const TIME_OPTIONS = [10, 15, 20, 25, 30, 40, 45, 60];
 const RECENT_CAP = 60;          // exercise ids remembered for variety
+const HISTORY_CAP = 40;         // sessions kept in the history list
+// Re-opening the same workout inside this window updates its history entry
+// instead of adding another, so a reset or a second go is still one session.
+const HISTORY_MERGE_MS = 3 * 60 * 60 * 1000;
 const PREFS_KEY = 'fit-prefs-2';
 
 // =====================================================================
@@ -30,6 +34,7 @@ const state = {
   textScale: 1,
   recent: [],
   saved: [],
+  history: [],
   filterFocus: 'all',
 
   // Per-workout runtime
@@ -51,7 +56,7 @@ const state = {
 
 const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'minutes', 'intervalStyle',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
-  'textScale', 'recent', 'saved', 'filterFocus'];
+  'textScale', 'recent', 'saved', 'history', 'filterFocus'];
 
 function loadPrefs() {
   try {
@@ -67,6 +72,7 @@ function loadPrefs() {
     if (!Array.isArray(state.excluded)) state.excluded = [];
     if (!Array.isArray(state.recent)) state.recent = [];
     if (!Array.isArray(state.saved)) state.saved = [];
+    if (!Array.isArray(state.history)) state.history = [];
   } catch (e) { /* corrupt store: fall back to defaults */ }
 }
 function savePrefs() {
@@ -119,7 +125,8 @@ const els = {
   btnBuild: $('btnBuild'), buildNote: $('buildNote'),
 
   btnLibraryBack: $('btnLibraryBack'), libraryTitle: $('libraryTitle'),
-  focusFilter: $('focusFilter'), workoutGrid: $('workoutGrid'),
+  focusFilter: $('focusFilter'), librarySections: $('librarySections'),
+  libraryNote: $('libraryNote'),
 
   btnBack: $('btnBack'), workoutTitle: $('workoutTitle'), peopleBadge: $('peopleBadge'),
   overallProgress: $('overallProgress'), blockName: $('blockName'), roundDots: $('roundDots'),
@@ -572,7 +579,7 @@ const newSeed = () => (Math.floor(Math.random() * 0x7fffffff) || 1);
 // =====================================================================
 function openLibrary() {
   renderFocusFilter();
-  renderWorkoutGrid();
+  renderLibrary();
   setView('library');
 }
 
@@ -590,15 +597,6 @@ function workoutAdapted(w) {
   return w.blocks.some(b => (b.ids || []).some(id => resolveEx(id, ctx).adapted));
 }
 
-function libraryEntries() {
-  const saved = state.saved.map(s => ({ kind: 'saved', saved: s }));
-  return [
-    ...saved,
-    ...CLASSICS.map(w => ({ kind: 'classic', workout: w })),
-    ...STRETCH_ROUTINES.map(w => ({ kind: 'stretch', workout: w }))
-  ];
-}
-
 function renderFocusFilter() {
   const list = [{ id: 'all', label: 'All' },
                 ...Object.keys(focusLabelMap).map(id => ({ id, label: focusLabelMap[id] }))];
@@ -611,56 +609,159 @@ function renderFocusFilter() {
       state.filterFocus = f.id;
       savePrefs();
       renderFocusFilter();
-      renderWorkoutGrid();
+      renderLibrary();
     });
     els.focusFilter.appendChild(b);
   });
 }
 
-function renderWorkoutGrid() {
-  els.libraryTitle.textContent = 'The classics';
-  els.workoutGrid.innerHTML = '';
+const inFocus = (focus) => state.filterFocus === 'all' || focus === state.filterFocus;
 
-  const entries = libraryEntries().filter(e => {
-    const focus = e.kind === 'saved' ? (e.saved.focus || 'whole-body') : e.workout.focus;
-    return state.filterFocus === 'all' || focus === state.filterFocus;
-  });
+// One section: a heading, an optional action, and a grid of cards.
+function librarySection(title, subtitle, cards, action) {
+  if (!cards.length) return null;
+  const wrap = document.createElement('section');
+  wrap.className = 'library-section';
+  const head = document.createElement('div');
+  head.className = 'section-head';
+  const h = document.createElement('div');
+  h.className = 'section-title';
+  h.textContent = title;
+  head.appendChild(h);
+  if (subtitle) {
+    const sub = document.createElement('div');
+    sub.className = 'section-sub';
+    sub.textContent = subtitle;
+    head.appendChild(sub);
+  }
+  if (action) head.appendChild(action);
+  wrap.appendChild(head);
+  const grid = document.createElement('div');
+  grid.className = 'workout-grid';
+  cards.forEach(c => grid.appendChild(c));
+  wrap.appendChild(grid);
+  return wrap;
+}
 
-  if (!entries.length) {
+function renderLibrary() {
+  els.libraryTitle.textContent = 'Workouts';
+  els.libraryNote.textContent = '';
+  els.librarySections.innerHTML = '';
+
+  const sections = [];
+
+  // Recent first, so a generated session you liked but didn't save is
+  // still findable afterwards.
+  const history = state.history.filter(h => inFocus(h.focus));
+  if (history.length) {
+    const clear = document.createElement('button');
+    clear.className = 'mini-btn section-action';
+    clear.textContent = 'Clear history';
+    clear.addEventListener('click', () => {
+      state.history = [];
+      savePrefs();
+      renderLibrary();
+    });
+    sections.push(librarySection(
+      'Recent', 'Kept on this device only', history.map(historyCard), clear));
+  }
+
+  sections.push(librarySection('Saved', null,
+    state.saved.filter(s => inFocus(s.focus || 'whole-body')).map(savedCard)));
+  sections.push(librarySection('The classics', null,
+    CLASSICS.filter(w => inFocus(w.focus)).map(namedCard)));
+  sections.push(librarySection('Stretch & mobility', null,
+    STRETCH_ROUTINES.filter(w => inFocus(w.focus)).map(namedCard)));
+
+  const live = sections.filter(Boolean);
+  if (!live.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.textContent = 'Nothing here with that focus.';
-    els.workoutGrid.appendChild(empty);
+    els.librarySections.appendChild(empty);
     return;
   }
+  live.forEach(sec => els.librarySections.appendChild(sec));
+}
 
-  entries.forEach(entry => {
-    if (entry.kind === 'saved') {
-      els.workoutGrid.appendChild(savedCard(entry.saved));
-      return;
-    }
-    const w = entry.workout;
-    const parts = durationParts(w);
-    const card = document.createElement('button');
-    card.className = 'workout-card ' + focusClassMap[w.focus];
-    const detail = parts.workMin !== null
-      ? `<div class="card-time-detail">${parts.workMin} min work + ${parts.bookendsMin} min warm-up/cool-down</div>` : '';
-    const adapted = workoutAdapted(w)
-      ? '<div class="card-adapted">Adapted for your equipment</div>' : '';
-    card.innerHTML = `
-      <div class="card-name">${esc(w.name)}</div>
-      <div class="card-tagline">${esc(w.tagline)}</div>
-      <div class="card-meta">
-        <span class="duration">${parts.totalMin} min</span>
-        <span>·</span>
-        <span class="focus-tag ${focusClassMap[w.focus]}">${focusLabelMap[w.focus]}</span>
-      </div>
-      ${detail}
-      <div class="card-blurb">${esc(w.blurb)}</div>
-      ${adapted}`;
-    card.addEventListener('click', () => openWorkout(w));
-    els.workoutGrid.appendChild(card);
+function namedCard(w) {
+  const parts = durationParts(w);
+  const card = document.createElement('button');
+  card.className = 'workout-card ' + focusClassMap[w.focus];
+  const detail = parts.workMin !== null
+    ? `<div class="card-time-detail">${parts.workMin} min work + ${parts.bookendsMin} min warm-up/cool-down</div>` : '';
+  const adapted = workoutAdapted(w)
+    ? '<div class="card-adapted">Adapted for your equipment</div>' : '';
+  card.innerHTML = `
+    <div class="card-name">${esc(w.name)}</div>
+    <div class="card-tagline">${esc(w.tagline)}</div>
+    <div class="card-meta">
+      <span class="duration">${parts.totalMin} min</span>
+      <span>·</span>
+      <span class="focus-tag ${focusClassMap[w.focus]}">${focusLabelMap[w.focus]}</span>
+    </div>
+    ${detail}
+    <div class="card-blurb">${esc(w.blurb)}</div>
+    ${adapted}`;
+  card.addEventListener('click', () => openWorkout(w));
+  return card;
+}
+
+function historyCard(rec) {
+  const wrap = document.createElement('div');
+  wrap.className = 'workout-card history-card ' + (focusClassMap[rec.focus] || 'whole');
+  const alreadySaved = rec.generated && state.saved.some(s => s.seed === rec.seed);
+  wrap.innerHTML = `
+    <div class="card-name">${esc(rec.name)}</div>
+    <div class="card-tagline">${esc(whenLabel(rec.at))}</div>
+    <div class="card-meta">
+      <span class="duration">${rec.minutes} min</span>
+      <span>·</span>
+      <span>${rec.people === 1 ? 'solo' : '2 people'}</span>
+      <span>·</span>
+      <span>${esc((INTERVALS[rec.intervalId] || {}).sub || '')}</span>
+    </div>
+    <div class="card-blurb">${esc(rec.blurb || '')}</div>
+    ${rec.completed ? '<div class="card-done">Finished</div>'
+                    : '<div class="card-part">Started, not finished</div>'}`;
+  wrap.addEventListener('click', () => {
+    const err = openFromRecord(rec);
+    if (err) els.libraryNote.textContent = err;
   });
+
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+  // Only generated sessions are worth saving; the named ones are already
+  // listed further down.
+  if (rec.generated) {
+    const save = document.createElement('button');
+    save.className = 'card-remove';
+    save.textContent = alreadySaved ? 'Already saved' : 'Save to favourites';
+    save.disabled = alreadySaved;
+    save.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.saved.some(x => x.seed === rec.seed)) return;
+      state.saved.unshift({
+        name: rec.name, blurb: rec.blurb, focus: rec.focus, seed: rec.seed,
+        request: rec.request, savedOn: new Date().toLocaleDateString()
+      });
+      savePrefs();
+      renderLibrary();
+    });
+    actions.appendChild(save);
+  }
+  const rm = document.createElement('button');
+  rm.className = 'card-remove';
+  rm.textContent = 'Remove';
+  rm.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.history = state.history.filter(h => !(h.key === rec.key && h.at === rec.at));
+    savePrefs();
+    renderLibrary();
+  });
+  actions.appendChild(rm);
+  wrap.appendChild(actions);
+  return wrap;
 }
 
 function savedCard(saved) {
@@ -671,21 +772,17 @@ function savedCard(saved) {
     <div class="card-tagline">Saved ${esc(saved.savedOn || '')}</div>
     <div class="card-blurb">${esc(saved.blurb || '')}</div>`;
   wrap.addEventListener('click', () => {
-    // Same seed and same request rebuilds the identical session.
-    const w = generateWorkout({ ...saved.request, equipment: { ...state.equipment },
-                                excluded: state.excluded.slice(), seed: saved.seed, recent: [] });
-    if (w.error) { alert(w.error); return; }
-    state.lastRequest = saved.request;
-    openWorkout(w);
+    const err = openFromRecord({ ...saved, generated: true });
+    if (err) els.libraryNote.textContent = err;
   });
   const rm = document.createElement('button');
   rm.className = 'card-remove';
   rm.textContent = 'Remove';
   rm.addEventListener('click', (e) => {
     e.stopPropagation();
-    state.saved = state.saved.filter(s => s.seed !== saved.seed);
+    state.saved = state.saved.filter(x => x.seed !== saved.seed);
     savePrefs();
-    renderWorkoutGrid();
+    renderLibrary();
   });
   wrap.appendChild(rm);
   return wrap;
@@ -1043,6 +1140,7 @@ function startTimer() {
   beginBleed(state.remainingInPhase);
   render();
   rememberExercises();
+  recordHistory();
 }
 
 function pauseTimer() {
@@ -1074,6 +1172,7 @@ function resetWorkout() {
 
 function finish() {
   stopTimer();
+  markHistoryComplete();
   bigBell();
   clearBleed();
   els.workoutView.classList.remove('resting');
@@ -1133,6 +1232,91 @@ function rememberExercises() {
   const ids = [...new Set(w.blocks.flatMap(b => b.ids || []))];
   state.recent = [...ids, ...state.recent.filter(id => !ids.includes(id))].slice(0, RECENT_CAP);
   savePrefs();
+}
+
+// =====================================================================
+// HISTORY
+// Every session you start is logged, so a generated workout you liked but
+// forgot to save is still there afterwards. Browser-only by design: it
+// lives in localStorage alongside the other preferences, and if the cache
+// is cleared it goes with it. No account, no server.
+// =====================================================================
+
+// A stable key for "the same workout", so restarting one doesn't log twice.
+const historyKey = (w) => w.generated ? `gen:${w.seed}` : `id:${w.id}`;
+
+function recordHistory() {
+  const w = state.workout;
+  if (!w) return;
+  const key = historyKey(w);
+  const now = Date.now();
+  const existing = state.history.find(h => h.key === key && now - h.at < HISTORY_MERGE_MS);
+  if (existing) {
+    existing.at = now;
+    savePrefs();
+    return;
+  }
+  state.history.unshift({
+    key,
+    name: w.name,
+    blurb: w.blurb || '',
+    focus: w.focus || 'whole-body',
+    minutes: durationParts(w).totalMin,
+    people: state.people,
+    intervalId: w.intervalId || state.intervalStyle,
+    generated: !!w.generated,
+    // Enough to rebuild it exactly: a seed and a request for generated
+    // workouts, an id for the named ones.
+    seed: w.seed || null,
+    request: w.request ? { ...w.request, recent: [] } : null,
+    workoutId: w.generated ? null : w.id,
+    at: now,
+    completed: false
+  });
+  state.history = state.history.slice(0, HISTORY_CAP);
+  savePrefs();
+}
+
+function markHistoryComplete() {
+  const w = state.workout;
+  if (!w) return;
+  const entry = state.history.find(h => h.key === historyKey(w));
+  if (entry && !entry.completed) { entry.completed = true; savePrefs(); }
+}
+
+// Rebuild a workout from a history entry (or a saved favourite: same shape).
+function openFromRecord(rec) {
+  if (rec.generated) {
+    const w = generateWorkout({
+      ...rec.request,
+      equipment: { ...state.equipment },
+      excluded: state.excluded.slice(),
+      seed: rec.seed,
+      recent: []
+    });
+    if (w.error) return w.error;
+    state.lastRequest = rec.request;
+    openWorkout(w);
+    return null;
+  }
+  const w = CLASSICS.find(x => x.id === rec.workoutId) ||
+            STRETCH_ROUTINES.find(x => x.id === rec.workoutId);
+  if (!w) return 'That workout is no longer in the library.';
+  openWorkout(w);
+  return null;
+}
+
+// "Today", "Yesterday", then the date. Nobody wants a timestamp.
+function whenLabel(ts) {
+  const then = new Date(ts);
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const days = Math.floor((startOfToday - then) / 86400000) + 1;
+  const time = then.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (then >= startOfToday) return `Today, ${time}`;
+  if (days === 1) return `Yesterday, ${time}`;
+  if (days < 7) return `${then.toLocaleDateString([], { weekday: 'long' })}, ${time}`;
+  return then.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
 // =====================================================================
