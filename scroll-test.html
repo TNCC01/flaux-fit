@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<!--
+  © 2026 Wayne Cavanagh / Flaux.
+
+  Scroll diagnostic. Not part of the app; delete once the cause is known.
+
+  The bug: on iPad (Safari and Chrome, which is also WebKit) a slow
+  press-and-drag starting on a card does not scroll the page, while a fast
+  flick does. It cannot be reproduced in a desktop browser or on Android,
+  so this page isolates one CSS property per panel and reports which ones
+  scroll, measured on the device itself.
+
+  How to use: drag slowly, starting with your finger on each panel in turn.
+  Each panel reports its own result. The listeners are passive and never
+  call preventDefault, so they cannot affect what is being measured.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>FIT scroll diagnostic</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050a0a; color: #f0fdfa;
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+    padding: 1rem 0.75rem 6rem;
+  }
+  h1 { font-size: 1.3rem; margin-bottom: 0.35rem; }
+  .intro { color: #94a3b8; font-size: 0.95rem; margin-bottom: 1rem; }
+  .panel {
+    background: #0f1c1c; border: 2px solid #1f3333;
+    border-radius: 1rem; padding: 1rem 1.1rem;
+    margin-bottom: 0.75rem; min-height: 130px;
+    display: flex; flex-direction: column; gap: 0.4rem;
+    color: #f0fdfa; text-align: left; font: inherit; width: 100%;
+  }
+  .id { font-weight: 800; font-size: 1.1rem; }
+  .what { color: #94a3b8; font-size: 0.9rem; }
+  code { color: #fbbf24; font-size: 0.85rem; word-break: break-word; }
+  .result { font-weight: 800; margin-top: auto; font-size: 1rem; }
+  .result.untested { color: #64748b; }
+  .result.pass { color: #2dd4bf; }
+  .result.fail { color: #f43f5e; }
+
+  /* One variant per panel. Each isolates a single property. */
+  .v-userselect { -webkit-user-select: none; user-select: none; }
+  .v-touchaction { touch-action: manipulation; }
+  .v-panyaction { touch-action: pan-y pinch-zoom; }
+  .v-callout { -webkit-touch-callout: none; }
+  .v-nodrag { -webkit-user-drag: none; }
+  .v-selectnodrag { -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
+  .v-pointer { cursor: pointer; }
+  .v-tapnone { -webkit-tap-highlight-color: transparent; }
+  .v-current {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none; user-select: none;
+  }
+
+  #summary {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: #0a1414; border-top: 2px solid #1f3333;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    font-size: 0.9rem; color: #94a3b8;
+  }
+  #summary b { color: #f0fdfa; }
+  #reset {
+    background: #14b8a6; color: #fff; border: none;
+    padding: 0.5rem 0.9rem; border-radius: 0.6rem;
+    font: inherit; font-weight: 700; margin-top: 0.5rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>Scroll diagnostic</h1>
+<p class="intro">
+  Put your finger on each panel and drag slowly to scroll the page. Each panel
+  reports whether the page moved. Do them one at a time; order does not matter.
+  A panel that says <b>did not scroll</b> is the culprit.
+</p>
+
+<div class="panel" data-t="A"><div class="id">A. Plain div (control)</div>
+  <div class="what">No extra CSS at all. This one must scroll.</div><code>—</code>
+  <div class="result untested">not tested yet</div></div>
+
+<button class="panel" data-t="B"><div class="id">B. Plain button (control)</div>
+  <div class="what">A real button element, no extra CSS.</div><code>—</code>
+  <div class="result untested">not tested yet</div></button>
+
+<div class="panel v-userselect" data-t="C"><div class="id">C. user-select: none</div>
+  <div class="what">Prime suspect. On iPad this can make a slow press start a
+    drag-and-drop gesture instead of a scroll.</div>
+  <code>-webkit-user-select: none</code>
+  <div class="result untested">not tested yet</div></div>
+
+<div class="panel v-callout" data-t="D"><div class="id">D. touch-callout: none</div>
+  <div class="what">Should be harmless, only affects the long-press menu.</div>
+  <code>-webkit-touch-callout: none</code>
+  <div class="result untested">not tested yet</div></div>
+
+<div class="panel v-nodrag" data-t="E"><div class="id">E. user-drag: none</div>
+  <div class="what">The targeted way to stop an element being picked up.</div>
+  <code>-webkit-user-drag: none</code>
+  <div class="result untested">not tested yet</div></div>
+
+<div class="panel v-selectnodrag" data-t="F"><div class="id">F. user-select + user-drag: none</div>
+  <div class="what">If C fails and this passes, user-drag is the fix.</div>
+  <code>-webkit-user-select: none; -webkit-user-drag: none</code>
+  <div class="result untested">not tested yet</div></div>
+
+<div class="panel v-touchaction" data-t="G"><div class="id">G. touch-action: manipulation</div>
+  <div class="what">What the app used originally.</div>
+  <code>touch-action: manipulation</code>
+  <div class="result untested">not tested yet</div></div>
+
+<div class="panel v-panyaction" data-t="H"><div class="id">H. touch-action: pan-y pinch-zoom</div>
+  <div class="what">What the app used in between.</div>
+  <code>touch-action: pan-y pinch-zoom</code>
+  <div class="result untested">not tested yet</div></div>
+
+<div class="panel v-pointer" data-t="I"><div class="id">I. cursor: pointer</div>
+  <div class="what">Long shot, but cheap to rule out.</div>
+  <code>cursor: pointer</code>
+  <div class="result untested">not tested yet</div></div>
+
+<div class="panel v-tapnone" data-t="J"><div class="id">J. tap-highlight-color: transparent</div>
+  <div class="what">Also used app-wide, also worth ruling out.</div>
+  <code>-webkit-tap-highlight-color: transparent</code>
+  <div class="result untested">not tested yet</div></div>
+
+<button class="panel v-current" data-t="K"><div class="id">K. Exactly what the app does now</div>
+  <div class="what">A button with the app's current card CSS. This is the one
+    that should be failing on your iPad.</div>
+  <code>-webkit-touch-callout: none; -webkit-user-select: none</code>
+  <div class="result untested">not tested yet</div></button>
+
+<div style="height:60vh"></div>
+
+<div id="summary">
+  <div id="summaryText">Nothing tested yet.</div>
+  <button id="reset">Reset results</button>
+</div>
+
+<script>
+// Passive observation only. Never call preventDefault here: it would change
+// the very behaviour being measured.
+const results = {};
+let active = null, startY = 0, moved = false;
+
+function setResult(t, pass) {
+  results[t] = pass;
+  const panel = document.querySelector(`[data-t="${t}"]`);
+  const el = panel.querySelector('.result');
+  el.className = 'result ' + (pass ? 'pass' : 'fail');
+  el.textContent = pass ? 'scrolled' : 'DID NOT SCROLL';
+  renderSummary();
+}
+
+function renderSummary() {
+  const keys = Object.keys(results).sort();
+  if (!keys.length) {
+    document.getElementById('summaryText').textContent = 'Nothing tested yet.';
+    return;
+  }
+  const ok = keys.filter(k => results[k]);
+  const bad = keys.filter(k => !results[k]);
+  document.getElementById('summaryText').innerHTML =
+    `Scrolled: <b>${ok.join(', ') || 'none'}</b><br>` +
+    `Did not scroll: <b>${bad.join(', ') || 'none'}</b>`;
+}
+
+document.querySelectorAll('.panel').forEach(panel => {
+  panel.addEventListener('touchstart', () => {
+    active = panel.dataset.t;
+    startY = window.scrollY;
+    moved = false;
+  }, { passive: true });
+});
+
+window.addEventListener('scroll', () => {
+  if (active && Math.abs(window.scrollY - startY) > 6) moved = true;
+}, { passive: true });
+
+window.addEventListener('touchend', () => {
+  if (active) setResult(active, moved);
+  active = null;
+}, { passive: true });
+
+document.getElementById('reset').addEventListener('click', () => {
+  for (const k of Object.keys(results)) delete results[k];
+  document.querySelectorAll('.result').forEach(el => {
+    el.className = 'result untested';
+    el.textContent = 'not tested yet';
+  });
+  renderSummary();
+});
+</script>
+</body>
+</html>

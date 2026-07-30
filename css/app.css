@@ -122,33 +122,33 @@ button {
   SCROLLING FROM ANYWHERE
 
   The cards cover most of the screen, so a drag starting on one has to scroll
-  the page.
+  the page. On iPad (Safari, and Chrome, which is WebKit too) a fast flick
+  scrolled but a slow press-and-drag did not. Two candidates have been ruled
+  out or are being ruled out here:
 
-  There is deliberately NO `touch-action` anywhere in this file. That is the
-  whole fix. The symptom was precise: on iOS you could flick-scroll from a
-  card but not press-and-drag it. A flick moves far enough, fast enough, that
-  WebKit commits to a pan straight away; a slow drag stays inside the
-  ambiguity window, and on an element with any non-`auto` touch-action it
-  goes down a gesture path that never becomes a scroll. `manipulation` and
-  `pan-y pinch-zoom` are both non-`auto`, so swapping one for the other
-  changed nothing except which elements were affected. Only `auto`, the
-  default, gets the full native scrolling behaviour.
+  1. `touch-action`. Any value other than `auto` sends the touch down a
+     different gesture path. There is now none in this file at all, and
+     scripts/selfcheck.mjs fails the build if one comes back.
 
-  Selection and the long-press callout stay switched off: none of this text
-  is worth selecting, and a drag that begins on text can start a selection
-  instead of a scroll.
+  2. `user-select: none`, removed here. On iPad this makes a long press start
+     a drag-and-drop gesture rather than a text selection, and once that
+     recogniser engages it owns the touch, so the page cannot scroll. A fast
+     flick never reaches the long-press threshold, which is exactly why a
+     flick worked and a slow drag did not.
+
+  `-webkit-user-drag: none` is the targeted way to say "this is not something
+  to pick up", and unlike `user-select: none` it does not affect selection or
+  scrolling. `-webkit-touch-callout: none` only suppresses the long-press
+  menu.
+
+  scroll-test.html measures all of these on the device, since none of it
+  reproduces in a desktop browser or on Android.
 */
 .path-card, .workout-card, .interval-card, .chip, .picker-row, .person,
 .timer-card, .block-info, .upcoming, .preview-card, .toggle-row,
 .brand-bar, .menu-header, .top-bar, .exclude-group, .bodymap {
   -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-/* The one place selecting text is the point. */
-.name-inputs input, .exclude-panel input[type="search"] {
-  -webkit-user-select: text;
-  user-select: text;
+  -webkit-user-drag: none;
 }
 button.secondary {
   background: var(--card);
@@ -632,7 +632,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
   padding: 0.7rem 1rem; background: var(--card);
   border-radius: 1rem; font-size: 0.95rem; flex-wrap: wrap;
 }
-.toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; user-select: none; }
+/* No user-select: none here either, for the same reason as the cards. */
+.toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; }
 .toggle input { width: 1.25rem; height: 1.25rem; cursor: pointer; accent-color: var(--accent); }
 .text-size { gap: 0.35rem; color: var(--muted); font-weight: 600; }
 .text-size .mini-btn { padding: 0.3rem 0.6rem; line-height: 1; }
