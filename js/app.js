@@ -1,7 +1,7 @@
 /*
   © 2026 Wayne Cavanagh / Flaux. All rights reserved.
 
-  APP SHELL — views, setup flows, rendering and the timer.
+  APP SHELL: views, setup flows, rendering and the timer.
 */
 
 const TIME_OPTIONS = [10, 15, 20, 25, 30, 40, 45, 60];
@@ -15,7 +15,7 @@ const state = {
   view: 'welcome',
   mode: 'quick',                // which setup flow is on screen
 
-  // Preferences (persisted — see PERSISTED below)
+  // Preferences (persisted, see PERSISTED below)
   people: 2,
   nameA: '', nameB: '',
   equipment: { ...DEFAULT_EQUIPMENT },
@@ -58,7 +58,7 @@ function loadPrefs() {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return;
     const p = JSON.parse(raw);
-    // Only take keys we know about — a stale or hand-edited store must not
+    // Only take keys we know about, a stale or hand-edited store must not
     // be able to drop arbitrary values into runtime state.
     PERSISTED.forEach(k => { if (p[k] !== undefined) state[k] = p[k]; });
     state.equipment = { ...DEFAULT_EQUIPMENT, ...(p.equipment || {}) };
@@ -84,7 +84,7 @@ const buildCtx = () => {
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, hasEquip };
 };
 
-// Classics carry no bookends of their own — they scale to the length of
+// Classics carry no bookends of their own, they scale to the length of
 // the work, so a 9-minute session isn't wrapped in 10 minutes of walking.
 CLASSICS.forEach(w => {
   const workSec = w.blocks.length * 240 + (w.blocks.length - 1) * w.blockRestSec;
@@ -102,7 +102,8 @@ const els = {
   libraryView: $('libraryView'), workoutView: $('workoutView'),
   pathQuick: $('pathQuick'), pathCustom: $('pathCustom'),
   pathStretch: $('pathStretch'), pathClassics: $('pathClassics'),
-  welcomeFoot: $('welcomeFoot'),
+  welcomeFoot: $('welcomeFoot'), btnFullscreen: $('btnFullscreen'),
+  installHint: $('installHint'),
 
   btnSetupBack: $('btnSetupBack'), setupTitle: $('setupTitle'),
   peoplePicker: $('peoplePicker'), nameInputs: $('nameInputs'),
@@ -122,6 +123,7 @@ const els = {
 
   btnBack: $('btnBack'), workoutTitle: $('workoutTitle'), peopleBadge: $('peopleBadge'),
   overallProgress: $('overallProgress'), blockName: $('blockName'), roundDots: $('roundDots'),
+  phaseBleed: $('phaseBleed'), ring: $('phaseRing'),
   timerCard: $('timerCard'), phaseLabel: $('phaseLabel'),
   timeDisplay: $('timeDisplay'), totalTime: $('totalTime'),
   exerciseGrid: $('exerciseGrid'), labelA: $('labelA'), labelB: $('labelB'),
@@ -187,7 +189,7 @@ function buildSequence(workout, people) {
   if (workout.format === 'tabata') {
     if (workout.warmupSec > 0) {
       seq.push({ kind: 'warmup', duration: workout.warmupSec,
-                 name: `Warm-up — ${fmtMin(workout.warmupSec)}`, ...pair(warmupExercise) });
+                 name: `Warm-up: ${fmtMin(workout.warmupSec)}`, ...pair(warmupExercise) });
     }
     const total = workout.blocks.length;
     workout.blocks.forEach((block, blockIdx) => {
@@ -202,13 +204,13 @@ function buildSequence(workout, people) {
       }
       if (blockIdx < total - 1) {
         seq.push({ kind: 'blockrest', duration: workout.blockRestSec, blockIdx, totalBlocks: total,
-                   name: `Rest — next: Block ${blockIdx + 2}: ${workout.blocks[blockIdx + 1].name}`,
+                   name: `Rest, then Block ${blockIdx + 2}: ${workout.blocks[blockIdx + 1].name}`,
                    ...pair({ name: 'Block rest', display: 'Block rest', cue: 'Hydrate, reset, swap equipment if needed', alt: '', img: null }) });
       }
     });
     if (workout.cooldownSec > 0) {
       seq.push({ kind: 'cooldown', duration: workout.cooldownSec,
-                 name: `Cool-down — ${fmtMin(workout.cooldownSec)}`, ...pair(cooldownExercise) });
+                 name: `Cool-down: ${fmtMin(workout.cooldownSec)}`, ...pair(cooldownExercise) });
     }
   } else if (workout.format === 'stretch') {
     const list = stretchList(workout);
@@ -291,7 +293,7 @@ async function requestWakeLock() {
   try {
     state.wakeLock = await navigator.wakeLock.request('screen');
     state.wakeLock.addEventListener('release', () => { state.wakeLock = null; });
-  } catch (e) { /* denied or unsupported — the timer is still correct */ }
+  } catch (e) { /* denied or unsupported, the timer is still correct */ }
 }
 function releaseWakeLock() {
   if (!state.wakeLock) return;
@@ -439,7 +441,7 @@ function toggleRegion(id) {
   const i = state.regions.indexOf(id);
   if (i >= 0) state.regions.splice(i, 1);
   else state.regions.push(id);
-  // Targeting nothing is not a meaningful request — fall back to everything.
+  // Targeting nothing is not a meaningful request, fall back to everything.
   if (!state.regions.length) state.regions = REGIONS.map(r => r.id);
   savePrefs();
   renderRegionPicker();
@@ -467,7 +469,7 @@ function renderTagPicker() {
 function renderExcludeSummary() {
   const n = state.excluded.length;
   els.excludeSummary.textContent = n
-    ? `${n} movement${n === 1 ? '' : 's'} left out — edit the list`
+    ? `${n} movement${n === 1 ? '' : 's'} left out (tap to edit)`
     : 'Leave out specific movements';
 }
 
@@ -512,7 +514,7 @@ function renderExcludeList() {
       // Include the load: four movements exist at two weights, and without
       // it those rows are indistinguishable from each other.
       label.textContent = ex.name + (ex.load ? ` · ${ex.load}` : '')
-                        + (ex.cue ? ` — ${ex.cue}` : '');
+                        + (ex.cue ? `, ${ex.cue}` : '');
       row.appendChild(cb);
       row.appendChild(label);
       els.excludeList.appendChild(row);
@@ -759,13 +761,13 @@ function renderPreview() {
     return;
   }
   const iv = currentInterval();
-  add(`Warm-up — ${fmtMin(w.warmupSec)}`, warmupExercise.cue);
+  add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupExercise.cue);
   w.blocks.forEach((b, i) => {
     const names = Array.from(new Set((b.ids || []).map(id => describeEx(id, ctx).display)));
     add(`Block ${i + 1}: ${b.name}`,
         `${iv.rounds} × ${iv.workSec}s · ${names.join('  ·  ')}`);
   });
-  add(`Cool-down — ${fmtMin(w.cooldownSec)}`, cooldownExercise.cue);
+  add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownExercise.cue);
 }
 
 const fmt = (s) => {
@@ -779,7 +781,7 @@ function setAlt(el, alt) {
 }
 
 // render() runs several times a second, so only touch the DOM when the
-// media actually changes — rewriting it would restart the animation.
+// media actually changes, rewriting it would restart the animation.
 function updateAnim(el, ex) {
   const base = ex && ex.img ? ex.img : '';
   if (el.dataset.img === base) return;
@@ -823,66 +825,72 @@ function renderRoundDots(phase) {
   else if (phase.totalBlocks) {
     const label = document.createElement('div');
     label.className = 'round-count';
-    label.textContent = `Between blocks — ${phase.blockIdx + 1} → ${phase.blockIdx + 2} of ${phase.totalBlocks}`;
+    label.textContent = `Between blocks: ${phase.blockIdx + 1} to ${phase.blockIdx + 2} of ${phase.totalBlocks}`;
     els.roundDots.appendChild(label);
   }
 }
 
 // =====================================================================
 // PHASE COLOUR BLEED
-// The card starts each phase with a bold solid border; as the countdown
-// runs it bleeds out into an ambient wash behind the whole view, finishing
-// exactly as the phase ends. Driven by one CSS transition rather than
-// per-tick restyling, so it stays smooth whatever the tick rate.
+// The card starts each phase ringed in the phase colour; as the countdown
+// runs the ring fades and an ambient wash grows behind the whole view,
+// finishing exactly as the phase ends.
+//
+// Only opacity animates. The gradient and the ring shadow are written once
+// per phase, because opacity is composited on the GPU while gradients and
+// large blurred shadows are not: animating those repainted a full-screen
+// gradient every frame for the whole phase, which is what made scrolling
+// stutter on an iPad mid-workout.
 // =====================================================================
+const BLEED_START_OPACITY = 0.18;
+
 function setBleedStartState(kind) {
   const c = PHASE_COLOR[kind];
-  els.timerCard.style.transition = 'none';
-  els.workoutView.style.transition = 'none';
+  els.phaseBleed.style.transition = 'none';
+  els.ring.style.transition = 'none';
   if (!c) {
-    els.timerCard.style.boxShadow = 'none';
-    els.workoutView.style.backgroundImage = 'none';
+    els.phaseBleed.style.opacity = '0';
+    els.ring.style.opacity = '0';
     return;
   }
-  els.timerCard.style.boxShadow =
-    `inset 0 0 0 8px ${c.hex}, 0 0 0 3px rgba(${c.rgb},0.25), 0 0 40px rgba(${c.rgb},0.55)`;
-  els.workoutView.style.backgroundImage =
-    `radial-gradient(1000px 700px at 50% 0%, rgba(${c.rgb},0.06), transparent 65%)`;
-}
-function applyBleedEndState(kind) {
-  const c = PHASE_COLOR[kind];
-  if (!c) return;
-  els.timerCard.style.boxShadow =
-    `inset 0 0 0 0px ${c.hex}, 0 0 0 0px rgba(${c.rgb},0), 0 0 60px 16px rgba(${c.rgb},0.55)`;
-  els.workoutView.style.backgroundImage =
+  els.phaseBleed.style.background =
     `radial-gradient(1000px 700px at 50% 0%, rgba(${c.rgb},0.34), transparent 65%)`;
+  els.ring.style.boxShadow =
+    `inset 0 0 0 8px ${c.hex}, 0 0 0 3px rgba(${c.rgb},0.25), 0 0 40px rgba(${c.rgb},0.55)`;
+  els.phaseBleed.style.opacity = String(BLEED_START_OPACITY);
+  els.ring.style.opacity = '1';
 }
+
 function beginBleed(seconds) {
   const phase = state.sequence[state.currentIdx];
   const kind = phase ? phase.kind : null;
   if (!kind || !PHASE_COLOR[kind] || seconds <= 0) return;
-  void els.timerCard.offsetHeight;      // force reflow so the transition animates
-  els.timerCard.style.transition = `box-shadow ${seconds}s linear`;
-  els.workoutView.style.transition = `background-image ${seconds}s linear`;
-  applyBleedEndState(kind);
+  void els.phaseBleed.offsetHeight;     // force reflow so the transition animates
+  els.phaseBleed.style.transition = `opacity ${seconds}s linear`;
+  els.ring.style.transition = `opacity ${seconds}s linear`;
+  els.phaseBleed.style.opacity = '1';
+  els.ring.style.opacity = '0';
 }
+
 function enterPhaseVisual(kind, seconds) {
   setBleedStartState(kind);
   if (state.running) beginBleed(seconds);
 }
+
 function freezeBleed() {
-  const cardShadow = getComputedStyle(els.timerCard).boxShadow;
-  const viewBgImage = getComputedStyle(els.workoutView).backgroundImage;
-  els.timerCard.style.transition = 'none';
-  els.workoutView.style.transition = 'none';
-  els.timerCard.style.boxShadow = cardShadow;
-  els.workoutView.style.backgroundImage = viewBgImage;
+  const bleed = getComputedStyle(els.phaseBleed).opacity;
+  const ring = getComputedStyle(els.ring).opacity;
+  els.phaseBleed.style.transition = 'none';
+  els.ring.style.transition = 'none';
+  els.phaseBleed.style.opacity = bleed;
+  els.ring.style.opacity = ring;
 }
+
 function clearBleed() {
-  els.timerCard.style.transition = 'none';
-  els.workoutView.style.transition = 'none';
-  els.timerCard.style.boxShadow = 'none';
-  els.workoutView.style.backgroundImage = 'none';
+  els.phaseBleed.style.transition = 'none';
+  els.ring.style.transition = 'none';
+  els.phaseBleed.style.opacity = '0';
+  els.ring.style.opacity = '0';
 }
 
 // =====================================================================
@@ -914,7 +922,7 @@ function render() {
   }
   els.workoutView.classList.toggle('resting', restLike);
 
-  els.exerciseA.textContent = dispA ? (dispA.display || dispA.name) : '—';
+  els.exerciseA.textContent = dispA ? (dispA.display || dispA.name) : '';
   els.cueA.textContent = dispA ? (dispA.cue || '') : '';
   setAlt(els.alternativeA, dispA ? dispA.alt : '');
   updateAnim(els.animA, dispA);
@@ -1072,7 +1080,7 @@ function finish() {
   els.timerCard.className = 'timer-card';
   els.phaseLabel.textContent = 'Done';
   els.timeDisplay.textContent = '✓';
-  els.blockName.textContent = 'Workout complete — nice work';
+  els.blockName.textContent = 'Workout complete. Nice work.';
   els.roundDots.innerHTML = '';
   els.exerciseA.textContent = 'Well done.';
   els.cueA.textContent = '';
@@ -1242,6 +1250,46 @@ function applyTextScale() {
   });
 }
 
+// =====================================================================
+// FULL SCREEN
+// Two routes, because iOS gives neither one on its own:
+//   1. Add to Home Screen. The manifest and the apple-mobile-web-app meta
+//      tags mean it launches standalone, with no address bar and no tabs.
+//      This is the real answer, and the hint below points at it.
+//   2. The Fullscreen API, for when you are just browsing normally. iPad
+//      Safari supports it, iPhone Safari does not, so the button only
+//      appears when the browser actually offers it.
+// =====================================================================
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches ||
+  window.navigator.standalone === true;
+
+function setupFullscreen() {
+  const canFullscreen = !!(document.documentElement.requestFullscreen ||
+                           document.documentElement.webkitRequestFullscreen);
+  // Already launched from the home screen: nothing left to hide.
+  if (isStandalone()) return;
+  els.installHint.hidden = false;
+  if (!canFullscreen) return;
+  els.btnFullscreen.hidden = false;
+  els.btnFullscreen.addEventListener('click', async () => {
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      } else {
+        const el = document.documentElement;
+        await (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+      }
+    } catch (e) { /* the browser refused; the Add to Home Screen route still works */ }
+  });
+  const sync = () => {
+    const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    els.btnFullscreen.textContent = on ? '⤡ Exit full screen' : '⤢ Full screen';
+  };
+  document.addEventListener('fullscreenchange', sync);
+  document.addEventListener('webkitfullscreenchange', sync);
+}
+
 // Coming back to the app re-derives the position from the clock, so a
 // spell in the background can't leave the workout behind.
 document.addEventListener('visibilitychange', () => {
@@ -1263,4 +1311,5 @@ els.showPhotos.checked = state.showPhotos !== false;
 document.body.classList.toggle('show-alternatives', state.showAlts);
 document.body.classList.toggle('hide-photos', state.showPhotos === false);
 applyTextScale();
+setupFullscreen();
 renderWelcomeFoot();

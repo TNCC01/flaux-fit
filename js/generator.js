@@ -16,7 +16,7 @@
   consecutive sessions don't rhyme.
 */
 
-// Deterministic RNG so a given seed always rebuilds the same workout —
+// Deterministic RNG so a given seed always rebuilds the same workout , 
 // that's what lets "regenerate" be a real choice rather than a lottery,
 // and lets a saved favourite come back identical.
 function mulberry32(seed) {
@@ -46,7 +46,7 @@ const GROUPS = {
 // pull, put core and conditioning later, finish on a carry or a burner.
 const GROUP_ORDER = ['legsBig', 'push', 'pull', 'legsUni', 'core', 'cardio', 'carry'];
 
-// Same movement at two loads — the generator sometimes builds a block
+// Same movement at two loads, the generator sometimes builds a block
 // around one of these so a pair can share the gear and swap at halfway.
 const WEIGHT_PAIRS = [
   ['gobletSquat15', 'gobletSquat10'],
@@ -154,13 +154,13 @@ function generateWorkout(opts) {
       g.patterns.includes(EXERCISES[id].pattern) &&
       EXERCISES[id].regions.some(r => regions.includes(r)));
   };
-  // Everything on target, whatever the movement pattern — the top-up pool
+  // Everything on target, whatever the movement pattern, the top-up pool
   // when a single group can't fill a block on its own.
   const regionPool = () => Object.keys(EXERCISES)
     .filter(id => usable(id) && EXERCISES[id].regions.some(r => regions.includes(r)))
     .sort((a, b) => score(a) - score(b));
 
-  // A group needs at least two movements to make a block worth doing —
+  // A group needs at least two movements to make a block worth doing , 
   // a whole 4-minute block of one exercise is what "limited range" felt
   // like in the first place. Only fall back to thin groups if that would
   // otherwise leave nothing at all.
@@ -176,7 +176,7 @@ function generateWorkout(opts) {
     return {
       error: anyRegion
         ? 'No movements match those target areas with your current equipment and exclusions.'
-        : 'Everything is excluded — turn some movements or equipment back on.'
+        : 'Everything is excluded. Turn some movements or equipment back on.'
     };
   }
 
@@ -185,7 +185,7 @@ function generateWorkout(opts) {
   const dead = regions.filter(r => !covered.has(r));
   if (dead.length && dead.length < regions.length) {
     const labels = dead.map(r => (REGIONS.find(x => x.id === r) || {}).label || r);
-    notes.push(`Nothing available for ${labels.join(' or ')} — skipped.`);
+    notes.push(`Nothing available for ${labels.join(' or ')}, so it was skipped.`);
     regions = regions.filter(r => covered.has(r));
     eligible = GROUP_ORDER.filter(k => poolFor(k).length >= 2);
     if (!eligible.length) eligible = GROUP_ORDER.filter(k => poolFor(k).length > 0);
@@ -202,8 +202,8 @@ function generateWorkout(opts) {
     SINGLE_INSTANCE.includes(e) && EXERCISES[b].equipment.includes(e));
 
   // Pick up to `want` movements for one block. Two people always work on
-  // neighbouring entries of a cycle, so no neighbour pair — including the
-  // wrap from last back to first — may need the same single-instance item.
+  // neighbouring entries of a cycle, so no neighbour pair, including the
+  // wrap from last back to first, may need the same single-instance item.
   // This holds even for a solo build, because the same workout can be
   // reopened later with two people selected.
   function fillFrom(out, pool, want) {
@@ -222,7 +222,7 @@ function generateWorkout(opts) {
     const out = fillFrom([], pool, want);
     // A group can be a dead end for a pair: all three ring pulls need the
     // rings, so no two of them can run at once. Rather than drop the block,
-    // top up from anything else that serves the chosen areas — the target
+    // top up from anything else that serves the chosen areas, the target
     // area matters more to the request than the movement pattern does.
     if (out.length < 2) fillFrom(out, regionPool(), want);
     while (out.length > 2 && shareSingle(out[out.length - 1], out[0])) out.pop();
@@ -231,7 +231,7 @@ function generateWorkout(opts) {
 
   // Pacing: open on a big compound while you're fresh, finish on a
   // conditioning burner. In between, take whichever group has the most
-  // movements still unused — that keeps coverage even and stops a small
+  // movements still unused, that keeps coverage even and stops a small
   // group (there are only six carries) from being over-represented or
   // being asked for a block it can't fill.
   const opener = eligible.includes('legsBig') ? 'legsBig'
@@ -299,14 +299,14 @@ function generateWorkout(opts) {
   }
 
   if (!blocks.length) {
-    return { error: 'Not enough movements left to build a workout — loosen the filters a little.' };
+    return { error: 'Not enough movements left to build a workout. Loosen the filters a little.' };
   }
   if (blocks.length < plan.blocks) {
     notes.push(`Only ${blocks.length} of ${plan.blocks} blocks could be filled from what's left.`);
   }
 
   // Report the length this actually runs to, not the length that was
-  // asked for — blocks come in fixed 4-minute lumps, so the two rarely
+  // asked for, blocks come in fixed 4-minute lumps, so the two rarely
   // match exactly and the label must never lie about the timer.
   const realSec = plan.warmupSec + plan.cooldownSec
                 + blocks.length * blockSeconds(iv)
@@ -320,7 +320,7 @@ function generateWorkout(opts) {
     name: `${title} · ${realMin} min`,
     tagline: iv.label.toLowerCase() === 'long efforts' ? 'Long efforts, fewer stops' : 'Sharp bursts',
     focus: focusFor(regions),
-    blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()} — ${iv.sub}.`,
+    blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()}, ${iv.sub}.`,
     format: 'tabata',
     intervalId: iv.id,
     warmupSec: plan.warmupSec,
@@ -333,7 +333,7 @@ function generateWorkout(opts) {
       minutes: opts.minutes, people: opts.people, intervalId: iv.id,
       regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice()
     },
-    // Everything this session will ask you to do — used for the preview
+    // Everything this session will ask you to do, used for the preview
     // and for the recency list next time.
     exerciseIds: [...new Set(blocks.flatMap(b => b.ids))]
   };

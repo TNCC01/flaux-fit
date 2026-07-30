@@ -1,4 +1,4 @@
-# FIT — Flaux workout timer
+# FIT, the Flaux workout timer
 
 A fast, opinionated interval + stretching timer for a home gym with a fixed
 equipment set and one or two people training.
@@ -9,11 +9,11 @@ Static files, no build step. Deploys to Vercel.
 
 The home screen asks how you want to train:
 
-- **Just pick for me** — equipment, how long you've got, how many of you. Go.
-- **Let me choose** — the same, plus which areas of the body to target and
+- **Just pick for me**: equipment, how long you've got, how many of you. Go.
+- **Let me choose**: the same, plus which areas of the body to target and
   anything you'd rather not do.
-- **Stretch & mobility** — three mobility routines, no gear, no pressure.
-- **The classics** — the 16 named workouts, plus anything you've saved.
+- **Stretch & mobility**: three mobility routines, no gear, no pressure.
+- **The classics**: the 16 named workouts, plus anything you've saved.
 
 Workouts in the first two paths are **generated on the spot** rather than
 pulled from a table of presets. The input space (6 equipment items × 8
@@ -21,20 +21,20 @@ durations × 2 people × 2 interval styles × 31 region combinations ×
 arbitrary exclusions) is far too large for presets to cover, which is why
 short preset sessions used to feel like a trimmed-down copy of the long
 ones. The generator composes from the whole library every time and
-remembers what recent sessions used, so consecutive workouts differ — in
+remembers what recent sessions used, so consecutive workouts differ. In
 testing, back-to-back 30-minute sessions share under a quarter of their
 movements.
 
 ## Interval styles
 
 Both run a **240-second block** and the **same 160 seconds of work**, so
-switching between them never changes how long a workout takes — only how
+switching between them never changes how long a workout takes, only how
 long each effort lasts:
 
 | Style | Rounds | Work | Rest | Feel |
 |---|---|---|---|---|
 | Short bursts | 8 | 20s | 10s | More stops, more recovery |
-| Long efforts | 4 | 40s | 20s | Half the stops — it burns more |
+| Long efforts | 4 | 40s | 20s | Half the stops, so it burns more |
 
 Cues that name a time ("swap sides at 10s", "change every 5s") are written
 from the live interval, so they stay truthful in both styles. Weight-swap
@@ -45,15 +45,15 @@ rather than hardcoded.
 
 - **157 movements** across five body regions (chest & shoulders, back &
   arms, core & abs, legs & glutes, cardio) and fourteen movement patterns
-- **145 hand-authored animations** — every movement has its own. Poses are
+- **145 hand-authored animations**, one per movement. Poses are
   joint coordinates in `scripts/gen-anims.py`, interpolated and baked to
   self-animating SVGs in `img/exercises/<base>.svg`
 - **16 named workouts** and **3 stretch routines**
-- Equipment picker — tap off gear you haven't got and nothing needing it
+- Equipment picker: tap off gear you haven't got and nothing needing it
   gets picked
-- Target-area picker — a tappable body diagram and matching labels, both
+- Target-area picker: a tappable body diagram and matching labels, both
   driving the same selection
-- Exclusions — four quick constraint filters (no jumping / floor work /
+- Exclusions: four quick constraint filters (no jumping / floor work /
   overhead / running) plus a searchable list of every movement
 - Warm-up and cool-down that scale with the session instead of wrapping a
   10-minute workout in 10 minutes of walking
@@ -75,7 +75,7 @@ js/exercises.js         the movement dictionary + regions + stretches
 js/workouts.js          intervals, block helpers, the named classics
 js/generator.js         builds a workout to order
 js/app.js               views, setup flows, rendering, timer
-img/exercises/*.svg     generated — do not hand-edit
+img/exercises/*.svg     generated, do not hand-edit
 scripts/gen-anims.py    pose source for the animations
 scripts/selfcheck.mjs   data + generator validation
 scripts/export-sequence.mjs   expand a workout to timed steps as JSON
@@ -113,4 +113,4 @@ python3 scripts/gen-anims.py
 vercel deploy --prod
 ```
 
-Production: `fit.flaux.com.au` (CNAME → `cname.vercel-dns.com`)
+Production: `fit.flaux.com.au` (CNAME -> `cname.vercel-dns.com`)

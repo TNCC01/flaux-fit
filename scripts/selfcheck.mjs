@@ -14,7 +14,7 @@ import path from 'path';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SRC = ['js/exercises.js', 'js/workouts.js', 'js/generator.js'];
 
-// The app files are browser globals, not modules — evaluate them together
+// The app files are browser globals, not modules, evaluate them together
 // and hand back everything they declared at top level.
 function loadApp() {
   const src = SRC.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
@@ -163,7 +163,7 @@ for (const ivId of Object.keys(INTERVALS)) {
   for (let r = 1; r <= iv.rounds; r++) seen.add(swapBlock.solo(r, ctx).id);
   if (seen.size !== 2) {
     fail(`blockSwap only used ${seen.size} of its 2 loads over ${iv.rounds} rounds (${ivId}) ` +
-         `— the halfway swap is not firing`);
+         `,  the halfway swap is not firing`);
   }
 }
 
@@ -182,7 +182,7 @@ if (new Set(lens).size !== 1) {
   fail(`interval styles disagree on block length: ${lens.join(' vs ')}s`);
 }
 // And the same total work, which is the whole point of the "long efforts"
-// option — fewer stops, not less work.
+// option, fewer stops, not less work.
 const work = Object.keys(INTERVALS).map(id => INTERVALS[id].rounds * INTERVALS[id].workSec);
 if (new Set(work).size !== 1) {
   fail(`interval styles disagree on total work: ${work.join(' vs ')}s`);
@@ -222,7 +222,7 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
           errored++;
           // Refusing is only correct when the filters can't yield a real
           // block. That needs two movements that can legally run side by
-          // side — a whole session of one exercise is not a workout, and
+          // side, a whole session of one exercise is not a workout, and
           // two that both need the single set of rings can't pair up.
           const left = Object.keys(EXERCISES).filter(id =>
             EXERCISES[id].equipment.every(e => equipment[e] !== false) &&
@@ -294,7 +294,7 @@ for (let i = 0; i < 8; i++) {
 }
 if (worstOverlap > 0.5) {
   fail(`consecutive generated sessions shared ${Math.round(worstOverlap * 100)}% of movements ` +
-       `— the recency weighting is not working`);
+       `,  the recency weighting is not working`);
 }
 
 // ------------------------------------------------------------- report
@@ -309,7 +309,7 @@ if (warnings.length) {
   warnings.forEach(w => console.log(`  - ${w}`));
 }
 if (failures.length) {
-  console.log(`\nFAILED — ${failures.length} problem(s):`);
+  console.log(`\nFAILED, ${failures.length} problem(s):`);
   failures.slice(0, 40).forEach(f => console.log(`  x ${f}`));
   if (failures.length > 40) console.log(`  … and ${failures.length - 40} more`);
   process.exit(1);

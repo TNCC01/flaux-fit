@@ -4,7 +4,7 @@
   Export a workout's expanded timed sequence as JSON.
 
   This exists so nothing downstream (the Garmin work, in particular) has to
-  keep a hand-copied duplicate of the exercise dictionary — copies go stale
+  keep a hand-copied duplicate of the exercise dictionary, copies go stale
   the moment the library changes. Ask this script instead; it reads the same
   source the app runs on.
 
@@ -46,9 +46,9 @@ const target = argv.find((a, i) =>
 
 if (has('list')) {
   console.log('tabata:');
-  CLASSICS.forEach(w => console.log(`  ${w.id.padEnd(20)} ${w.blocks.length} blocks — ${w.name}`));
+  CLASSICS.forEach(w => console.log(`  ${w.id.padEnd(20)} ${w.blocks.length} blocks, ${w.name}`));
   console.log('stretch:');
-  STRETCH_ROUTINES.forEach(w => console.log(`  ${w.id.padEnd(20)} ${w.ids.length} holds — ${w.name}`));
+  STRETCH_ROUTINES.forEach(w => console.log(`  ${w.id.padEnd(20)} ${w.ids.length} holds, ${w.name}`));
   process.exit(0);
 }
 
@@ -72,7 +72,7 @@ if (has('generate')) {
   const id = target;
   workout = CLASSICS.find(w => w.id === id) || STRETCH_ROUTINES.find(w => w.id === id);
   if (!workout) {
-    console.error(`unknown workout "${id}" — try --list`);
+    console.error(`unknown workout "${id}", try --list`);
     process.exit(1);
   }
   if (workout.format === 'tabata' && workout.warmupSec === undefined) {

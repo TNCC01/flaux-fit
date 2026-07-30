@@ -4,7 +4,7 @@
   INTERVALS, BLOCK HELPERS AND THE NAMED CLASSICS
   ===============================================
   Both interval styles run a 240-second block, so swapping between them
-  never changes how long a workout takes — only how long each effort is:
+  never changes how long a workout takes, only how long each effort is:
 
     short  8 rounds x (20s work + 10s rest)  = 240s   160s of work
     long   4 rounds x (40s work + 20s rest)  = 240s   160s of work
@@ -19,7 +19,7 @@ const INTERVALS = {
            blurb: 'Eight sharp rounds. More stops, more recovery.' },
   long:  { id: 'long',  label: 'Long efforts', sub: '40s work · 20s rest',
            rounds: 4, workSec: 40, restSec: 20,
-           blurb: 'Four long rounds. Same total work, half the stops — it burns more.' }
+           blurb: 'Four long rounds. Same total work, half the stops, so it burns more.' }
 };
 const DEFAULT_INTERVAL = 'short';
 
@@ -28,14 +28,14 @@ const blockSeconds = (iv) => iv.rounds * (iv.workSec + iv.restSec);
 
 // ---------------------------------------------------------------------
 // EXERCISE RESOLUTION
-// ctx = { rounds, workSec, restSec, hasEquip }  — hasEquip(id) => bool
+// ctx = { rounds, workSec, restSec, hasEquip } , hasEquip(id) => bool
 // ---------------------------------------------------------------------
 
 // Walk bw fallbacks until everything the exercise needs is on hand.
 function resolveEx(id, ctx) {
   let cur = EXERCISES[id];
   if (!cur) {
-    // A bad id is a bug, not a runtime condition — say so loudly in dev
+    // A bad id is a bug, not a runtime condition, say so loudly in dev
     // but still hand back something renderable so a workout can finish.
     console.error(`[FIT] unknown exercise id "${id}"`);
     return { id, name: 'Unknown exercise', cue: '', alt: '', img: null,
@@ -62,7 +62,7 @@ function describeEx(id, ctx) {
     cue = cue ? `${cue} · swap sides at ${half}s` : `Swap sides at ${half}s`;
   }
   if (ex.rotateCue) {
-    cue = `${cue} — change every ${Math.round(workSec / ex.rotateCue)}s`;
+    cue = `${cue}, change every ${Math.round(workSec / ex.rotateCue)}s`;
   }
   // `display` is what goes on screen: the load belongs in the headline, not
   // the cue, so a pair sharing a movement at two weights can tell at a
@@ -77,7 +77,7 @@ function describeEx(id, ctx) {
 // Each returns { name, ids, duo(round, ctx), solo(round, ctx) }.
 // ---------------------------------------------------------------------
 
-// Both people do the same exercise — only safe when it needs no
+// Both people do the same exercise, only safe when it needs no
 // single-instance gear, which the self-check enforces.
 function blockSame(name, exId) {
   return {
@@ -115,7 +115,7 @@ function blockCycle(name, ids) {
 }
 
 // One movement at two weights, swapping between the pair at the halfway
-// round — derived from ctx.rounds so it works at 8 rounds and at 4.
+// round, derived from ctx.rounds so it works at 8 rounds and at 4.
 function blockSwap(name, heavyId, lightId) {
   const past = (r, ctx) => r > Math.ceil(((ctx && ctx.rounds) || 8) / 2);
   return {
@@ -168,7 +168,7 @@ const CLASSICS = [
   },
   {
     id: 'core-crusher', name: 'Core Crusher', tagline: 'Burn the middle',
-    focus: 'core', blurb: 'Three blocks on the trunk — climbers, holds, twists.',
+    focus: 'core', blurb: 'Three blocks on the trunk: climbers, holds, twists.',
     format: 'tabata', blockRestSec: 30,
     blocks: [
       blockCycle('Climbers & core burners', ['mountainClimberFast', 'bicycleCrunch', 'flutterKicks', 'plankShoulderTaps']),
@@ -178,7 +178,7 @@ const CLASSICS = [
   },
   {
     id: 'calisthenics-core', name: 'Calisthenics Core', tagline: 'Bodyweight abs blast',
-    focus: 'core', blurb: 'No equipment needed — just gravity and effort.',
+    focus: 'core', blurb: 'No equipment needed, just gravity and effort.',
     format: 'tabata', blockRestSec: 30,
     blocks: [
       blockAlt('Hollow rocks & V-sits', 'hollowRocks', 'vSit'),
@@ -198,7 +198,7 @@ const CLASSICS = [
   },
   {
     id: 'kb-blitz', name: 'KB Blitz', tagline: 'Two bells, twenty minutes',
-    focus: 'lower-body', blurb: 'Pure kettlebell — goblet squats and swings, one bell each, swap at halfway.',
+    focus: 'lower-body', blurb: 'Pure kettlebell: goblet squats and swings, one bell each, swap at halfway.',
     format: 'tabata', blockRestSec: 30,
     blocks: [
       blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
@@ -207,7 +207,7 @@ const CLASSICS = [
   },
   {
     id: 'ring-rush', name: 'Ring Rush', tagline: 'Hang on tight',
-    focus: 'upper-body', blurb: 'Quick upper-body hit on the rings and dumbbells — pull, press, dip, curl.',
+    focus: 'upper-body', blurb: 'Quick upper-body hit on the rings and dumbbells: pull, press, dip, curl.',
     format: 'tabata', blockRestSec: 30,
     blocks: [
       blockCycle('Rows & presses', ['ringRow', 'pikePushup', 'dbRow', 'pushup']),
@@ -226,7 +226,7 @@ const CLASSICS = [
   },
   {
     id: 'loaded-core', name: 'Loaded Core', tagline: 'Weighted middle management',
-    focus: 'core', blurb: 'Core work with gear — weighted twists, renegade rows, ring hangs, carries.',
+    focus: 'core', blurb: 'Core work with gear: weighted twists, renegade rows, ring hangs, carries.',
     format: 'tabata', blockRestSec: 30,
     blocks: [
       blockAlt('Russian twists & renegade rows', 'russianTwistKb', 'renegadeRow'),
@@ -236,7 +236,7 @@ const CLASSICS = [
   },
   {
     id: 'half-power', name: 'Half Power', tagline: "Power Hour's little sibling",
-    focus: 'whole-body', blurb: 'Squats, rows, swings and the clean & press finisher — the big one, condensed.',
+    focus: 'whole-body', blurb: 'Squats, rows, swings and the clean & press finisher. The big one, condensed.',
     format: 'tabata', blockRestSec: 30,
     blocks: [
       blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
@@ -258,7 +258,7 @@ const CLASSICS = [
   },
   {
     id: 'upper-storm', name: 'Upper Storm', tagline: 'Press, pull, push',
-    focus: 'upper-body', blurb: 'Four blocks across the upper body — press, row, push, hold.',
+    focus: 'upper-body', blurb: 'Four blocks across the upper body: press, row, push, hold.',
     format: 'tabata', blockRestSec: 30,
     blocks: [
       blockCycle('Barbell press, rows & planks', ['barbellPress', 'plankHold', 'barbellRow', 'plankShoulderTaps']),
@@ -283,7 +283,7 @@ const CLASSICS = [
   },
   {
     id: 'driveway-demon', name: 'Driveway Demon', tagline: 'Sprint, swing, suffer',
-    focus: 'whole-body', blurb: 'Six blocks — sprints, KBs, bodyweight, holds. Use the whole driveway.',
+    focus: 'whole-body', blurb: 'Six blocks of sprints, KBs, bodyweight and holds. Use the whole driveway.',
     format: 'tabata', blockRestSec: 45,
     blocks: [
       blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
@@ -311,7 +311,7 @@ const CLASSICS = [
   },
   {
     id: 'power-hour', name: 'Power Hour', tagline: 'Every muscle, every toy',
-    focus: 'whole-body', blurb: 'Ten blocks using the whole kit — squats, swings, presses, rows, sprints. The big one.',
+    focus: 'whole-body', blurb: 'Ten blocks using the whole kit: squats, swings, presses, rows, sprints. The big one.',
     format: 'tabata', blockRestSec: 60,
     blocks: [
       blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
@@ -328,7 +328,7 @@ const CLASSICS = [
   },
   {
     id: 'long-haul', name: 'The Long Haul', tagline: 'Sixty minutes of engine',
-    focus: 'whole-body', blurb: 'Ten blocks of near-nonstop conditioning — jumps, sprints, skips, crawls. Pace yourself.',
+    focus: 'whole-body', blurb: 'Ten blocks of near-nonstop conditioning: jumps, sprints, skips, crawls. Pace yourself.',
     format: 'tabata', blockRestSec: 60,
     blocks: [
       blockCycle('Jacks, knees & skaters', ['jumpingJacks', 'highKnees', 'skaterHops', 'mountainClimber']),
@@ -351,14 +351,14 @@ const CLASSICS = [
 const STRETCH_ROUTINES = [
   {
     id: 'sunrise-stretch', name: 'Sunrise Stretch', tagline: 'Open up the day',
-    focus: 'stretching', blurb: 'Slow mobility — hold and breathe. Wake the body up.',
+    focus: 'stretching', blurb: 'Slow mobility. Hold and breathe, wake the body up.',
     format: 'stretch', hold: 60,
     ids: ['forwardFold', 'downDog', 'lowLungeL', 'lowLungeR', 'pigeonL', 'pigeonR',
           'childsPose', 'cobra', 'catCow', 'neckRolls', 'chestOpener']
   },
   {
     id: 'cool-mobile', name: 'Cool & Mobile', tagline: 'Recovery & mobility',
-    focus: 'stretching', blurb: 'Full-body mobility flow — perfect after a workout or before bed.',
+    focus: 'stretching', blurb: 'Full-body mobility flow, perfect after a workout or before bed.',
     format: 'stretch', hold: 60,
     ids: ['catCow', 'threadNeedleL', 'threadNeedleR', 'downDog', 'lowLungeL', 'lowLungeR',
           'pigeonL', 'pigeonR', 'seatedFold', 'spinalTwistL', 'spinalTwistR',
@@ -366,7 +366,7 @@ const STRETCH_ROUTINES = [
   },
   {
     id: 'post-session', name: 'Post-Session Reset', tagline: 'Ten minutes, straight after',
-    focus: 'stretching', blurb: 'Short and targeted — the bits that tighten up after a hard session.',
+    focus: 'stretching', blurb: 'Short and targeted: the bits that tighten up after a hard session.',
     format: 'stretch', hold: 45,
     ids: ['forwardFold', 'quadKneel', 'hamstringL', 'hamstringR', 'calfWall',
           'lowLungeL', 'lowLungeR', 'chestOpener', 'tricepReach', 'wristCircles',

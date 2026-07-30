@@ -11,9 +11,9 @@
     load       optional weight tag ('15kg', 'lighter pair'). Appended to the
                headline, because in a swap block both people are doing the
                same movement and the load is the only thing telling them
-               which bell is theirs — it must not be buried in the cue
+               which bell is theirs, it must not be buried in the cue
     cue        small coaching line under the name ('' for none)
-    sideCue    true when the cue must name a halfway switch — the app
+    sideCue    true when the cue must name a halfway switch, the app
                writes "switch sides at Ns" from the live interval, so the
                text is right in both 20s and 40s modes
     alt        injury / lower-impact alternative
@@ -52,7 +52,7 @@ const REGIONS = [
   { id: 'cardio', label: 'Cardio',            short: 'Cardio' }
 ];
 
-// Quick constraint filters — the usual reasons people skip a movement.
+// Quick constraint filters, the usual reasons people skip a movement.
 const EXCLUSION_TAGS = [
   { id: 'impact',   label: 'No jumping',   blurb: 'Skips jumps, hops and plyometrics' },
   { id: 'floor',    label: 'No floor work', blurb: 'Nothing that needs lying or kneeling down' },
@@ -62,7 +62,7 @@ const EXCLUSION_TAGS = [
 
 const EXERCISES = {
   // ===================================================================
-  // LEGS — squat pattern
+  // LEGS: squat pattern
   // ===================================================================
   airSquat:        { name: 'Air squats', cue: 'Chest up, knees out', alt: 'Box squat to a chair', equipment: [], img: 'bwSquat', regions: ['legs'], pattern: 'squat', tags: [] },
   tempoSquat:      { name: 'Tempo squats', cue: 'Slow 3-second descent', alt: 'Box squat to a chair', equipment: [], img: 'bwSquat', regions: ['legs'], pattern: 'squat', tags: [] },
@@ -79,7 +79,7 @@ const EXERCISES = {
   stepDown:        { name: 'Slow step-downs', cue: 'Lower under control, 3 seconds', sideCue: true, alt: 'Lower step, hold a wall', equipment: [], img: 'stepDown', regions: ['legs'], pattern: 'lunge', tags: [] },
 
   // ===================================================================
-  // LEGS — lunge pattern
+  // LEGS: lunge pattern
   // ===================================================================
   reverseLunge:    { name: 'Reverse lunges', cue: 'Alternate legs, long step back', alt: 'Static split squats', equipment: [], img: 'reverseLunge', regions: ['legs'], pattern: 'lunge', tags: [] },
   walkingLunge:    { name: 'Walking lunges', cue: 'Down the driveway and back', alt: 'Reverse lunges in place', equipment: [], img: 'walkingLunge', regions: ['legs'], pattern: 'lunge', tags: [] },
@@ -92,7 +92,7 @@ const EXERCISES = {
   boxJump:         { name: 'Box jumps', cue: 'Jump up, step down', alt: 'Step-ups instead', equipment: [], img: 'boxJump', regions: ['legs', 'cardio'], pattern: 'squat', tags: ['impact'] },
 
   // ===================================================================
-  // LEGS / POSTERIOR — hinge pattern
+  // LEGS / POSTERIOR: hinge pattern
   // ===================================================================
   goodMorning:     { name: 'Good mornings', cue: 'Hands behind head, hinge at the hip', alt: 'Hip hinge with hands on thighs', equipment: [], img: 'goodMorning', regions: ['legs', 'pull'], pattern: 'hinge', tags: [] },
   singleLegRdl:    { name: 'Single-leg deadlifts', cue: 'Reach for the floor, hips level', sideCue: true, alt: 'Hold a wall, both feet down', equipment: [], img: 'singleLegRdl', regions: ['legs'], pattern: 'hinge', tags: [] },
@@ -104,7 +104,7 @@ const EXERCISES = {
   fireHydrant:     { name: 'Fire hydrants', cue: 'Knee out to the side, hips square', sideCue: true, alt: 'Standing hip abduction at a wall', equipment: [], img: 'fireHydrant', regions: ['legs'], pattern: 'hinge', tags: ['floor'] },
 
   // ===================================================================
-  // PUSH — horizontal
+  // PUSH: horizontal
   // ===================================================================
   pushup:          { name: 'Push-ups', cue: 'Elbows back, body in one line', alt: 'Incline push-ups (hands on bench)', equipment: [], img: 'pushup', regions: ['push', 'core'], pattern: 'pushH', tags: ['floor'] },
   widePushup:      { name: 'Wide push-ups', cue: 'Hands out wide, chest leads', alt: 'Wide incline push-ups', equipment: [], img: 'widePushup', regions: ['push'], pattern: 'pushH', tags: ['floor'] },
@@ -115,7 +115,7 @@ const EXERCISES = {
   clapPushup:      { name: 'Explosive push-ups', cue: 'Push hard, hands leave the floor', alt: 'Regular push-ups', equipment: [], img: 'clapPushup', regions: ['push', 'cardio'], pattern: 'pushH', tags: ['floor', 'impact'] },
 
   // ===================================================================
-  // PUSH — vertical / triceps
+  // PUSH: vertical / triceps
   // ===================================================================
   pikePushup:      { name: 'Pike push-ups', cue: 'Hips high, crown to the floor', alt: 'Incline pike push-ups', equipment: [], img: 'pikePushup', regions: ['push'], pattern: 'pushV', tags: ['floor', 'overhead'] },
   elevatedPike:    { name: 'Elevated pike push-ups', cue: 'Feet on the bench, stack the shoulders', alt: 'Pike push-ups on the floor', equipment: [], img: 'elevatedPikePushup', regions: ['push'], pattern: 'pushV', tags: ['floor', 'overhead'] },
@@ -124,16 +124,16 @@ const EXERCISES = {
   tricepDips:      { name: 'Tricep dips', cue: 'On a bench, elbows straight back', alt: 'Bench dips with feet closer in', equipment: [], img: 'benchDips', regions: ['push'], pattern: 'pushV', tags: [] },
 
   // ===================================================================
-  // PULL — bodyweight
+  // PULL: bodyweight
   // ===================================================================
   supermanPull:    { name: 'Superman pulls', cue: 'Sweep the arms back like a pulldown', alt: 'Superman hold', equipment: [], img: 'superman', regions: ['pull'], pattern: 'pullV', tags: ['floor'] },
   supermanHold:    { name: 'Superman hold', cue: 'Chest and thighs off the floor, pulse', alt: 'Superman hold, no pulses', equipment: [], img: 'superman', regions: ['pull', 'core'], pattern: 'pullV', tags: ['floor'] },
   supermanYtw:     { name: 'Prone Y-T-Ws', cue: 'Arms to a Y, then a T, then a W', alt: 'Smaller range, thumbs up', equipment: [], img: 'supermanYtw', regions: ['pull'], pattern: 'pullH', tags: ['floor'] },
 
   // ===================================================================
-  // CORE — anti-extension / holds
+  // CORE: anti-extension / holds
   // ===================================================================
-  plankHold:       { name: 'Plank hold', cue: 'Forearm or high — squeeze the ribs down', alt: 'Knees plank', equipment: [], img: 'plank', regions: ['core'], pattern: 'coreAnti', tags: ['floor'] },
+  plankHold:       { name: 'Plank hold', cue: 'Forearm or high, squeeze the ribs down', alt: 'Knees plank', equipment: [], img: 'plank', regions: ['core'], pattern: 'coreAnti', tags: ['floor'] },
   plankForearm:    { name: 'Forearm plank', cue: 'Elbows under the shoulders', alt: 'Knees plank', equipment: [], img: 'plank', regions: ['core'], pattern: 'coreAnti', tags: ['floor'] },
   plankRotation:   { name: 'Plank rotations', cue: 'Forearm, high, side-left, side-right', rotateCue: 4, alt: 'Knees plank, same rotation', equipment: [], img: 'plank', regions: ['core'], pattern: 'coreAnti', tags: ['floor'] },
   plankShoulderTaps: { name: 'Plank shoulder taps', cue: 'Hips still, tap alternate shoulders', alt: 'Knees plank shoulder taps', equipment: [], img: 'plankShoulderTaps', regions: ['core'], pattern: 'coreAnti', tags: ['floor'] },
@@ -147,7 +147,7 @@ const EXERCISES = {
   birdDog:         { name: 'Bird dogs', cue: 'Opposite arm and leg, no wobble', alt: 'One limb at a time', equipment: [], img: 'birdDog', regions: ['core'], pattern: 'coreAnti', tags: ['floor'] },
 
   // ===================================================================
-  // CORE — flexion
+  // CORE: flexion
   // ===================================================================
   vSit:            { name: 'V-sits', cue: 'Fold, hands towards the toes', alt: 'Tucked V-sit (knees bent)', equipment: [], img: 'vSit', regions: ['core'], pattern: 'coreFlex', tags: ['floor'] },
   vUp:             { name: 'V-ups', cue: 'Arms and legs meet over the hips', alt: 'Alternating single-leg V-ups', equipment: [], img: 'vUp', regions: ['core'], pattern: 'coreFlex', tags: ['floor'] },
@@ -159,7 +159,7 @@ const EXERCISES = {
   bicycleCrunch:   { name: 'Bicycle crunches', cue: 'Elbow towards the opposite knee', alt: 'Slow bicycles, heels tapping down', equipment: [], img: 'bicycleCrunch', regions: ['core'], pattern: 'coreRot', tags: ['floor'] },
 
   // ===================================================================
-  // CORE — rotation & lateral
+  // CORE: rotation & lateral
   // ===================================================================
   russianTwistBw:  { name: 'Russian twists', cue: 'Rotate from the ribs, heels light', alt: 'Seated slow torso twists', equipment: [], img: 'russianTwist', regions: ['core'], pattern: 'coreRot', tags: ['floor'] },
   sidePlankHold:   { name: 'Side plank hold', cue: 'Stack the shoulders, hips high', sideCue: true, alt: 'Side plank from the knees', equipment: [], img: 'sidePlankHold', regions: ['core'], pattern: 'coreLat', tags: ['floor'] },
@@ -169,11 +169,11 @@ const EXERCISES = {
   crabReach:       { name: 'Crab toe reaches', cue: 'Kick up and touch the opposite toe', alt: 'Crab hip lifts, no reach', equipment: [], img: 'crabReach', regions: ['core'], pattern: 'coreRot', tags: ['floor'] },
 
   // ===================================================================
-  // CRAWLS & CONDITIONING — bodyweight
+  // CRAWLS & CONDITIONING: bodyweight
   // ===================================================================
   burpee:          { name: 'Burpees', cue: 'Chest to floor, jump at the top', alt: 'Step-back burpees (no jump)', equipment: [], img: 'burpee', regions: ['cardio', 'push'], pattern: 'cardio', tags: ['floor', 'impact'] },
   burpeeBroadJump: { name: 'Burpee broad jumps', cue: 'Burpee, then jump forward', alt: 'Step-back burpee, step forward', equipment: [], img: 'burpeeBroadJump', regions: ['cardio', 'legs'], pattern: 'cardio', tags: ['floor', 'impact'] },
-  squatThrust:     { name: 'Squat thrusts', cue: 'Hands down, feet back and in — no push-up', alt: 'Step the feet back and in', equipment: [], img: 'squatThrust', regions: ['cardio', 'core'], pattern: 'cardio', tags: ['floor'] },
+  squatThrust:     { name: 'Squat thrusts', cue: 'Hands down, feet back and in, no push-up', alt: 'Step the feet back and in', equipment: [], img: 'squatThrust', regions: ['cardio', 'core'], pattern: 'cardio', tags: ['floor'] },
   jumpingJacks:    { name: 'Jumping jacks', cue: 'Arms all the way overhead', alt: 'Step jacks (no jump)', equipment: [], img: 'jumpingJacks', regions: ['cardio'], pattern: 'cardio', tags: ['impact'] },
   sealJack:        { name: 'Seal jacks', cue: 'Arms clap out front, not overhead', alt: 'Step out, arms front', equipment: [], img: 'sealJack', regions: ['cardio'], pattern: 'cardio', tags: ['impact'] },
   jackSquat:       { name: 'Jack squats', cue: 'Jack out, then a squat', alt: 'Step jack into a squat', equipment: [], img: 'jackSquat', regions: ['cardio', 'legs'], pattern: 'cardio', tags: ['impact'] },
@@ -185,14 +185,14 @@ const EXERCISES = {
   broadJump:       { name: 'Broad jumps', cue: 'Jump forward, walk back', alt: 'Long steps, no jump', equipment: [], img: 'broadJump', regions: ['cardio', 'legs'], pattern: 'cardio', tags: ['impact'] },
   lateralShuffle:  { name: 'Lateral shuffles', cue: 'Stay low, quick feet across', alt: 'Slow side steps, stay tall', equipment: [], img: 'lateralShuffle', regions: ['cardio', 'legs'], pattern: 'cardio', tags: ['impact'] },
   mountainClimber:     { name: 'Mountain climbers', cue: 'Hips low, drive the knees in', alt: 'Slow controlled climbers', equipment: [], img: 'mountainClimber', regions: ['core', 'cardio'], pattern: 'cardio', tags: ['floor'] },
-  mountainClimberFast: { name: 'Mountain climbers — fast', cue: 'As quick as you can hold form', alt: 'Slow controlled climbers', equipment: [], img: 'mountainClimber', regions: ['core', 'cardio'], pattern: 'cardio', tags: ['floor'] },
+  mountainClimberFast: { name: 'Mountain climbers, fast', cue: 'As quick as you can hold form', alt: 'Slow controlled climbers', equipment: [], img: 'mountainClimber', regions: ['core', 'cardio'], pattern: 'cardio', tags: ['floor'] },
   mountainClimberCross: { name: 'Cross-body climbers', cue: 'Knee towards the opposite elbow', alt: 'Slow cross-body climbers', equipment: [], img: 'mountainClimberCross', regions: ['core', 'cardio'], pattern: 'cardio', tags: ['floor'] },
   bearCrawl:       { name: 'Bear crawls', cue: 'Forward and back, hips low', alt: 'Bear hold (knees hovering)', equipment: [], img: 'bearCrawl', regions: ['core', 'push'], pattern: 'crawl', tags: ['floor'] },
   bearCrawlLateral:{ name: 'Lateral bear crawls', cue: 'Sideways, knees off the floor', alt: 'Bear hold with a shoulder tap', equipment: [], img: 'bearCrawlLateral', regions: ['core', 'push'], pattern: 'crawl', tags: ['floor'] },
   inchworm:        { name: 'Inchworm walkouts', cue: 'Walk the hands out to a plank', alt: 'Walkouts, knees down on the return', equipment: [], img: 'inchworm', regions: ['core'], pattern: 'crawl', tags: ['floor'] },
   inchwormPushup:  { name: 'Inchworm push-ups', cue: 'Walk out, one push-up, walk back', alt: 'Walkouts with no push-up', equipment: [], img: 'inchwormPushup', regions: ['push', 'core'], pattern: 'crawl', tags: ['floor'] },
   sprint:          { name: 'Driveway sprint', cue: 'To the mailbox and back', alt: 'Brisk walk to the mailbox & back', equipment: [], img: 'sprint', regions: ['cardio'], pattern: 'cardio', tags: ['impact', 'running'] },
-  shuttleRun:      { name: 'Shuttle runs', cue: 'Out, touch, back — repeat', alt: 'Walking shuttles', equipment: [], img: 'shuttleRun', regions: ['cardio'], pattern: 'cardio', tags: ['impact', 'running'] },
+  shuttleRun:      { name: 'Shuttle runs', cue: 'Out, touch, back, then repeat', alt: 'Walking shuttles', equipment: [], img: 'shuttleRun', regions: ['cardio'], pattern: 'cardio', tags: ['impact', 'running'] },
 
   // ===================================================================
   // KETTLEBELLS
@@ -209,7 +209,7 @@ const EXERCISES = {
   kbHighPull15:   { name: 'KB high pulls', load: '15kg', cue: 'Elbow high, bell to the chest', alt: 'KB swings', equipment: ['kb15'], bw: 'goodMorning', img: 'kbHighPull', regions: ['pull', 'legs'], pattern: 'pullV', tags: [] },
   kbSnatch10:     { name: 'KB snatches', load: '10kg', cue: 'One pull to overhead', sideCue: true, alt: 'KB high pulls', equipment: ['kb10'], bw: 'squatReach', img: 'kbSnatch', regions: ['push', 'legs'], pattern: 'hinge', tags: ['overhead'] },
   kbRackHold15:   { name: 'KB front rack hold', load: '15kg', cue: 'Stay tall, breathe', alt: 'Dumbbell suitcase hold', equipment: ['kb15'], bw: 'wallSit', img: 'kbRackHold', regions: ['core'], pattern: 'carry', tags: [] },
-  kbSuitcaseHold15: { name: 'KB suitcase hold', load: '15kg', cue: 'One side — do not lean', sideCue: true, alt: 'Lighter bell, shorter hold', equipment: ['kb15'], bw: 'sidePlankHold', img: 'kbSuitcaseHold', regions: ['core'], pattern: 'carry', tags: [] },
+  kbSuitcaseHold15: { name: 'KB suitcase hold', load: '15kg', cue: 'One side only, do not lean', sideCue: true, alt: 'Lighter bell, shorter hold', equipment: ['kb15'], bw: 'sidePlankHold', img: 'kbSuitcaseHold', regions: ['core'], pattern: 'carry', tags: [] },
   kbFarmersWalk15:{ name: 'KB farmer carry', load: '15kg', cue: 'One side, down the driveway', sideCue: true, alt: 'Suitcase hold in place', equipment: ['kb15'], bw: 'bearCrawl', img: 'kbFarmersWalk', regions: ['core', 'pull'], pattern: 'carry', tags: [] },
   kbCleanPress15: { name: 'KB clean & press', load: '15kg', cue: 'One motion, floor to overhead', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb15'], bw: 'squatReach', img: 'kbCleanPress', regions: ['push', 'legs'], pattern: 'pushV', tags: ['overhead'] },
   kbCleanPress10: { name: 'KB clean & press', load: '10kg', cue: 'One motion, floor to overhead', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb10'], bw: 'squatReach', img: 'kbCleanPress', regions: ['push', 'legs'], pattern: 'pushV', tags: ['overhead'] },
@@ -280,35 +280,35 @@ const EXERCISES = {
 };
 
 // ---------------------------------------------------------------------
-// STRETCH LIBRARY — used by the mobility flows
+// STRETCH LIBRARY: used by the mobility flows
 // ---------------------------------------------------------------------
 const STRETCHES = [
   { id: 'forwardFold',   name: 'Standing forward fold',  alt: 'Seated forward fold',        area: 'back' },
   { id: 'downDog',       name: 'Downward dog',           alt: 'Hands on a bench, hips back', area: 'back' },
-  { id: 'lowLungeL',     name: 'Low lunge — left',       alt: 'Half-kneeling, hands on shin', area: 'hips' },
-  { id: 'lowLungeR',     name: 'Low lunge — right',      alt: 'Half-kneeling, hands on shin', area: 'hips' },
-  { id: 'pigeonL',       name: 'Pigeon — left',          alt: 'Figure-4 on the ground',      area: 'hips' },
-  { id: 'pigeonR',       name: 'Pigeon — right',         alt: 'Figure-4 on the ground',      area: 'hips' },
+  { id: 'lowLungeL',     name: 'Low lunge, left',       alt: 'Half-kneeling, hands on shin', area: 'hips' },
+  { id: 'lowLungeR',     name: 'Low lunge, right',      alt: 'Half-kneeling, hands on shin', area: 'hips' },
+  { id: 'pigeonL',       name: 'Pigeon, left',          alt: 'Figure-4 on the ground',      area: 'hips' },
+  { id: 'pigeonR',       name: 'Pigeon, right',         alt: 'Figure-4 on the ground',      area: 'hips' },
   { id: 'childsPose',    name: "Child's pose",           alt: '',                            area: 'back' },
   { id: 'cobra',         name: 'Cobra / upward dog',     alt: 'Sphinx on the forearms',      area: 'back' },
   { id: 'catCow',        name: 'Cat-cow flow',           alt: '',                            area: 'back' },
   { id: 'neckRolls',     name: 'Neck & shoulder rolls',  alt: '',                            area: 'shoulders' },
   { id: 'chestOpener',   name: 'Standing chest opener',  alt: 'Doorway pec stretch',         area: 'shoulders' },
-  { id: 'threadNeedleL', name: 'Thread the needle — left',  alt: '',                         area: 'shoulders' },
-  { id: 'threadNeedleR', name: 'Thread the needle — right', alt: '',                         area: 'shoulders' },
+  { id: 'threadNeedleL', name: 'Thread the needle, left',  alt: '',                         area: 'shoulders' },
+  { id: 'threadNeedleR', name: 'Thread the needle, right', alt: '',                         area: 'shoulders' },
   { id: 'seatedFold',    name: 'Seated forward fold',    alt: '',                            area: 'legs' },
-  { id: 'spinalTwistL',  name: 'Supine spinal twist — left',  alt: '',                       area: 'back' },
-  { id: 'spinalTwistR',  name: 'Supine spinal twist — right', alt: '',                       area: 'back' },
-  { id: 'hip9090L',      name: '90/90 hip — left',       alt: '',                            area: 'hips' },
-  { id: 'hip9090R',      name: '90/90 hip — right',      alt: '',                            area: 'hips' },
+  { id: 'spinalTwistL',  name: 'Supine spinal twist, left',  alt: '',                       area: 'back' },
+  { id: 'spinalTwistR',  name: 'Supine spinal twist, right', alt: '',                       area: 'back' },
+  { id: 'hip9090L',      name: '90/90 hip, left',       alt: '',                            area: 'hips' },
+  { id: 'hip9090R',      name: '90/90 hip, right',      alt: '',                            area: 'hips' },
   { id: 'frog',          name: 'Frog stretch',           alt: "Wide-knee child's pose",      area: 'hips' },
   { id: 'bridgeHold',    name: 'Glute bridge hold',      alt: '',                            area: 'hips' },
   { id: 'happyBaby',     name: 'Happy baby',             alt: 'Knees-to-chest rocks',        area: 'hips' },
   { id: 'savasana',      name: 'Savasana / deep breathing', alt: '',                         area: 'back' },
   { id: 'calfWall',      name: 'Calf stretch at the wall', alt: 'Seated calf stretch',       area: 'legs' },
   { id: 'quadKneel',     name: 'Kneeling quad stretch',  alt: 'Standing quad stretch',       area: 'legs' },
-  { id: 'hamstringL',    name: 'Hamstring stretch — left',  alt: 'Seated, knee soft',        area: 'legs' },
-  { id: 'hamstringR',    name: 'Hamstring stretch — right', alt: 'Seated, knee soft',        area: 'legs' },
+  { id: 'hamstringL',    name: 'Hamstring stretch, left',  alt: 'Seated, knee soft',        area: 'legs' },
+  { id: 'hamstringR',    name: 'Hamstring stretch, right', alt: 'Seated, knee soft',        area: 'legs' },
   { id: 'tricepReach',   name: 'Overhead tricep reach',  alt: '',                            area: 'shoulders' },
   { id: 'wristCircles',  name: 'Wrist circles & shakes', alt: '',                            area: 'shoulders' }
 ];

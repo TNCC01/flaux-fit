@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the animated exercise demo SVGs for FIT.
 
-Each exercise declares two poses — start and end — as joint coordinates.
+Each exercise declares two poses, start and end, as joint coordinates.
 They are interpolated into a ping-pong flipbook and baked to a single
 self-animating file at img/exercises/<base>.svg (CSS keyframes, no JS),
 which the app drops straight into an <img>.
@@ -11,7 +11,7 @@ core, amber equipment, the working muscle group lit in rose (see ACTIVE),
 transparent background.
 
 The two poses of an exercise MUST use the same number of arm chains, leg
-chains and decorations, or the flipbook frames won't line up — the build
+chains and decorations, or the flipbook frames won't line up, the build
 fails loudly with the offending exercise name if they don't.
 
 Re-run after editing poses:  python3 scripts/gen-anims.py
@@ -900,7 +900,7 @@ def _(i):
     x = 240
     hands = [(x - 34, 96), (x + 34, 96)]
     tuck = 0 if i == 0 else 10
-    neck, head = (x, 128), (x, 156)   # hanging: head below hands? no—head above neck
+    neck, head = (x, 128), (x, 156)   # hanging: head below hands? no, head above neck
     neck, head = (x, 140), (x, 114)
     hip = (x, 214)
     arms = [[hands[0]], [hands[1]]]
@@ -1455,9 +1455,9 @@ def _(i):
     hip = (x, 262)
     neck = (x + 84, 254)
     head = (x + 110, 246)
-    if i == 0:                                    # Y — arms forward and wide
+    if i == 0:                                    # Y, arms forward and wide
         arms = [[(x + 126, 232), (x + 158, 214)], [(x + 132, 250), (x + 166, 244)]]
-    else:                                         # T — arms straight out
+    else:                                         # T, arms straight out
         arms = [[(x + 112, 216), (x + 118, 178)], [(x + 122, 252), (x + 156, 262)]]
     legs = [[(x - 66, 254), (x - 126, 244 - lift)]]
     return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
@@ -1787,7 +1787,7 @@ def _(i):
 
 @pose('shuttleRun')
 def _(i):
-    # running out, then planting low to turn — both poses stay upright-ish
+    # running out, then planting low to turn, both poses stay upright-ish
     # so the interpolated frames read as a stride rather than a tangle
     x = 240
     if i == 0:
@@ -2136,7 +2136,7 @@ if __name__ == '__main__':
         try:
             out = animated_svg(p0, p1)
         except ValueError as e:
-            raise SystemExit(f'{base}: {e} — the two poses must use the same '
+            raise SystemExit(f'{base}: {e}, the two poses must use the same '
                              f'number of arm/leg chains and decorations')
         path = os.path.join(OUT, f'{base}.svg')
         with open(path, 'w') as f:
@@ -2145,4 +2145,4 @@ if __name__ == '__main__':
     print(f'wrote {len(POSES)} animated SVGs, {total / 1024:.0f} KB total')
     if _UNTAGGED:
         print(f'warning: no ACTIVE muscle group for {", ".join(_UNTAGGED)} '
-              f'— they render without the rose highlight')
+              f',  they render without the rose highlight')

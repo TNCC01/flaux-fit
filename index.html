@@ -8,16 +8,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<!-- Add to Home Screen on an iPad launches this with no address bar and no
+     tabs, which is the only way to get the full screen back in iOS Safari. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FIT">
 <meta name="theme-color" content="#0d9488">
-<title>FIT — Flaux workout timer</title>
+<title>FIT, the Flaux workout timer</title>
+<link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<div id="phaseBleed" aria-hidden="true"></div>
 <div class="app">
 
   <!-- ============== WELCOME VIEW ============== -->
@@ -41,7 +46,7 @@
       <button class="path-card primary" id="pathQuick">
         <div class="path-icon" aria-hidden="true">⚡</div>
         <div class="path-name">Just pick for me</div>
-        <div class="path-blurb">Tell me your gear, how long you've got, and how many of you. That's it — I'll build the workout.</div>
+        <div class="path-blurb">Tell me your gear, how long you've got, and how many of you. That's it, and I'll build the workout.</div>
         <div class="path-go">Start here →</div>
       </button>
 
@@ -62,9 +67,17 @@
       <button class="path-card" id="pathClassics">
         <div class="path-icon" aria-hidden="true">★</div>
         <div class="path-name">The classics</div>
-        <div class="path-blurb">The named workouts — Power Hour, Backyard Strength and the rest — plus anything you've saved.</div>
+        <div class="path-blurb">The named workouts (Power Hour, Backyard Strength and the rest), plus anything you've saved.</div>
         <div class="path-go">Browse →</div>
       </button>
+    </div>
+
+    <div class="welcome-actions">
+      <button class="secondary" id="btnFullscreen" hidden>⤢ Full screen</button>
+      <p class="install-hint" id="installHint" hidden>
+        To lose the address bar and tabs for good: tap Share, then
+        <strong>Add to Home Screen</strong>, and open FIT from the icon.
+      </p>
     </div>
 
     <p class="welcome-foot" id="welcomeFoot"></p>
@@ -92,7 +105,7 @@
     <div class="picker-row">
       <div class="picker-label">Equipment on hand</div>
       <div class="chip-row" id="equipmentPicker"></div>
-      <div class="picker-hint">Tap off anything you haven't got — nothing that needs it will be picked.</div>
+      <div class="picker-hint">Tap off anything you haven't got, and nothing that needs it will be picked.</div>
     </div>
 
     <div class="picker-row">
@@ -143,7 +156,7 @@
         </svg>
       </div>
       <div class="chip-row" id="regionPicker"></div>
-      <div class="picker-hint">Tap the body or the labels — same thing. Pick as many as you like.</div>
+      <div class="picker-hint">Tap the body or the labels, same thing. Pick as many as you like.</div>
     </div>
 
     <div class="picker-row custom-only" id="rowExclude">
@@ -183,7 +196,7 @@
   <div class="view" id="workoutView">
     <div class="top-bar">
       <button class="back-btn" id="btnBack">← Menu</button>
-      <div class="workout-title" id="workoutTitle">—</div>
+      <div class="workout-title" id="workoutTitle"></div>
       <div class="people-badge" id="peopleBadge">2 people</div>
     </div>
 
@@ -192,11 +205,12 @@
     </div>
 
     <div class="block-info">
-      <div class="block-name" id="blockName">—</div>
+      <div class="block-name" id="blockName"></div>
       <div class="round-dots" id="roundDots"></div>
     </div>
 
     <div class="timer-card warmup" id="timerCard">
+      <div class="ring" id="phaseRing" aria-hidden="true"></div>
       <div class="phase-label" id="phaseLabel">Press start</div>
       <div class="time-display" id="timeDisplay">--:--</div>
       <div class="total-time" id="totalTime">Total 0:00</div>
@@ -206,7 +220,7 @@
       <div class="person a">
         <div class="person-label" id="labelA">Person A</div>
         <div class="next-eyebrow">Up next</div>
-        <div class="exercise-name" id="exerciseA">—</div>
+        <div class="exercise-name" id="exerciseA"></div>
         <div class="exercise-cue" id="cueA"></div>
         <div class="ex-anim" id="animA"></div>
         <div class="alternative" id="alternativeA"></div>
@@ -214,7 +228,7 @@
       <div class="person b" id="personB">
         <div class="person-label" id="labelB">Person B</div>
         <div class="next-eyebrow">Up next</div>
-        <div class="exercise-name" id="exerciseB">—</div>
+        <div class="exercise-name" id="exerciseB"></div>
         <div class="exercise-cue" id="cueB"></div>
         <div class="ex-anim" id="animB"></div>
         <div class="alternative" id="alternativeB"></div>
