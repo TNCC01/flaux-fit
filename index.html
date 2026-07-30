@@ -29,6 +29,16 @@
 <!-- Only visible when there is more page below, so "there is more here" is
      never something you have to guess at. -->
 <div id="scrollHint" aria-hidden="true"></div>
+
+<!--
+  The app scrolls inside this element rather than scrolling the document.
+  On iPadOS a slow press-and-drag on page content gets claimed by the system
+  drag gesture, so it never becomes a document scroll (a flick is fast enough
+  to win the race, which is why flicking always worked). An element with
+  overflow-y: auto gets its own scroll view, and dragging inside one scrolls
+  it from anywhere, buttons included.
+-->
+<div id="scroller">
 <div class="app">
 
   <!-- ============== WELCOME VIEW ============== -->
@@ -288,6 +298,7 @@
     </div>
   </div>
 
+</div>
 </div>
 
 <script src="js/exercises.js"></script>

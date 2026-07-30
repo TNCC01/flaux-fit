@@ -62,6 +62,17 @@
   .v-activescale-nt:active { transform: scale(0.97); }
   .v-statictransform { transform: translateZ(0); }
 
+  /* The decisive comparison: the same card, but scrolling a container
+     instead of the document. This is what the app now does. */
+  #containerTest {
+    height: 240px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    border: 2px solid #2dd4bf; border-radius: 1rem; margin-bottom: 0.75rem;
+    background: #0a1414;
+  }
+  #containerTest .panel { margin: 0.5rem; min-height: 150px; }
+  .note {
+    color: #94a3b8; font-size: 0.9rem; margin: 0.25rem 0 0.6rem;
+  }
   #summary {
     position: fixed; left: 0; right: 0; bottom: 0;
     background: #0a1414; border-top: 2px solid #1f3333;
@@ -158,6 +169,21 @@
   <code>-webkit-touch-callout: none; -webkit-user-drag: none</code>
   <div class="result untested">not tested yet</div></button>
 
+<h1 style="margin-top:1.5rem">The important one</h1>
+<p class="note">
+  This box scrolls on its own, instead of scrolling the page. Drag slowly on
+  the card inside it. If <b>this</b> scrolls when the panels above do not, then
+  document scrolling is the problem and the fix is for the app to scroll a
+  container, which is what it now does.
+</p>
+<div id="containerTest">
+  <button class="panel" data-t="O"><div class="id">O. Card inside a scroll container</div>
+    <div class="what">Same button, same CSS. Only the scroller differs.</div>
+    <code>parent: overflow-y: auto</code>
+    <div class="result untested">not tested yet</div></button>
+  <div style="height:320px"></div>
+</div>
+
 <div style="height:60vh"></div>
 
 <div id="summary">
@@ -193,17 +219,24 @@ function renderSummary() {
     `Did not scroll: <b>${bad.join(', ') || 'none'}</b>`;
 }
 
+// Panel O lives in its own scroller, so watch that instead of the window.
+const box = document.getElementById('containerTest');
+const scrollerFor = (t) => t === 'O' ? box : window;
+const posOf = (t) => t === 'O' ? box.scrollTop : window.scrollY;
+
 document.querySelectorAll('.panel').forEach(panel => {
   panel.addEventListener('touchstart', () => {
     active = panel.dataset.t;
-    startY = window.scrollY;
+    startY = posOf(active);
     moved = false;
   }, { passive: true });
 });
 
-window.addEventListener('scroll', () => {
-  if (active && Math.abs(window.scrollY - startY) > 6) moved = true;
-}, { passive: true });
+const onScroll = () => {
+  if (active && Math.abs(posOf(active) - startY) > 6) moved = true;
+};
+window.addEventListener('scroll', onScroll, { passive: true });
+box.addEventListener('scroll', onScroll, { passive: true });
 
 window.addEventListener('touchend', () => {
   if (active) setResult(active, moved);

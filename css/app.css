@@ -33,18 +33,39 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
+html, body { height: 100%; overflow: hidden; }
 body {
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
-  /* Only on body, not on html as well: setting it on both makes iOS treat
-     the page as a nested scroll container and momentum scrolling gets
-     sticky. */
+}
+
+/*
+  THE SCROLL CONTAINER
+
+  Everything scrolls in here, not in the document.
+
+  On iPadOS, a slow press-and-drag starting on page content gets claimed by
+  the system drag-and-drop gesture and never becomes a document scroll. A
+  fast flick wins the race first, which is exactly why flicking worked and
+  dragging did not. It reproduces on the production build too, so it was
+  never anything this rework introduced, and it does not happen on Android or
+  on a desktop browser.
+
+  An element with overflow-y: auto gets its own scroll view, and a drag
+  inside one scrolls it from anywhere, buttons included. On iPad this costs
+  nothing: Safari's toolbar is always visible there, so there is no
+  auto-hiding behaviour to lose, and from the home screen there is no toolbar
+  at all.
+*/
+#scroller {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
   overflow-x: hidden;
-  /* dvh, not vh: vh counts the address bar as visible even when it has
-     scrolled away, so the page was slightly taller than the screen. */
-  min-height: 100dvh;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   padding: env(safe-area-inset-top, 0.75rem) 0.75rem env(safe-area-inset-bottom, 1rem);
 }
 

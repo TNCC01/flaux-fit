@@ -107,10 +107,31 @@ round of either interval style, that duration labels match what the timer
 actually runs, and that all 496 generator input combinations either build a
 valid workout or refuse for a good reason.
 
-It also asserts the stylesheet sets no `touch-action`. Anything other than
-`auto` stops a slow press-and-drag from becoming a page scroll on iOS while
-a fast flick still works, which is subtle enough to be worth a guard, and it
-cannot be reproduced in a desktop browser.
+It also guards three CSS patterns that break press-and-drag scrolling on
+iOS while leaving a fast flick working, which makes them easy to miss and
+impossible to catch in a desktop browser or on Android: any non-`auto`
+`touch-action`, a `transform` inside an `:active` rule, and a `transition`
+that includes `transform`.
+
+## Why the app scrolls a container, not the document
+
+`#scroller` is a fixed, full-viewport element with `overflow-y: auto`, and
+everything lives inside it.
+
+On iPadOS a slow press-and-drag starting on page content gets claimed by the
+system drag-and-drop gesture and never becomes a document scroll. A fast
+flick wins the race first, which is why flicking always worked. Since the
+cards cover most of the screen, that left almost nowhere to drag from. It
+reproduces on old builds too, so it is not something this rework introduced,
+and it does not happen on Android or on a desktop browser.
+
+An element with `overflow-y: auto` gets its own scroll view, and a drag
+inside one scrolls it from anywhere, buttons included. On iPad this costs
+nothing, because Safari's toolbar is always visible there and from the home
+screen there is no toolbar at all.
+
+`scroll-test.html` is the on-device harness used to narrow this down. It can
+go once the fix is confirmed.
 
 After editing poses:
 

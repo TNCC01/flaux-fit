@@ -108,6 +108,7 @@ const els = {
   libraryView: $('libraryView'), workoutView: $('workoutView'),
   pathQuick: $('pathQuick'), pathCustom: $('pathCustom'),
   pathStretch: $('pathStretch'), pathClassics: $('pathClassics'),
+  scroller: $('scroller'),
   welcomeFoot: $('welcomeFoot'), btnFullscreen: $('btnFullscreen'),
   installHint: $('installHint'),
 
@@ -317,7 +318,8 @@ function setView(v) {
   ['welcome', 'setup', 'library', 'workout'].forEach(name => {
     els[name + 'View'].classList.toggle('active', v === name);
   });
-  window.scrollTo(0, 0);
+  els.scroller.scrollTop = 0;
+  queueScrollHint();
 }
 
 function esc(s) {
@@ -1441,8 +1443,8 @@ function applyTextScale() {
 // listener and a single class toggle, so it costs nothing while scrolling.
 // =====================================================================
 function updateScrollHint() {
-  const doc = document.documentElement;
-  const more = doc.scrollHeight - window.innerHeight - window.scrollY > 8;
+  const el = els.scroller;
+  const more = el.scrollHeight - el.clientHeight - el.scrollTop > 8;
   document.body.classList.toggle('can-scroll', more);
 }
 let scrollHintQueued = false;
@@ -1451,12 +1453,13 @@ function queueScrollHint() {
   scrollHintQueued = true;
   requestAnimationFrame(() => { scrollHintQueued = false; updateScrollHint(); });
 }
-window.addEventListener('scroll', queueScrollHint, { passive: true });
+els.scroller.addEventListener('scroll', queueScrollHint, { passive: true });
 window.addEventListener('resize', queueScrollHint, { passive: true });
-// Views swap and lists re-render without a scroll or resize event, so
-// watch the page for size changes too.
+// Views swap and lists re-render without firing scroll or resize, so watch
+// the content itself. It has to be the element inside the scroller, not the
+// body: the body is a fixed height now and never changes size.
 if ('ResizeObserver' in window) {
-  new ResizeObserver(queueScrollHint).observe(document.body);
+  new ResizeObserver(queueScrollHint).observe(els.scroller.firstElementChild);
 }
 
 // =====================================================================
