@@ -83,6 +83,22 @@ body::before {
   will-change: opacity;
 }
 
+/* Bottom edge fade, shown only while there is more page below. */
+#scrollHint {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: 0;
+  height: 3.25rem;
+  /* Below the sticky Build button, which already occupies this strip on the
+     setup screen. */
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  background: linear-gradient(to top, rgba(5,10,10,0.92), rgba(5,10,10,0.45) 55%, transparent);
+}
+body.can-scroll #scrollHint { opacity: 1; }
+
 .app { max-width: 1100px; margin: 0 auto; }
 .view { display: none; flex-direction: column; gap: 0.85rem; }
 .view.active { display: flex; }
@@ -99,8 +115,40 @@ button {
   cursor: pointer;
   font-family: inherit;
   -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
   box-shadow: var(--glow-teal), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/*
+  SCROLLING FROM ANYWHERE
+
+  The cards cover most of the screen, so a drag that starts on one has to
+  scroll the page. Three things were working against that:
+
+  - `touch-action: manipulation` on every button. Per spec it still permits
+    panning, and Chromium does pan, but it is the only non-default
+    touch-action in the app and WebKit is less predictable here. Removed
+    above; `auto` is the default and unambiguously scrolls.
+  - a drag beginning on text can start a text selection instead of a scroll,
+    and these cards are mostly text.
+  - a press-and-drag on a button can raise the iOS callout instead.
+
+  None of the card text is worth selecting, so selection and the callout are
+  turned off on the interactive surfaces, and vertical panning is stated
+  explicitly rather than left to be inferred.
+*/
+.path-card, .workout-card, .interval-card, .chip, .picker-row, .person,
+.timer-card, .block-info, .upcoming, .preview-card, .toggle-row,
+.brand-bar, .menu-header, .top-bar, .exclude-group, .bodymap {
+  touch-action: pan-y pinch-zoom;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* The one place typing and selecting text is the point. */
+.name-inputs input, .exclude-panel input[type="search"] {
+  -webkit-user-select: text;
+  user-select: text;
+  touch-action: auto;
 }
 button.secondary {
   background: var(--card);
@@ -275,6 +323,9 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   text-underline-offset: 3px;
 }
 .exclude-panel { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
+/* An author `display` beats the UA rule for [hidden], so the attribute has
+   to be honoured explicitly or the panel is always open. */
+.exclude-panel[hidden] { display: none; }
 .exclude-panel input { border-radius: 0.85rem; }
 .exclude-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .exclude-count { color: var(--muted); font-size: 0.88rem; font-weight: 600; }
@@ -307,8 +358,41 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
 .exclude-item.off span { color: var(--muted); text-decoration: line-through; }
 .exclude-empty { padding: 1rem; color: var(--muted); text-align: center; }
 
-.build-btn { font-size: 1.3rem; padding: 1.2rem; }
+/* Sticky so you never have to scroll to reach it, whatever the screen. */
+.build-btn {
+  font-size: 1.3rem;
+  padding: 1.2rem;
+  position: sticky;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  z-index: 5;
+}
 .build-note { color: var(--accent-b); font-size: 0.95rem; text-align: center; line-height: 1.45; }
+
+/*
+  Two columns once there is room, so the Custom screen fits on an iPad
+  instead of running 750px past the bottom. Rows pair up as
+  people|equipment, time|interval, target areas|exclusions.
+*/
+.setup-grid { display: flex; flex-direction: column; gap: 0.85rem; }
+@media (min-width: 860px) {
+  .setup-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  /* Body map beside its labels rather than above them, which is the
+     single biggest saving on this screen. */
+  #rowRegions .bodymap-wrap {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+    align-items: center;
+    justify-content: start;
+    padding-bottom: 0;
+  }
+  #rowRegions .bodymap { max-width: 180px; }
+  .bodymap-side { display: flex; flex-direction: column; gap: 0.6rem; }
+}
 
 /* ============== Library cards ============== */
 .workout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }

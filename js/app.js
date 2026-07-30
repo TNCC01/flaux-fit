@@ -1251,6 +1251,31 @@ function applyTextScale() {
 }
 
 // =====================================================================
+// SCROLL AFFORDANCE
+// The cards fill the screen, so there is often no visible cue that the
+// page continues below. Fade the bottom edge whenever it does. Passive
+// listener and a single class toggle, so it costs nothing while scrolling.
+// =====================================================================
+function updateScrollHint() {
+  const doc = document.documentElement;
+  const more = doc.scrollHeight - window.innerHeight - window.scrollY > 8;
+  document.body.classList.toggle('can-scroll', more);
+}
+let scrollHintQueued = false;
+function queueScrollHint() {
+  if (scrollHintQueued) return;
+  scrollHintQueued = true;
+  requestAnimationFrame(() => { scrollHintQueued = false; updateScrollHint(); });
+}
+window.addEventListener('scroll', queueScrollHint, { passive: true });
+window.addEventListener('resize', queueScrollHint, { passive: true });
+// Views swap and lists re-render without a scroll or resize event, so
+// watch the page for size changes too.
+if ('ResizeObserver' in window) {
+  new ResizeObserver(queueScrollHint).observe(document.body);
+}
+
+// =====================================================================
 // FULL SCREEN
 // Two routes, because iOS gives neither one on its own:
 //   1. Add to Home Screen. The manifest and the apple-mobile-web-app meta
@@ -1313,3 +1338,4 @@ document.body.classList.toggle('hide-photos', state.showPhotos === false);
 applyTextScale();
 setupFullscreen();
 renderWelcomeFoot();
+updateScrollHint();

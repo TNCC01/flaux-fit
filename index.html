@@ -7,7 +7,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<!-- No user-scalable=no. iOS ignores it anyway, it blocks pinch-zoom for
+     anyone who needs it, and it is one of the things that can make touch
+     gestures behave oddly on top of interactive elements. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- Add to Home Screen on an iPad launches this with no address bar and no
      tabs, which is the only way to get the full screen back in iOS Safari. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -23,6 +26,9 @@
 </head>
 <body>
 <div id="phaseBleed" aria-hidden="true"></div>
+<!-- Only visible when there is more page below, so "there is more here" is
+     never something you have to guess at. -->
+<div id="scrollHint" aria-hidden="true"></div>
 <div class="app">
 
   <!-- ============== WELCOME VIEW ============== -->
@@ -90,6 +96,7 @@
       <div class="workout-title" id="setupTitle">Build a workout</div>
     </div>
 
+    <div class="setup-grid">
     <div class="picker-row">
       <div class="picker-label">How many of you?</div>
       <div class="chip-row" id="peoplePicker">
@@ -154,9 +161,11 @@
             <text x="100" y="266">LEGS</text>
           </g>
         </svg>
+        <div class="bodymap-side">
+          <div class="chip-row" id="regionPicker"></div>
+          <div class="picker-hint">Tap the body or the labels, same thing. Pick as many as you like.</div>
+        </div>
       </div>
-      <div class="chip-row" id="regionPicker"></div>
-      <div class="picker-hint">Tap the body or the labels, same thing. Pick as many as you like.</div>
     </div>
 
     <div class="picker-row custom-only" id="rowExclude">
@@ -174,7 +183,9 @@
         <div class="exclude-list" id="excludeList"></div>
       </div>
     </div>
+    </div><!-- /.setup-grid -->
 
+    <!-- Sticky, so the primary action is reachable without scrolling at all. -->
     <button class="build-btn" id="btnBuild">Build my workout</button>
     <div class="build-note" id="buildNote"></div>
   </div>
