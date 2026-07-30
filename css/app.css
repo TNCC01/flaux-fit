@@ -67,6 +67,28 @@ body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
   padding: env(safe-area-inset-top, 0.75rem) 0.75rem env(safe-area-inset-bottom, 1rem);
+
+  /*
+    Text is not selectable anywhere in the app except in the two input
+    fields. This is the leading explanation for the iPad scrolling problem
+    and it is the first time it can be tested on its own: on iOS a slow
+    press on text begins a selection, and once that starts, dragging extends
+    the selection rather than scrolling the page. A fast flick never reaches
+    the long-press threshold, which is why flicking always worked, and the
+    gaps between cards have no text in them, which is why the background
+    always worked.
+
+    It was tried once before but alongside a :active transform and a
+    non-auto touch-action, so it was never a clean test. Both of those are
+    gone now.
+  */
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* The two places selecting and editing text is the whole point. */
+#scroller input, #scroller textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /*
@@ -172,25 +194,32 @@ button {
   works. It reproduces on old production builds, so nothing in this rework
   caused it.
 
-  Removed so far, none of which fixed it on the device:
+  Tried and ruled out on the device, in order:
 
-  1. `touch-action`. Any non-`auto` value routes the touch through a different
-     gesture path. There is none in this file now.
-  2. `user-select: none` on the cards, replaced by `-webkit-user-drag: none`.
-  3. `transform: scale()` on `:active` plus `transition: transform`, replaced
+  1. `touch-action`, any non-`auto` value. Removed; none in this file now.
+  2. `transform: scale()` on `:active` plus `transition: transform`, replaced
      by paint-only press feedback (see below).
-  4. Document scrolling, replaced by the #scroller container above.
+  3. Document scrolling, replaced by the #scroller container above.
+  4. `<button>` for the large surfaces, replaced by divs with role="button".
 
-  Current attempt: the large surfaces are no longer `<button>` elements. That
-  is the one difference between a card and the background gaps that had not
-  been touched, and it fits why this is not a widely known problem, since
-  buttons are normally too small to start a drag on.
+  Current attempt: `user-select: none` across the whole app shell, on
+  #scroller above, with inputs excepted. On iOS a slow press on text starts a
+  selection and the drag then extends the selection instead of scrolling. That
+  is the only theory so far that explains all three observations at once: a
+  flick is too quick to reach the long-press threshold, the gaps between cards
+  hold no text, and it is not element-specific.
 
-  All four removals are worth keeping regardless (1 and 3 are genuine
-  performance and correctness wins), and selfcheck.mjs guards 1 and 3 so they
-  cannot come back unnoticed. scroll-test.html measures each on the device:
-  panel A is a plain div and panel B a plain button, which is the comparison
-  that tests the current theory.
+  It was tried once before, but at the time both (1) and (2) were still in
+  place, so it was never a clean test.
+
+  Keep all four removals regardless of which one matters: (1) and (2) are
+  genuine performance wins and selfcheck.mjs guards them, (3) is harmless on
+  iPad, and (4) is more correct markup.
+
+  scroll-test.html measures each of these on the device. Its first version
+  measured wrongly (it waited for scroll events, which iOS may not dispatch
+  until the gesture ends) and reported failure for everything, including a
+  bare div; version 2 reads the scroll position directly instead.
 */
 .path-card, .workout-card, .interval-card, .chip, .picker-row, .person,
 .timer-card, .block-info, .upcoming, .preview-card, .toggle-row,
