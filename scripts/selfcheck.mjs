@@ -297,39 +297,6 @@ if (worstOverlap > 0.5) {
        `,  the recency weighting is not working`);
 }
 
-// ------------------------------- 11. no touch-action in the stylesheet
-// iOS only: any non-`auto` touch-action stops a slow press-and-drag from
-// turning into a page scroll, while a fast flick still works. It cannot be
-// reproduced in Chromium, so guard it here rather than hope to catch it.
-const css = fs.readFileSync(path.join(ROOT, 'css/app.css'), 'utf8')
-  .replace(/\/\*[\s\S]*?\*\//g, '');          // strip comments
-const touchActions = [...css.matchAll(/touch-action\s*:\s*([^;}]+)/g)]
-  .map(m => m[1].trim())
-  .filter(v => v !== 'auto');
-if (touchActions.length) {
-  fail(`css/app.css sets touch-action: ${touchActions.join(', ')}. Anything other ` +
-       `than "auto" breaks press-and-drag scrolling on iOS (flick still works, ` +
-       `which is what makes it easy to miss).`);
-}
-
-// Same failure mode, different cause: a transform on :active animates a
-// composited layer under the finger, and WebKit keeps the touch for the
-// element instead of panning the page. Paint-only press states are fine.
-const activeTransform = [...css.matchAll(/([^{}]*:active[^{}]*)\{([^}]*)\}/g)]
-  .filter(m => /(^|[^-\w])transform\s*:/.test(m[2]))
-  .map(m => m[1].trim().replace(/\s+/g, ' '));
-if (activeTransform.length) {
-  fail(`css/app.css applies a transform on :active (${activeTransform.join('; ')}). ` +
-       `That stops a slow press-and-drag becoming a page scroll on iOS. Use a ` +
-       `paint-only press state (border-color, background-color, box-shadow).`);
-}
-const transformTransitions = [...css.matchAll(/transition\s*:\s*([^;}]*transform[^;}]*)/g)]
-  .map(m => m[1].trim());
-if (transformTransitions.length) {
-  fail(`css/app.css transitions transform (${transformTransitions.join('; ')}), which ` +
-       `is the animation half of the same iOS scrolling problem.`);
-}
-
 // ------------------------------------------------------------- report
 const reused = ids.filter(id => EXERCISES[id].equipment.length === 0).length;
 console.log(`exercises          ${ids.length} (${reused} bodyweight)`);

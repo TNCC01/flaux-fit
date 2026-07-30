@@ -323,16 +323,10 @@ function setView(v) {
 }
 
 /*
-  Large tap targets are divs with role="button", not real <button> elements.
-
-  On iPadOS a slow press-and-drag starting on a form control does not become a
-  scroll: the control holds the touch for a potential activation, and only a
-  fast flick outruns that. Normally nobody notices, because buttons are small.
-  Here the cards cover most of the screen, which left almost nowhere to drag
-  from. A div with role="button" is announced identically to assistive
-  technology, is focusable, and responds to Enter and Space, but it is not a
-  form control. It is also more correct markup, since these contain block
-  content that is not valid inside a <button>.
+  Large tap targets are divs with role="button", not real <button> elements,
+  because a <button> may not contain block-level content and these cards are
+  full of divs. A div with role="button" plus tabindex plus the delegated
+  Enter/Space handler below is announced identically to assistive technology.
 */
 function tappable(className, onActivate) {
   const el = document.createElement('div');

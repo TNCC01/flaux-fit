@@ -76,7 +76,7 @@ Worth knowing before you start, because it affects step counts and names:
   and the coaching detail moved to `note`. Garmin truncates step names at
   ~15 characters on some models, so prefer `name` and consider trimming the
   load suffix if the model is tight on space.
-- **Warm-up and cool-down scale with session length** (2–5 minutes each),
+- **Warm-up and cool-down scale with session length** (2 to 5 minutes each),
   they are no longer always 5 + 5.
 - **Single-person export is still the sensible default** for a watch. Passing
   `--people 2` puts person B's movement in `note`.

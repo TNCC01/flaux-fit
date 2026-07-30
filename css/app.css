@@ -44,20 +44,14 @@ body {
 /*
   THE SCROLL CONTAINER
 
-  Everything scrolls in here, not in the document.
+  Everything scrolls in here rather than in the document.
 
-  On iPadOS, a slow press-and-drag starting on page content gets claimed by
-  the system drag-and-drop gesture and never becomes a document scroll. A
-  fast flick wins the race first, which is exactly why flicking worked and
-  dragging did not. It reproduces on the production build too, so it was
-  never anything this rework introduced, and it does not happen on Android or
-  on a desktop browser.
-
-  An element with overflow-y: auto gets its own scroll view, and a drag
-  inside one scrolls it from anywhere, buttons included. On iPad this costs
-  nothing: Safari's toolbar is always visible there, so there is no
-  auto-hiding behaviour to lose, and from the home screen there is no toolbar
-  at all.
+  This was introduced while chasing an iPad scrolling fault that turned out to
+  be a stuck touch state on the device, cleared by restarting it, and nothing
+  to do with this code. It is kept because it works and is well tested, but it
+  is not load-bearing: reverting to document scrolling would also be fine, and
+  would let Safari's toolbar auto-hide on a phone. On an iPad the toolbar is
+  always visible anyway, and from the home screen there is none.
 */
 #scroller {
   position: fixed;
@@ -70,24 +64,12 @@ body {
 
   /*
     Text is not selectable anywhere in the app except in the two input
-    fields. This is the leading explanation for the iPad scrolling problem
-    and it is the first time it can be tested on its own: on iOS a slow
-    press on text begins a selection, and once that starts, dragging extends
-    the selection rather than scrolling the page. A fast flick never reaches
-    the long-press threshold, which is why flicking always worked, and the
-    gaps between cards have no text in them, which is why the background
-    always worked.
-
-    It was tried once before but alongside a :active transform and a
-    non-auto touch-action, so it was never a clean test. Both of those are
-    gone now.
+    fields. Nothing here is prose to be copied, and a long press landing on
+    a heading mid-workout should not pop a selection handle over the timer.
   */
   -webkit-user-select: none;
   user-select: none;
-  /* Paired with the above: suppress the long-press callout as well, since it
-     is the other half of the same gesture. Both are applied to the whole
-     shell rather than to individual card classes, because the behaviour is
-     not element-specific. */
+  /* The other half of the same long press: no callout menu either. */
   -webkit-touch-callout: none;
 }
 /* The two places selecting and editing text is the whole point. */
@@ -169,16 +151,13 @@ button {
 }
 
 /*
-  The large tap surfaces are divs with role="button", not <button> elements,
-  so they need the resets they used to inherit from the rule above.
+  The large tap surfaces are divs with role="button", not <button> elements, so
+  they need the resets they used to inherit from the rule above.
 
-  Why they are not buttons: on iPadOS a slow press-and-drag starting on a form
-  control does not become a scroll, because the control holds the touch for a
-  possible activation and only a fast flick outruns it. Buttons are usually
-  small so this goes unnoticed; these cards cover most of the screen, which
-  left almost nowhere to drag from. role="button" plus tabindex plus
-  Enter/Space handling reads the same to assistive technology without being a
-  form control.
+  This also came out of the iPad scrolling hunt, but it is worth keeping on its
+  own merits: a <button> may not contain block-level content, and these cards
+  are full of divs. role="button" plus tabindex plus the delegated Enter/Space
+  handler in js/app.js reads identically to assistive technology.
 */
 .path-card, .workout-card, .interval-card, .chip {
   font-family: inherit;
@@ -192,40 +171,9 @@ button {
 }
 
 /*
-  SCROLLING FROM ANYWHERE, and what has been tried
-
-  Symptom, iPad only (Safari and Chrome, which is WebKit underneath), not
-  Android and not desktop: a fast flick starting on a card scrolls the page, a
-  slow press-and-drag does not. Dragging from the gaps between cards always
-  works. It reproduces on old production builds, so nothing in this rework
-  caused it.
-
-  Tried and ruled out on the device, in order:
-
-  1. `touch-action`, any non-`auto` value. Removed; none in this file now.
-  2. `transform: scale()` on `:active` plus `transition: transform`, replaced
-     by paint-only press feedback (see below).
-  3. Document scrolling, replaced by the #scroller container above.
-  4. `<button>` for the large surfaces, replaced by divs with role="button".
-
-  Current attempt: `user-select: none` across the whole app shell, on
-  #scroller above, with inputs excepted. On iOS a slow press on text starts a
-  selection and the drag then extends the selection instead of scrolling. That
-  is the only theory so far that explains all three observations at once: a
-  flick is too quick to reach the long-press threshold, the gaps between cards
-  hold no text, and it is not element-specific.
-
-  It was tried once before, but at the time both (1) and (2) were still in
-  place, so it was never a clean test.
-
-  Keep all four removals regardless of which one matters: (1) and (2) are
-  genuine performance wins and selfcheck.mjs guards them, (3) is harmless on
-  iPad, and (4) is more correct markup.
-
-  scroll-test.html measures each of these on the device. Its first version
-  measured wrongly (it waited for scroll events, which iOS may not dispatch
-  until the gesture ends) and reported failure for everything, including a
-  bare div; version 2 reads the scroll position directly instead.
+  Cards are tap targets, not drag handles: no long-press callout menu and no
+  native drag of the card itself. Inherited text selection is already off from
+  #scroller above.
 */
 .path-card, .workout-card, .interval-card, .chip, .picker-row, .person,
 .timer-card, .block-info, .upcoming, .preview-card, .toggle-row,
@@ -239,25 +187,14 @@ button.secondary {
   border: 2px solid var(--border);
   box-shadow: none;
 }
-/*
-  Press feedback WITHOUT transform.
-
-  `transform: scale()` on :active, especially with `transition: transform`,
-  starts a geometry animation on a composited layer directly under your
-  finger. On iOS that is enough for WebKit to treat the touch as an
-  interaction with that element rather than a page pan, so a slow
-  press-and-drag never becomes a scroll. A fast flick outruns the whole
-  thing, which is exactly why flicking worked and dragging did not.
-
-  border-color, background-color and box-shadow are paint-only: no layer,
-  no geometry, nothing for the gesture recogniser to latch onto.
-*/
-button:active { box-shadow: var(--glow-teal), inset 0 3px 10px rgba(0,0,0,0.3); }
+/* Press feedback: a slight squash plus a lit border. */
+button:active { transform: scale(0.97); box-shadow: var(--glow-teal), inset 0 3px 10px rgba(0,0,0,0.3); }
 button.secondary:active,
 .path-card:active,
 .interval-card:active,
 .workout-card:active,
 .chip:active {
+  transform: scale(0.98);
   border-color: var(--teal);
   background-color: var(--card-hi);
   box-shadow: none;
@@ -334,7 +271,7 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   flex-direction: column;
   gap: 0.5rem;
   min-height: 200px;
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition: transform 0.12s, box-shadow 0.2s, border-color 0.2s;
 }
 .path-card:hover { border-color: rgba(20,184,166,0.4); box-shadow: 0 10px 30px rgba(20,184,166,0.12); }
 .path-card.primary {
@@ -507,7 +444,7 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   cursor: pointer; text-align: left; color: var(--text);
   display: flex; flex-direction: column; gap: 0.45rem;
   box-shadow: none;
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition: transform 0.12s, box-shadow 0.2s, border-color 0.2s;
 }
 .workout-card:hover { border-color: rgba(20,184,166,0.35); box-shadow: 0 8px 28px rgba(20,184,166,0.12); }
 .workout-card.whole { border-left-color: var(--whole); }
@@ -735,7 +672,6 @@ body.show-alternatives .alternative.has-alt { display: block; }
   padding: 0.7rem 1rem; background: var(--card);
   border-radius: 1rem; font-size: 0.95rem; flex-wrap: wrap;
 }
-/* No user-select: none here either, for the same reason as the cards. */
 .toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; }
 .toggle input { width: 1.25rem; height: 1.25rem; cursor: pointer; accent-color: var(--accent); }
 .text-size { gap: 0.35rem; color: var(--muted); font-weight: 600; }
