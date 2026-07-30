@@ -54,8 +54,13 @@
   .v-tapnone { -webkit-tap-highlight-color: transparent; }
   .v-current {
     -webkit-touch-callout: none;
-    -webkit-user-select: none; user-select: none;
+    -webkit-user-drag: none;
   }
+  /* The suspect the first version of this page missed entirely. */
+  .v-activescale { transition: transform 0.15s, border-color 0.2s; }
+  .v-activescale:active { transform: scale(0.97); }
+  .v-activescale-nt:active { transform: scale(0.97); }
+  .v-statictransform { transform: translateZ(0); }
 
   #summary {
     position: fixed; left: 0; right: 0; bottom: 0;
@@ -129,10 +134,28 @@
   <code>-webkit-tap-highlight-color: transparent</code>
   <div class="result untested">not tested yet</div></div>
 
-<button class="panel v-current" data-t="K"><div class="id">K. Exactly what the app does now</div>
-  <div class="what">A button with the app's current card CSS. This is the one
-    that should be failing on your iPad.</div>
-  <code>-webkit-touch-callout: none; -webkit-user-select: none</code>
+<button class="panel v-activescale" data-t="K"><div class="id">K. :active transform, with a transition</div>
+  <div class="what">The new prime suspect, and what the app did until now. A
+    geometry animation runs on a composited layer under your finger.</div>
+  <code>transition: transform 0.15s; &amp;:active { transform: scale(0.97) }</code>
+  <div class="result untested">not tested yet</div></button>
+
+<button class="panel v-activescale-nt" data-t="L"><div class="id">L. :active transform, no transition</div>
+  <div class="what">Same transform, but instant. Tells us whether it is the
+    transform itself or the animation of it.</div>
+  <code>&amp;:active { transform: scale(0.97) }</code>
+  <div class="result untested">not tested yet</div></button>
+
+<div class="panel v-statictransform" data-t="M"><div class="id">M. A static transform</div>
+  <div class="what">Permanently on its own composited layer, but never
+    changing.</div>
+  <code>transform: translateZ(0)</code>
+  <div class="result untested">not tested yet</div></div>
+
+<button class="panel v-current" data-t="N"><div class="id">N. Exactly what the app does now</div>
+  <div class="what">A button with the app's current card CSS, after removing
+    the transform. This one should scroll.</div>
+  <code>-webkit-touch-callout: none; -webkit-user-drag: none</code>
   <div class="result untested">not tested yet</div></button>
 
 <div style="height:60vh"></div>

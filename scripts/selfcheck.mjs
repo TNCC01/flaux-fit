@@ -163,7 +163,7 @@ for (const ivId of Object.keys(INTERVALS)) {
   for (let r = 1; r <= iv.rounds; r++) seen.add(swapBlock.solo(r, ctx).id);
   if (seen.size !== 2) {
     fail(`blockSwap only used ${seen.size} of its 2 loads over ${iv.rounds} rounds (${ivId}) ` +
-         `,  the halfway swap is not firing`);
+         `. The halfway swap is not firing.`);
   }
 }
 
@@ -310,6 +310,24 @@ if (touchActions.length) {
   fail(`css/app.css sets touch-action: ${touchActions.join(', ')}. Anything other ` +
        `than "auto" breaks press-and-drag scrolling on iOS (flick still works, ` +
        `which is what makes it easy to miss).`);
+}
+
+// Same failure mode, different cause: a transform on :active animates a
+// composited layer under the finger, and WebKit keeps the touch for the
+// element instead of panning the page. Paint-only press states are fine.
+const activeTransform = [...css.matchAll(/([^{}]*:active[^{}]*)\{([^}]*)\}/g)]
+  .filter(m => /(^|[^-\w])transform\s*:/.test(m[2]))
+  .map(m => m[1].trim().replace(/\s+/g, ' '));
+if (activeTransform.length) {
+  fail(`css/app.css applies a transform on :active (${activeTransform.join('; ')}). ` +
+       `That stops a slow press-and-drag becoming a page scroll on iOS. Use a ` +
+       `paint-only press state (border-color, background-color, box-shadow).`);
+}
+const transformTransitions = [...css.matchAll(/transition\s*:\s*([^;}]*transform[^;}]*)/g)]
+  .map(m => m[1].trim());
+if (transformTransitions.length) {
+  fail(`css/app.css transitions transform (${transformTransitions.join('; ')}), which ` +
+       `is the animation half of the same iOS scrolling problem.`);
 }
 
 // ------------------------------------------------------------- report
