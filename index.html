@@ -7,608 +7,39 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<!-- No user-scalable=no. iOS ignores it anyway, it blocks pinch-zoom for
+     anyone who needs it, and it is one of the things that can make touch
+     gestures behave oddly on top of interactive elements. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- Add to Home Screen on an iPad launches this with no address bar and no
+     tabs, which is the only way to get the full screen back in iOS Safari. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FIT">
 <meta name="theme-color" content="#0d9488">
-<title>FIT — Flaux workout timer</title>
+<title>FIT, the Flaux workout timer</title>
+<link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<style>
-  :root {
-    --bg: #050a0a;
-    --bg-2: #0a1414;
-    --card: #0f1c1c;
-    --card-hi: #14292a;
-    --border: #1f3333;
-    --text: #f0fdfa;
-    --muted: #94a3b8;
-
-    --teal:        #14b8a6;
-    --teal-deep:   #0d9488;
-    --teal-bright: #2dd4bf;
-
-    --work:    #14b8a6;
-    --rest:    #ef4444;
-    --warmup:  #0d9488;
-    --accent:  #14b8a6;
-    --accent-b:#fbbf24;
-
-    --whole:      #f59e0b;
-    --upper:      #22d3ee;
-    --lower:      #10b981;
-    --core:       #f43f5e;
-    --stretching: #a855f7;
-
-    --grad-primary:    linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
-    --grad-primary-hi: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%);
-    --glow-teal:       0 6px 22px rgba(20,184,166,0.25);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body {
-    background:
-      radial-gradient(1200px 600px at 20% -10%, rgba(20,184,166,0.10), transparent 60%),
-      radial-gradient(900px 500px at 90% 110%, rgba(13,148,136,0.08), transparent 60%),
-      var(--bg);
-    background-attachment: fixed;
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
-    min-height: 100vh;
-  }
-  body { padding: env(safe-area-inset-top, 0.75rem) 0.75rem env(safe-area-inset-bottom, 1rem); }
-
-  .app { max-width: 1100px; margin: 0 auto; }
-  .view { display: none; flex-direction: column; gap: 0.85rem; }
-  .view.active { display: flex; }
-  #workoutView.active { background-color: var(--bg); }
-
-  button {
-    background: var(--grad-primary);
-    color: #fff;
-    border: none;
-    padding: 1rem;
-    font-size: 1.15rem;
-    font-weight: 800;
-    border-radius: 1rem;
-    cursor: pointer;
-    font-family: inherit;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    box-shadow: var(--glow-teal), inset 0 1px 0 rgba(255,255,255,0.12);
-  }
-  button.secondary {
-    background: var(--card);
-    color: var(--text);
-    border: 2px solid var(--border);
-    box-shadow: none;
-  }
-  button:active { transform: scale(0.97); }
-  button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 6px 22px rgba(245,158,11,0.25); }
-
-  /* ============== Menu view ============== */
-  .brand-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    padding: 1rem 1.15rem;
-    background:
-      linear-gradient(135deg, rgba(20,184,166,0.14), rgba(13,148,136,0.05) 60%),
-      var(--card);
-    border: 1px solid rgba(20,184,166,0.22);
-    border-radius: 1.25rem;
-    box-shadow: 0 8px 28px rgba(20,184,166,0.08);
-  }
-  .brand-icon {
-    width: 46px;
-    height: 46px;
-    flex-shrink: 0;
-    color: var(--teal-bright);
-    filter: drop-shadow(0 2px 6px rgba(20,184,166,0.4));
-  }
-  .brand-text { display: flex; flex-direction: column; line-height: 1; }
-  .brand-name {
-    font-size: 2.1rem;
-    font-weight: 900;
-    letter-spacing: -0.04em;
-    line-height: 0.95;
-    background: linear-gradient(135deg, #5eead4, #14b8a6 70%);
-    -webkit-background-clip: text;
-            background-clip: text;
-    color: transparent;
-  }
-  .brand-sub {
-    font-size: 0.78rem;
-    color: var(--muted);
-    letter-spacing: 0.28em;
-    margin-top: 0.35rem;
-    font-weight: 700;
-  }
-
-  .menu-header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.25rem 0.25rem;
-  }
-  .menu-title {
-    font-size: 1.4rem;
-    font-weight: 800;
-    letter-spacing: -0.01em;
-  }
-  .menu-sub {
-    color: var(--muted);
-    font-size: 0.9rem;
-    line-height: 1.4;
-  }
-
-  .picker-row {
-    background: var(--card);
-    border-radius: 1rem;
-    padding: 0.85rem 1rem;
-  }
-  .picker-label {
-    font-size: 0.85rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    font-weight: 700;
-    margin-bottom: 0.55rem;
-  }
-  .chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-  }
-  .chip {
-    background: var(--bg);
-    color: var(--text);
-    border: 2px solid var(--border);
-    padding: 0.55rem 0.9rem;
-    border-radius: 999px;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: 600;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .chip:active { transform: scale(0.97); }
-  .chip.active {
-    background: var(--grad-primary);
-    border-color: transparent;
-    color: #fff;
-    box-shadow: 0 2px 10px rgba(20,184,166,0.3);
-  }
-  .people-chip { min-width: 95px; text-align: center; font-size: 1.05rem; }
-  .name-inputs {
-    display: flex;
-    gap: 0.45rem;
-    margin-top: 0.55rem;
-  }
-  .name-inputs.hidden { display: none; }
-  .name-inputs input {
-    flex: 1;
-    min-width: 0;
-    background: var(--bg);
-    color: var(--text);
-    border: 2px solid var(--border);
-    border-radius: 999px;
-    padding: 0.55rem 0.9rem;
-    font-size: 1rem;
-    font-weight: 600;
-    font-family: inherit;
-  }
-  .name-inputs input::placeholder { color: var(--muted); font-weight: 500; }
-  .name-inputs input:focus {
-    outline: none;
-    border-color: var(--teal);
-    box-shadow: 0 2px 10px rgba(20,184,166,0.25);
-  }
-
-  .workout-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 0.75rem;
-  }
-  .workout-card {
-    background:
-      linear-gradient(135deg, rgba(20,184,166,0.06) 0%, transparent 50%),
-      var(--card);
-    border: 2px solid var(--border);
-    border-left-width: 6px;
-    border-radius: 1rem;
-    padding: 1rem 1.1rem;
-    cursor: pointer;
-    text-align: left;
-    color: var(--text);
-    -webkit-tap-highlight-color: transparent;
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    box-shadow: none;
-    transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s;
-  }
-  .workout-card:active { transform: scale(0.98); }
-  .workout-card:hover {
-    border-color: rgba(20,184,166,0.35);
-    box-shadow: 0 8px 28px rgba(20,184,166,0.12);
-  }
-  .workout-card.whole { border-left-color: var(--whole); }
-  .workout-card.upper { border-left-color: var(--upper); }
-  .workout-card.lower { border-left-color: var(--lower); }
-  .workout-card.core  { border-left-color: var(--core); }
-  .workout-card.stretching { border-left-color: var(--stretching); }
-  .card-name {
-    font-size: 1.35rem;
-    font-weight: 800;
-    letter-spacing: -0.01em;
-  }
-  .card-tagline {
-    color: var(--muted);
-    font-size: 0.95rem;
-    font-style: italic;
-  }
-  .card-meta {
-    display: flex;
-    gap: 0.6rem;
-    margin-top: 0.15rem;
-    font-size: 0.85rem;
-    color: var(--muted);
-    font-weight: 600;
-    flex-wrap: wrap;
-  }
-  .card-meta .duration { color: var(--text); }
-  .card-meta .focus-tag.whole { color: var(--whole); }
-  .card-meta .focus-tag.upper { color: var(--upper); }
-  .card-meta .focus-tag.lower { color: var(--lower); }
-  .card-meta .focus-tag.core  { color: var(--core); }
-  .card-meta .focus-tag.stretching { color: var(--stretching); }
-  .card-blurb {
-    color: var(--muted);
-    font-size: 0.95rem;
-    line-height: 1.35;
-  }
-  .card-time-detail {
-    color: var(--muted);
-    font-size: 0.82rem;
-    font-weight: 600;
-    margin-top: -0.2rem;
-  }
-  .card-adapted {
-    color: var(--teal-bright);
-    font-size: 0.85rem;
-    font-weight: 700;
-  }
-  .card-adapted::before { content: '↻ '; }
-  .empty-state {
-    grid-column: 1 / -1;
-    text-align: center;
-    color: var(--muted);
-    padding: 2rem;
-  }
-
-  /* ============== Workout view ============== */
-  .top-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.25rem;
-  }
-  .back-btn {
-    background: var(--card);
-    color: var(--text);
-    border: 2px solid var(--border);
-    padding: 0.55rem 0.9rem;
-    border-radius: 0.75rem;
-    font-size: 1rem;
-    font-weight: 700;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .workout-title {
-    font-size: 1.15rem;
-    font-weight: 800;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .people-badge {
-    color: var(--muted);
-    font-size: 0.85rem;
-    background: var(--card);
-    padding: 0.4rem 0.7rem;
-    border-radius: 0.75rem;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .progress-bar-wrap {
-    background: var(--card);
-    border-radius: 999px;
-    height: 6px;
-    overflow: hidden;
-  }
-  .progress-bar {
-    background: var(--accent);
-    height: 100%;
-    width: 0%;
-    transition: width 0.3s ease;
-  }
-
-  .block-info {
-    background: var(--card);
-    padding: 0.75rem 1rem;
-    border-radius: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-  .block-name {
-    font-weight: 700;
-    font-size: 1.15rem;
-    line-height: 1.25;
-  }
-  .round-dots {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-  .round-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .round-count {
-    color: var(--text);
-    font-size: 1.05rem;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-  }
-  .round-count .of { color: var(--muted); font-weight: 700; }
-  .remaining-tag {
-    color: var(--muted);
-    font-size: 0.85rem;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-  .seg-row {
-    display: flex;
-    gap: 0.28rem;
-  }
-  .seg {
-    flex: 1;
-    height: 14px;
-    border-radius: 4px;
-    background: rgba(148,163,184,0.22);
-  }
-  .seg.done { background: var(--muted); }
-
-  .timer-card {
-    background: var(--card);
-    border-radius: 1.5rem;
-    padding: 1.25rem 1rem;
-    text-align: center;
-    border: 2px solid transparent;
-  }
-
-  .phase-label {
-    text-transform: uppercase;
-    letter-spacing: 0.25em;
-    font-size: 1.15rem;
-    font-weight: 800;
-    color: var(--muted);
-  }
-  .timer-card.work .phase-label { color: var(--work); }
-  .timer-card.rest .phase-label,
-  .timer-card.blockrest .phase-label { color: var(--rest); }
-  .timer-card.warmup .phase-label,
-  .timer-card.cooldown .phase-label { color: var(--warmup); }
-  .timer-card.stretch .phase-label { color: var(--stretching); }
-
-  .time-display {
-    font-size: 8rem;
-    font-weight: 900;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-    margin: 0.25rem 0;
-    letter-spacing: -0.05em;
-  }
-  .total-time {
-    color: var(--muted);
-    font-size: 0.95rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .exercise-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-  }
-  .exercise-grid.solo { grid-template-columns: 1fr; }
-  .person {
-    background: var(--card);
-    border-radius: 1.25rem;
-    padding: 1.1rem;
-    border: 2px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    min-height: 120px;
-  }
-  .person.a { border-top: 6px solid var(--accent); }
-  .person.b { border-top: 6px solid var(--accent-b); }
-  .exercise-grid.solo .person.a { border-top-color: var(--accent); }
-  .person-label {
-    font-size: 0.85rem;
-    font-weight: 800;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    margin-bottom: 0.35rem;
-  }
-  .person.a .person-label { color: var(--accent); }
-  .person.b .person-label { color: var(--accent-b); }
-  .exercise {
-    font-size: 1.4rem;
-    font-weight: 700;
-    line-height: 1.25;
-  }
-  .ex-anim {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 3 / 2;
-    max-height: 190px;
-    margin-top: 0.6rem;
-    border-radius: 0.65rem;
-    overflow: hidden;
-    background: var(--bg);
-  }
-  .ex-anim:empty { display: none; }
-  body.hide-photos .ex-anim { display: none; }
-  .ex-anim img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-  .alternative {
-    font-size: 0.95rem;
-    color: var(--muted);
-    line-height: 1.4;
-    margin-top: 0.6rem;
-    padding-top: 0.6rem;
-    border-top: 1px solid var(--border);
-    display: none;
-  }
-  body.show-alternatives .alternative.has-alt { display: block; }
-  .alternative::before {
-    content: 'Injury alt: ';
-    font-weight: 700;
-    color: var(--accent);
-  }
-
-  /* Rest phases: countdown compacts, person cards flip to a big
-     "Up next" preview so there's time to read it and grab equipment. */
-  .next-eyebrow {
-    display: none;
-    font-size: 0.72rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    font-weight: 800;
-    color: var(--work);
-    margin-bottom: 0.3rem;
-  }
-  #workoutView.resting .next-eyebrow { display: block; }
-  #workoutView.resting .timer-card { padding: 0.55rem 1rem; }
-  #workoutView.resting .time-display { font-size: 4.4rem; margin: 0.05rem 0; }
-  #workoutView.resting .phase-label { font-size: 0.9rem; letter-spacing: 0.2em; }
-  #workoutView.resting .total-time { font-size: 0.85rem; }
-  #workoutView.resting .exercise { font-size: 1.85rem; }
-  #workoutView.resting .upcoming { display: none; }
-  #workoutView.resting .person { border-color: rgba(20,184,166,0.4); }
-
-  .upcoming {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.75rem 1rem;
-    border-radius: 1rem;
-    background: var(--card);
-    border: 2px solid var(--border);
-  }
-  .upcoming .swatch {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .upcoming .txt {
-    font-size: 1.02rem;
-    font-weight: 600;
-    color: var(--text);
-  }
-  .upcoming .txt strong { font-weight: 800; }
-  .upcoming .eyebrow {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    color: var(--muted);
-    font-weight: 800;
-    display: block;
-    margin-bottom: 0.1rem;
-  }
-
-  .controls {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr;
-    gap: 0.6rem;
-  }
-  .preview-card {
-    background: var(--card);
-    border-radius: 1rem;
-    padding: 0.9rem 1rem;
-  }
-  .preview-title {
-    font-size: 0.85rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    font-weight: 700;
-    margin-bottom: 0.6rem;
-  }
-  .preview-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.65rem;
-  }
-  .preview-item-name { font-weight: 700; font-size: 1rem; line-height: 1.3; }
-  .preview-item-sub {
-    color: var(--muted);
-    font-size: 0.9rem;
-    line-height: 1.4;
-    margin-top: 0.1rem;
-  }
-  .toggle-row {
-    display: flex;
-    justify-content: space-around;
-    gap: 1rem;
-    padding: 0.7rem 1rem;
-    background: var(--card);
-    border-radius: 1rem;
-    font-size: 0.95rem;
-    flex-wrap: wrap;
-  }
-  .toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-    user-select: none;
-  }
-  .toggle input {
-    width: 1.25rem; height: 1.25rem;
-    cursor: pointer;
-    accent-color: var(--accent);
-  }
-
-  @media (max-width: 700px) {
-    .time-display { font-size: 5.5rem; }
-    .exercise-grid { grid-template-columns: 1fr; }
-    .exercise { font-size: 1.2rem; }
-    .menu-title { font-size: 1.5rem; }
-    #workoutView.resting .time-display { font-size: 3.6rem; }
-    #workoutView.resting .exercise { font-size: 1.55rem; }
-  }
-</style>
+<link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<div id="phaseBleed" aria-hidden="true"></div>
+<!-- Only visible when there is more page below, so "there is more here" is
+     never something you have to guess at. -->
+<div id="scrollHint" aria-hidden="true"></div>
+
+<!--
+  The app scrolls inside this element rather than scrolling the document, which
+  keeps the fixed background bleed and the bottom fade out of the scrolled
+  content. See the note above #scroller in css/app.css.
+-->
+<div id="scroller">
 <div class="app">
 
-  <!-- ============== MENU VIEW ============== -->
-  <div class="view active" id="menuView">
+  <!-- ============== WELCOME VIEW ============== -->
+  <div class="view active" id="welcomeView">
     <div class="brand-bar">
       <svg class="brand-icon" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <circle cx="32" cy="42" r="16" fill="currentColor"/>
@@ -621,15 +52,63 @@
     </div>
 
     <div class="menu-header">
-      <div class="menu-title">Pick your workout</div>
-      <div class="menu-sub">Tap off any gear you don't have today — workouts adapt to bodyweight versions automatically.</div>
+      <h1 class="menu-title">How do you want to work out today?</h1>
     </div>
 
+    <div class="path-grid">
+      <div class="path-card primary" id="pathQuick" role="button" tabindex="0">
+        <div class="path-icon" aria-hidden="true">⚡</div>
+        <div class="path-name">Just pick for me</div>
+        <div class="path-blurb">Tell me your gear, how long you've got, and how many of you. That's it, and I'll build the workout.</div>
+        <div class="path-go">Start here →</div>
+      </div>
+
+      <div class="path-card" id="pathCustom" role="button" tabindex="0">
+        <div class="path-icon" aria-hidden="true">◎</div>
+        <div class="path-name">Let me choose</div>
+        <div class="path-blurb">Same again, plus the areas you want to target and any movements to leave out.</div>
+        <div class="path-go">Customise →</div>
+      </div>
+
+      <div class="path-card" id="pathStretch" role="button" tabindex="0">
+        <div class="path-icon" aria-hidden="true">◡</div>
+        <div class="path-name">Stretch &amp; mobility</div>
+        <div class="path-blurb">Slow holds, no gear, no timer pressure. Before bed or straight after a session.</div>
+        <div class="path-go">Loosen up →</div>
+      </div>
+
+      <div class="path-card" id="pathClassics" role="button" tabindex="0">
+        <div class="path-icon" aria-hidden="true">★</div>
+        <div class="path-name">Workouts</div>
+        <div class="path-blurb">What you did recently, anything you've saved, and the named classics like Power Hour.</div>
+        <div class="path-go">Browse →</div>
+      </div>
+    </div>
+
+    <div class="welcome-actions">
+      <button class="secondary" id="btnFullscreen" hidden>⤢ Full screen</button>
+      <p class="install-hint" id="installHint" hidden>
+        To lose the address bar and tabs for good: tap Share, then
+        <strong>Add to Home Screen</strong>, and open FIT from the icon.
+      </p>
+    </div>
+
+    <p class="welcome-foot" id="welcomeFoot"></p>
+  </div>
+
+  <!-- ============== SETUP VIEW ============== -->
+  <div class="view" id="setupView">
+    <div class="top-bar">
+      <button class="back-btn" id="btnSetupBack">← Back</button>
+      <div class="workout-title" id="setupTitle">Build a workout</div>
+    </div>
+
+    <div class="setup-grid">
     <div class="picker-row">
       <div class="picker-label">How many of you?</div>
       <div class="chip-row" id="peoplePicker">
-        <button class="chip people-chip" data-people="1">1 person</button>
-        <button class="chip people-chip" data-people="2">2 people</button>
+        <div class="chip people-chip" data-people="1" role="button" tabindex="0">1 person</div>
+        <div class="chip people-chip" data-people="2" role="button" tabindex="0">2 people</div>
       </div>
       <div class="name-inputs" id="nameInputs">
         <input type="text" id="nameA" placeholder="Person A (optional)" maxlength="14" autocomplete="off" enterkeyhint="done">
@@ -640,26 +119,103 @@
     <div class="picker-row">
       <div class="picker-label">Equipment on hand</div>
       <div class="chip-row" id="equipmentPicker"></div>
+      <div class="picker-hint">Tap off anything you haven't got, and nothing that needs it will be picked.</div>
     </div>
 
     <div class="picker-row">
-      <div class="picker-label">Time</div>
-      <div class="chip-row" id="timeFilter"></div>
+      <div class="picker-label">How long have you got?</div>
+      <div class="chip-row" id="timePicker"></div>
     </div>
 
+    <div class="picker-row">
+      <div class="picker-label">Interval style</div>
+      <div class="interval-grid" id="intervalPicker"></div>
+    </div>
+
+    <!-- custom-only ------------------------------------------------ -->
+    <div class="picker-row custom-only" id="rowRegions">
+      <div class="picker-label">What do you want to work?</div>
+      <div class="bodymap-wrap">
+        <!-- Each zone carries an invisible .hit rect as well as the shapes
+             you can see. The arms are narrow on purpose (they have to look
+             like arms) but a 22-unit-wide strip is far too small to tap on
+             a touch screen, so the hit areas are padded out and tiled so
+             they never overlap a neighbour. -->
+        <svg class="bodymap" id="bodyMap" viewBox="0 0 200 356" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Target areas">
+          <circle class="bm-head" cx="100" cy="26" r="19"/>
+          <g class="zone" data-region="pull" role="checkbox" tabindex="0" aria-label="Back and arms">
+            <rect class="hit" x="6" y="44" width="52" height="146"/>
+            <rect class="hit" x="142" y="44" width="52" height="146"/>
+            <rect class="fill" x="28" y="56" width="26" height="108" rx="13"/>
+            <rect class="fill" x="146" y="56" width="26" height="108" rx="13"/>
+            <text x="41" y="182">ARMS</text>
+            <text x="159" y="182">ARMS</text>
+          </g>
+          <g class="zone" data-region="push" role="checkbox" tabindex="0" aria-label="Chest and shoulders">
+            <rect class="hit" x="58" y="42" width="84" height="62"/>
+            <rect class="fill" x="60" y="50" width="80" height="54" rx="17"/>
+            <text x="100" y="82">CHEST</text>
+          </g>
+          <g class="zone" data-region="core" role="checkbox" tabindex="0" aria-label="Core and abs">
+            <rect class="hit" x="58" y="104" width="84" height="60"/>
+            <rect class="fill" x="68" y="108" width="64" height="52" rx="15"/>
+            <text x="100" y="140">CORE</text>
+          </g>
+          <g class="zone" data-region="legs" role="checkbox" tabindex="0" aria-label="Legs and glutes">
+            <rect class="hit" x="58" y="164" width="84" height="188"/>
+            <rect class="fill" x="70" y="168" width="26" height="176" rx="13"/>
+            <rect class="fill" x="104" y="168" width="26" height="176" rx="13"/>
+            <text x="100" y="266">LEGS</text>
+          </g>
+        </svg>
+        <div class="bodymap-side">
+          <div class="chip-row" id="regionPicker"></div>
+          <div class="picker-hint">Tap the body or the labels, same thing. Pick as many as you like.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="picker-row custom-only" id="rowExclude">
+      <div class="picker-label">Anything you'd rather not do?</div>
+      <div class="chip-row" id="tagPicker"></div>
+      <button class="link-btn" id="btnOpenExclude">
+        <span id="excludeSummary">Leave out specific movements</span>
+      </button>
+      <div class="exclude-panel" id="excludePanel" hidden>
+        <input type="search" id="excludeSearch" placeholder="Search the 157 movements…" autocomplete="off">
+        <div class="exclude-actions">
+          <button class="mini-btn" id="btnClearExclude">Clear all</button>
+          <span class="exclude-count" id="excludeCount"></span>
+        </div>
+        <div class="exclude-list" id="excludeList"></div>
+      </div>
+    </div>
+    </div><!-- /.setup-grid -->
+
+    <!-- Sticky, so the primary action is reachable without scrolling at all. -->
+    <button class="build-btn" id="btnBuild">Build my workout</button>
+    <div class="build-note" id="buildNote"></div>
+  </div>
+
+  <!-- ============== LIBRARY VIEW ============== -->
+  <div class="view" id="libraryView">
+    <div class="top-bar">
+      <button class="back-btn" id="btnLibraryBack">← Back</button>
+      <div class="workout-title" id="libraryTitle">Workouts</div>
+    </div>
     <div class="picker-row">
       <div class="picker-label">Focus</div>
       <div class="chip-row" id="focusFilter"></div>
     </div>
-
-    <div class="workout-grid" id="workoutGrid"></div>
+    <div class="build-note" id="libraryNote"></div>
+    <div id="librarySections"></div>
   </div>
 
   <!-- ============== WORKOUT VIEW ============== -->
   <div class="view" id="workoutView">
     <div class="top-bar">
       <button class="back-btn" id="btnBack">← Menu</button>
-      <div class="workout-title" id="workoutTitle">—</div>
+      <div class="workout-title" id="workoutTitle"></div>
       <div class="people-badge" id="peopleBadge">2 people</div>
     </div>
 
@@ -668,11 +224,12 @@
     </div>
 
     <div class="block-info">
-      <div class="block-name" id="blockName">—</div>
+      <div class="block-name" id="blockName"></div>
       <div class="round-dots" id="roundDots"></div>
     </div>
 
     <div class="timer-card warmup" id="timerCard">
+      <div class="ring" id="phaseRing" aria-hidden="true"></div>
       <div class="phase-label" id="phaseLabel">Press start</div>
       <div class="time-display" id="timeDisplay">--:--</div>
       <div class="total-time" id="totalTime">Total 0:00</div>
@@ -682,14 +239,16 @@
       <div class="person a">
         <div class="person-label" id="labelA">Person A</div>
         <div class="next-eyebrow">Up next</div>
-        <div class="exercise" id="exerciseA">—</div>
+        <div class="exercise-name" id="exerciseA"></div>
+        <div class="exercise-cue" id="cueA"></div>
         <div class="ex-anim" id="animA"></div>
         <div class="alternative" id="alternativeA"></div>
       </div>
       <div class="person b" id="personB">
         <div class="person-label" id="labelB">Person B</div>
         <div class="next-eyebrow">Up next</div>
-        <div class="exercise" id="exerciseB">—</div>
+        <div class="exercise-name" id="exerciseB"></div>
+        <div class="exercise-cue" id="cueB"></div>
         <div class="ex-anim" id="animB"></div>
         <div class="alternative" id="alternativeB"></div>
       </div>
@@ -703,9 +262,15 @@
       <button class="secondary" id="btnReset">Reset</button>
     </div>
 
-    <div class="preview-card" id="previewCard">
-      <div class="preview-title">Workout preview</div>
-      <ol class="preview-list" id="previewList"></ol>
+    <div class="pre-start" id="preStart">
+      <div class="pre-actions">
+        <button class="secondary" id="btnShuffle">↻ Shuffle this workout</button>
+        <button class="secondary" id="btnSave">☆ Save as favourite</button>
+      </div>
+      <div class="preview-card" id="previewCard">
+        <div class="preview-title">Workout preview</div>
+        <ol class="preview-list" id="previewList"></ol>
+      </div>
     </div>
 
     <div class="toggle-row">
@@ -715,1414 +280,27 @@
       </label>
       <label class="toggle">
         <input type="checkbox" id="showAlts">
-        Show injury alternatives
+        Injury alternatives
       </label>
       <label class="toggle">
         <input type="checkbox" id="muteAudio">
         Mute audio
       </label>
+      <span class="toggle text-size">
+        Text
+        <button class="mini-btn" data-scale="1">A</button>
+        <button class="mini-btn" data-scale="1.2">A</button>
+        <button class="mini-btn" data-scale="1.45">A</button>
+      </span>
     </div>
   </div>
 
 </div>
-
-<script>
-// =====================================================================
-// EXERCISE DICTIONARY
-// Equipment on hand: 15kg KB, 10kg KB, 10kg barbell, dumbbells (set),
-// skipping rope, gymnastic rings, gravel driveway (~1 min round trip).
-// Each exercise: task, alt (injury alternative), equipment (ids from
-// EQUIPMENT; empty = bodyweight, always available), and bw — the
-// exercise id to swap to when its equipment is deselected in the menu.
-// Constraint: never assign a single-instance item (KBs, barbell, rope,
-// rings) to both people in the same round. Bodyweight fallbacks never
-// add equipment, so adapting can't break this rule.
-// =====================================================================
-const EQUIPMENT = {
-  kb15:      '15kg kettlebell',
-  kb10:      '10kg kettlebell',
-  barbell10: '10kg barbell',
-  dumbbells: 'Dumbbells',
-  rope:      'Skipping rope',
-  rings:     'Rings'
-};
-const DEFAULT_EQUIPMENT = { kb15: true, kb10: true, barbell10: true, dumbbells: true, rope: true, rings: true };
-
-const EXERCISES = {
-  // --- Bodyweight: whole body ----------------------------------------
-  airSquat:        { task: 'Air squats', alt: 'Box squat to a chair', equipment: [], img: 'bwSquat' },
-  tempoSquat:      { task: 'Bodyweight squat with a slow 3s descent', alt: 'Box squat to a chair', equipment: [], img: 'bwSquat' },
-  pushup:          { task: 'Push-ups', alt: 'Incline push-ups (hands on bench)', equipment: [], img: 'pushup' },
-  burpee:          { task: 'Burpees', alt: 'Step-back burpees (no jump)', equipment: [], img: 'burpee' },
-  jumpingJacks:    { task: 'Jumping jacks', alt: 'Step jacks (no jump)', equipment: [], img: 'jumpingJacks' },
-  highKnees:       { task: 'High knees in place', alt: 'Marching in place', equipment: [], img: 'highKnees' },
-  skaterHops:      { task: 'Skater hops side to side', alt: 'Side steps with a reach', equipment: [], img: 'skaterHops' },
-  bearCrawl:       { task: 'Bear crawl forward & back', alt: 'Bear hold (knees hovering)', equipment: [], img: 'bearCrawl' },
-  inchworm:        { task: 'Inchworm walkouts', alt: 'Walkouts, knees down on the return', equipment: [], img: 'inchworm' },
-  sprint:          { task: 'Sprint to mailbox & back', alt: 'Brisk walk to mailbox & back', equipment: [], img: 'sprint' },
-  squatReach:      { task: 'Squat to overhead reach', alt: 'Slow squat, arms forward', equipment: [], img: 'squatReach' },
-  mountainClimber:     { task: 'Mountain climbers', alt: 'Slow controlled climbers', equipment: [], img: 'mountainClimber' },
-  mountainClimberFast: { task: 'Mountain climbers (fast)', alt: 'Slow controlled climbers', equipment: [], img: 'mountainClimber' },
-
-  // --- Bodyweight: lower ----------------------------------------------
-  reverseLunge:    { task: 'Reverse lunges (alternate legs)', alt: 'Static split squats', equipment: [], img: 'reverseLunge' },
-  stepUp:          { task: 'Step-ups on a bench/box', alt: 'Toe taps to a low step', equipment: [], img: 'stepUp' },
-  squatJump:       { task: 'Squat jumps', alt: 'Explosive bodyweight squat, no jump', equipment: [], img: 'jumpSquat' },
-  wallSit:         { task: 'Wall sit (thighs parallel)', alt: 'Higher wall sit (less depth)', equipment: [], img: 'wallSit' },
-  gluteBridge:     { task: 'Glute bridges', alt: 'Glute bridge hold', equipment: [], img: 'gluteBridge' },
-  singleLegBridge: { task: 'Single-leg glute bridge (switch legs at 10s)', alt: 'Glute bridges, both legs', equipment: [], img: 'singleLegBridge' },
-  cossackSquat:    { task: 'Cossack squats (side to side)', alt: 'Shallow lateral lunges', equipment: [], img: 'cossackSquat' },
-  calfRaises:      { task: 'Calf raises — slow up, slow down', alt: 'Seated calf raises', equipment: [], img: 'calfRaise' },
-  goodMorning:     { task: 'Good mornings (hands behind head)', alt: 'Hip hinge with hands on thighs', equipment: [], img: 'goodMorning' },
-
-  // --- Bodyweight: upper ----------------------------------------------
-  pikePushup:      { task: 'Pike push-ups', alt: 'Incline pike push-ups', equipment: [], img: 'pikePushup' },
-  tricepDips:      { task: 'Tricep dips on a bench', alt: 'Bench dips, feet closer (easier)', equipment: [], img: 'benchDips' },
-  supermanPull:    { task: 'Superman pulls (lat pulldown motion)', alt: 'Superman hold', equipment: [], img: 'superman' },
-  supermanHold:    { task: 'Superman hold with pulses', alt: 'Superman hold, no pulses', equipment: [], img: 'superman' },
-
-  // --- Bodyweight: core -------------------------------------------------
-  plankHold:       { task: 'Plank hold (forearm or high)', alt: 'Knees plank', equipment: [], img: 'plank' },
-  plankForearm:    { task: 'Plank (forearm)', alt: 'Knees plank', equipment: [], img: 'plank' },
-  plankRotation:   { task: 'Plank rotation — change position every 15s', alt: 'Knees plank, rotate same positions', equipment: [], img: 'plank' },
-  plankShoulderTaps: { task: 'Plank shoulder taps', alt: 'Knees plank shoulder taps', equipment: [], img: 'plankShoulderTaps' },
-  hollowHold:      { task: 'Hollow body hold', alt: 'Tucked hollow hold (knees in)', equipment: [], img: 'hollow' },
-  hollowRocks:     { task: 'Hollow body rocks', alt: 'Hollow hold (no rocking)', equipment: [], img: 'hollow' },
-  vSit:            { task: 'V-sits', alt: 'Tucked V-sit (knees bent)', equipment: [], img: 'vSit' },
-  deadBug:         { task: 'Dead bug (opposite arm + leg)', alt: 'Dead bug one limb at a time', equipment: [], img: 'deadBug' },
-  birdDog:         { task: 'Bird dog (opposite arm + leg)', alt: 'Bird dog, one limb at a time', equipment: [], img: 'birdDog' },
-  legRaises:       { task: 'Lying leg raises', alt: 'Bent-knee leg raises', equipment: [], img: 'legRaise' },
-  bicycleCrunch:   { task: 'Bicycle crunches', alt: 'Slow bicycles, heels tapping down', equipment: [], img: 'bicycleCrunch' },
-  flutterKicks:    { task: 'Flutter kicks', alt: 'Bent-knee flutter kicks', equipment: [], img: 'flutterKicks' },
-  sidePlankDips:   { task: 'Side plank hip dips (switch sides at 10s)', alt: 'Side plank hold from knees', equipment: [], img: 'sideBridge' },
-  russianTwistBw:  { task: 'Russian twists (bodyweight)', alt: 'Seated slow torso twists', equipment: [], img: 'russianTwist' },
-
-  // --- Kettlebells -------------------------------------------------------
-  gobletSquat15:  { task: 'Goblet squat — 15kg KB', alt: 'Bodyweight squat with a slow 3s descent', equipment: ['kb15'], bw: 'tempoSquat', img: 'gobletSquat' },
-  gobletSquat10:  { task: 'Goblet squat — 10kg KB', alt: 'Bodyweight squat with a slow 3s descent', equipment: ['kb10'], bw: 'tempoSquat', img: 'gobletSquat' },
-  kbSwing15:      { task: 'KB swings — 15kg', alt: 'KB Romanian deadlift (hinge only, no swing)', equipment: ['kb15'], bw: 'goodMorning', img: 'kbSwing' },
-  kbSwing10:      { task: 'KB swings — 10kg', alt: 'KB Romanian deadlift (hinge only, no swing)', equipment: ['kb10'], bw: 'goodMorning', img: 'kbSwing' },
-  kbDeadlift15:   { task: 'KB deadlift — 15kg', alt: 'KB Romanian deadlift, lighter', equipment: ['kb15'], bw: 'goodMorning', img: 'kbDeadlift' },
-  kbRackHold15:   { task: 'KB front rack hold — 15kg', alt: 'Dumbbell suitcase hold', equipment: ['kb15'], bw: 'wallSit', img: 'kbRackHold' },
-  kbCleanPress15: { task: 'KB clean & press — 15kg', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb15'], bw: 'squatReach', img: 'kbCleanPress' },
-  kbCleanPress10: { task: 'KB clean & press — 10kg', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb10'], bw: 'squatReach', img: 'kbCleanPress' },
-  russianTwistKb: { task: 'Russian twists — 10kg KB', alt: 'Russian twists bodyweight', equipment: ['kb10'], bw: 'russianTwistBw', img: 'russianTwist' },
-
-  // --- Barbell -------------------------------------------------------------
-  barbellPress:   { task: 'Strict press — 10kg barbell', alt: 'Dumbbell shoulder press', equipment: ['barbell10'], bw: 'pikePushup', img: 'barbellPress' },
-  barbellRow:     { task: 'Bent-over row — 10kg barbell', alt: 'Bent-over dumbbell rows', equipment: ['barbell10'], bw: 'supermanPull', img: 'barbellRow' },
-
-  // --- Dumbbells --------------------------------------------------------------
-  dbPressHeavy:   { task: 'Dumbbell shoulder press (heavier pair)', alt: 'Slow tempo lighter weight', equipment: ['dumbbells'], bw: 'pikePushup', img: 'dbPress' },
-  dbPressLight:   { task: 'Dumbbell shoulder press (lighter pair)', alt: 'Slow tempo lighter weight', equipment: ['dumbbells'], bw: 'pikePushup', img: 'dbPress' },
-  dbLunge:        { task: 'Reverse lunges with dumbbells', alt: 'Bodyweight reverse lunges', equipment: ['dumbbells'], bw: 'reverseLunge', img: 'reverseLunge' },
-  dbRow:          { task: 'Bent-over dumbbell rows', alt: 'Rows with lighter dumbbells', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbRow' },
-  dbCurl:         { task: 'Dumbbell bicep curls', alt: 'Hammer curls, slower tempo', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbCurl' },
-  dbLateralRaise: { task: 'Dumbbell lateral raises', alt: 'Lighter dumbbells, slow tempo', equipment: ['dumbbells'], bw: 'plankShoulderTaps', img: 'lateralRaise' },
-  renegadeRow:    { task: 'Renegade rows on dumbbells', alt: 'Renegade rows from knees', equipment: ['dumbbells'], bw: 'plankShoulderTaps', img: 'renegadeRow' },
-  dbSuitcaseCarry:{ task: 'Dumbbell suitcase carry — driveway', alt: 'Dumbbell suitcase hold in place', equipment: ['dumbbells'], bw: 'bearCrawl', img: 'farmersWalk' },
-
-  // --- Rope / rings ---------------------------------------------------------------
-  skipping:       { task: 'Skipping rope', alt: 'High knees in place', equipment: ['rope'], bw: 'highKnees', img: 'ropeJumping' },
-  ringRow:        { task: 'Ring rows (set foot position for difficulty)', alt: 'Bent-over dumbbell rows', equipment: ['rings'], bw: 'supermanPull', img: 'ringRow' },
-  ringPushup:     { task: 'Ring push-ups', alt: 'Regular push-ups', equipment: ['rings'], bw: 'pushup', img: 'ringPushup' },
-  ringDip:        { task: 'Ring dips (or bench dips)', alt: 'Bench dips with feet on floor', equipment: ['rings'], bw: 'tricepDips', img: 'ringDip' },
-  ringTuckHold:   { task: 'Ring tuck holds (or hanging knee raises)', alt: 'Lying leg raises or dead bugs', equipment: ['rings'], bw: 'legRaises', img: 'ringTuckHold' }
-};
-
-// Resolve an exercise id against the equipment currently selected in the
-// menu, walking bw fallbacks until everything required is on hand.
-const hasEquip = (id) => state.equipment[id] !== false;
-function resolveEx(id) {
-  let cur = EXERCISES[id];
-  let adapted = false;
-  let guard = 0;
-  while (cur && !cur.equipment.every(hasEquip) && cur.bw && guard++ < 6) {
-    cur = EXERCISES[cur.bw];
-    adapted = true;
-  }
-  return { task: cur.task, alt: cur.alt, adapted, img: cur.img || null };
-}
-
-// --- Block helpers ----------------------------------------------------
-// Both people do the same exercise (no equipment conflict).
-function blockSame(name, exId) {
-  return {
-    name, ids: [exId],
-    duo:  () => { const ex = resolveEx(exId); return { a: ex, b: ex }; },
-    solo: () => resolveEx(exId)
-  };
-}
-
-// Two exercises alternate between A and B each round.
-// Solo mode alternates the two exercises round-by-round.
-function blockAlt(name, idA, idB) {
-  return {
-    name, ids: [idA, idB],
-    duo: (round) => {
-      const A = resolveEx(idA), B = resolveEx(idB);
-      return (round % 2 === 1) ? { a: A, b: B } : { a: B, b: A };
-    },
-    solo: (round) => resolveEx(round % 2 === 1 ? idA : idB)
-  };
-}
-
-// A list of exercises cycled round-by-round for variety; A and B are
-// always on neighbouring list entries, so single-instance equipment must
-// never appear on two adjacent entries (wrap-around included).
-function blockCycle(name, ids) {
-  return {
-    name, ids,
-    duo: (round) => ({
-      a: resolveEx(ids[(round - 1) % ids.length]),
-      b: resolveEx(ids[round % ids.length])
-    }),
-    solo: (round) => resolveEx(ids[(round - 1) % ids.length])
-  };
-}
-
-// Single exercise with two weights — swap between A and B at round 5.
-function blockSwap(name, heavyId, lightId) {
-  return {
-    name, ids: [heavyId, lightId],
-    duo: (round) => {
-      const swap = round > 4;
-      const h = resolveEx(heavyId), l = resolveEx(lightId);
-      return swap ? { a: l, b: h } : { a: h, b: l };
-    },
-    solo: (round) => resolveEx(round > 4 ? lightId : heavyId)
-  };
-}
-
-// KB clean & press: alternates left/right arm each round, weight swap at
-// round 5. The arm cue is dropped when the exercise adapts to bodyweight.
-function blockCleanPress() {
-  const arm = (round) => round % 2 === 1 ? ' (left arm)' : ' (right arm)';
-  const withArm = (ex, round) => ex.adapted ? ex : { ...ex, task: ex.task + arm(round) };
-  return {
-    name: 'KB clean & press (alt arms)',
-    ids: ['kbCleanPress15', 'kbCleanPress10'],
-    duo: (round) => {
-      const swap = round > 4;
-      const h = resolveEx('kbCleanPress15'), l = resolveEx('kbCleanPress10');
-      return swap
-        ? { a: withArm(l, round), b: withArm(h, round) }
-        : { a: withArm(h, round), b: withArm(l, round) };
-    },
-    solo: (round) => withArm(resolveEx(round > 4 ? 'kbCleanPress10' : 'kbCleanPress15'), round)
-  };
-}
-
-// --- Workouts ---------------------------------------------------------
-const workouts = [
-  {
-    id: 'quick-spark',
-    name: 'Quick Spark',
-    tagline: 'No gear, max sweat',
-    focus: 'whole-body',
-    blurb: 'Bodyweight full-body. Get in, get sweaty, get out.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockAlt('Squats & Push-ups', 'airSquat', 'pushup'),
-      blockCycle('Climbers, jacks & core', ['mountainClimber', 'plankHold', 'jumpingJacks', 'hollowHold'])
-    ]
-  },
-
-  {
-    id: 'sunrise-stretch',
-    name: 'Sunrise Stretch',
-    tagline: 'Open up the day',
-    focus: 'stretching',
-    blurb: 'Slow mobility — hold and breathe. Wake the body up.',
-    format: 'stretch',
-    stretches: [
-      { name: 'Standing forward fold', hold: 60, alt: 'Seated forward fold' },
-      { name: 'Downward dog',          hold: 60, alt: 'Hands on a bench, hips back' },
-      { name: 'Low lunge — left',      hold: 60, alt: 'Half-kneeling, hands on shin' },
-      { name: 'Low lunge — right',     hold: 60, alt: 'Half-kneeling, hands on shin' },
-      { name: 'Pigeon — left',         hold: 60, alt: 'Figure-4 on the ground' },
-      { name: 'Pigeon — right',        hold: 60, alt: 'Figure-4 on the ground' },
-      { name: "Child's pose",          hold: 60, alt: '' },
-      { name: 'Cobra / upward dog',    hold: 60, alt: 'Sphinx on forearms' },
-      { name: 'Cat-cow flow',          hold: 60, alt: '' },
-      { name: 'Neck & shoulder rolls', hold: 60, alt: '' },
-      { name: 'Standing chest opener', hold: 60, alt: 'Doorway pec stretch' }
-    ]
-  },
-
-  {
-    id: 'core-crusher',
-    name: 'Core Crusher',
-    tagline: 'Burn the middle',
-    focus: 'core',
-    blurb: 'Three blocks focused on the trunk — climbers, holds, twists.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockCycle('Climbers & core burners', ['mountainClimberFast', 'bicycleCrunch', 'flutterKicks', 'plankShoulderTaps']),
-      blockAlt('Hollow holds & Russian twists', 'hollowHold', 'russianTwistKb'),
-      blockSame('Plank rotations (15s each: forearm / high / side-L / side-R)', 'plankRotation')
-    ]
-  },
-
-  {
-    id: 'cool-mobile',
-    name: 'Cool & Mobile',
-    tagline: 'Recovery & mobility',
-    focus: 'stretching',
-    blurb: 'Full-body mobility flow — perfect after a workout or before bed.',
-    format: 'stretch',
-    stretches: [
-      { name: 'Cat-cow flow',                  hold: 60, alt: '' },
-      { name: 'Thread the needle — left',      hold: 60, alt: '' },
-      { name: 'Thread the needle — right',     hold: 60, alt: '' },
-      { name: 'Downward dog',                  hold: 60, alt: 'Hands on bench' },
-      { name: 'Low lunge — left',              hold: 60, alt: '' },
-      { name: 'Low lunge — right',             hold: 60, alt: '' },
-      { name: 'Pigeon — left',                 hold: 60, alt: 'Figure-4 on back' },
-      { name: 'Pigeon — right',                hold: 60, alt: 'Figure-4 on back' },
-      { name: 'Seated forward fold',           hold: 60, alt: '' },
-      { name: 'Supine spinal twist — left',    hold: 60, alt: '' },
-      { name: 'Supine spinal twist — right',   hold: 60, alt: '' },
-      { name: '90/90 hip — left',              hold: 60, alt: '' },
-      { name: '90/90 hip — right',             hold: 60, alt: '' },
-      { name: 'Frog stretch',                  hold: 60, alt: "Wide-knee child's pose" },
-      { name: 'Glute bridge hold',             hold: 60, alt: '' },
-      { name: 'Happy baby',                    hold: 60, alt: 'Knees-to-chest rocks' },
-      { name: 'Savasana / deep breathing',     hold: 60, alt: '' }
-    ]
-  },
-
-  {
-    id: 'calisthenics-core',
-    name: 'Calisthenics Core',
-    tagline: 'Bodyweight abs blast',
-    focus: 'core',
-    blurb: 'No equipment needed — just gravity and effort.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockAlt('Hollow rocks & V-sits', 'hollowRocks', 'vSit'),
-      blockCycle('Climbers, dead bugs & bird dogs', ['mountainClimber', 'deadBug', 'birdDog', 'sidePlankDips']),
-      blockAlt('Plank & Leg raises', 'plankForearm', 'legRaises')
-    ]
-  },
-
-  {
-    id: 'lunchbreak-burn',
-    name: 'Lunchbreak Burn',
-    tagline: 'Big sweat, no gear',
-    focus: 'whole-body',
-    blurb: 'Bodyweight conditioning. No gear, no fuss, just go.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockAlt('Squats & Push-ups', 'airSquat', 'pushup'),
-      blockCycle('Lunges, dips & lower mix', ['reverseLunge', 'tricepDips', 'goodMorning', 'calfRaises']),
-      blockCycle('Burpees & core burners', ['burpee', 'hollowRocks', 'skaterHops', 'supermanPull'])
-    ]
-  },
-
-  {
-    id: 'kb-blitz',
-    name: 'KB Blitz',
-    tagline: 'Two bells, twenty minutes',
-    focus: 'lower-body',
-    blurb: 'Pure kettlebell — goblet squats and swings, one bell each, swap at halfway.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
-      blockSwap('KB swings', 'kbSwing15', 'kbSwing10')
-    ]
-  },
-
-  {
-    id: 'ring-rush',
-    name: 'Ring Rush',
-    tagline: 'Hang on tight',
-    focus: 'upper-body',
-    blurb: 'Quick upper-body hit on the rings and dumbbells — pull, press, dip, curl.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockCycle('Rows & presses', ['ringRow', 'pikePushup', 'dbRow', 'pushup']),
-      blockCycle('Dips & curls', ['ringDip', 'dbCurl', 'ringPushup', 'dbLateralRaise'])
-    ]
-  },
-
-  {
-    id: 'lunchbreak-loaded',
-    name: 'Lunchbreak Loaded',
-    tagline: 'The lunch break, with weights',
-    focus: 'whole-body',
-    blurb: 'Same footprint as Lunchbreak Burn, but with the whole kit — squats, presses, swings, skips.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
-      blockCycle('Press & pull mix', ['barbellPress', 'pushup', 'dbRow', 'plankShoulderTaps']),
-      blockCycle('Swings & skips', ['kbSwing15', 'skipping', 'kbSwing10', 'highKnees'])
-    ]
-  },
-
-  {
-    id: 'loaded-core',
-    name: 'Loaded Core',
-    tagline: 'Weighted middle management',
-    focus: 'core',
-    blurb: 'Core work with gear — weighted twists, renegade rows, ring hangs, carries.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockAlt('Russian twists & Renegade rows', 'russianTwistKb', 'renegadeRow'),
-      blockCycle('Hangs, planks & raises', ['ringTuckHold', 'plankShoulderTaps', 'legRaises', 'sidePlankDips']),
-      blockAlt('Suitcase carry & Hollow rocks', 'dbSuitcaseCarry', 'hollowRocks')
-    ]
-  },
-
-  {
-    id: 'half-power',
-    name: 'Half Power',
-    tagline: "Power Hour's little sibling",
-    focus: 'whole-body',
-    blurb: 'Squats, rows, swings and the clean & press finisher — the big one, condensed.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
-      blockCycle('Rows & push-up mix', ['ringRow', 'pushup', 'ringPushup', 'pikePushup']),
-      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockCleanPress()
-    ]
-  },
-
-  {
-    id: 'iron-legs',
-    name: 'Iron Legs',
-    tagline: 'Lower-body strength + grit',
-    focus: 'lower-body',
-    blurb: 'Squats, hinges, lunges, jumps. Wake up the legs.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
-      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockCycle('Lunges, step-ups & hinges', ['dbLunge', 'stepUp', 'kbDeadlift15', 'gluteBridge']),
-      blockCycle('Jumps, wall sits & bridges', ['squatJump', 'wallSit', 'cossackSquat', 'singleLegBridge'])
-    ]
-  },
-
-  {
-    id: 'upper-storm',
-    name: 'Upper Storm',
-    tagline: 'Press, pull, push',
-    focus: 'upper-body',
-    blurb: 'Four blocks across the upper body — press, row, push, hold.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 30,
-    blocks: [
-      blockCycle('Barbell press, rows & planks', ['barbellPress', 'plankHold', 'barbellRow', 'plankShoulderTaps']),
-      blockCycle('Rows & push-up mix', ['ringRow', 'pushup', 'ringPushup', 'pikePushup']),
-      blockSwap('Dumbbell press', 'dbPressHeavy', 'dbPressLight'),
-      blockCycle('Dips, curls & raises', ['ringDip', 'dbCurl', 'tricepDips', 'dbLateralRaise'])
-    ]
-  },
-
-  {
-    id: 'engine-builder',
-    name: 'Engine Builder',
-    tagline: 'Build the cardio engine',
-    focus: 'whole-body',
-    blurb: 'Five blocks of mixed strength + conditioning. Steady, deliberate, hard.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 45,
-    blocks: [
-      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
-      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockCycle('Push-ups, climbers & crawls', ['pushup', 'mountainClimber', 'bearCrawl', 'jumpingJacks']),
-      blockAlt('Burpees & Plank', 'burpee', 'plankHold'),
-      blockCycle('Rows, curls & pulls', ['ringRow', 'dbCurl', 'renegadeRow', 'supermanPull'])
-    ]
-  },
-
-  {
-    id: 'driveway-demon',
-    name: 'Driveway Demon',
-    tagline: 'Sprint, swing, suffer',
-    focus: 'whole-body',
-    blurb: 'Six blocks — sprints, KBs, bodyweight, hold. Use the whole driveway.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 45,
-    blocks: [
-      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
-      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
-      blockCycle('Climbers, skaters & crawls', ['mountainClimberFast', 'skaterHops', 'highKnees', 'bearCrawl']),
-      blockAlt('Push-ups & Plank', 'pushup', 'plankHold'),
-      blockAlt('Ring rows & Hollow rocks', 'ringRow', 'hollowRocks')
-    ]
-  },
-
-  {
-    id: 'backyard-strength',
-    name: 'Backyard Strength',
-    tagline: 'The full original',
-    focus: 'whole-body',
-    blurb: 'Eight blocks across every movement pattern. The full workout.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 60,
-    blocks: [
-      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
-      blockAlt('Ring rows & Push-ups', 'ringRow', 'pushup'),
-      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockCycle('Skipping & push-up mix', ['skipping', 'pushup', 'inchworm', 'pikePushup']),
-      blockAlt('Barbell press & Plank', 'barbellPress', 'plankHold'),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
-      blockAlt('Ring hangs & Suitcase carry', 'ringTuckHold', 'dbSuitcaseCarry'),
-      blockCleanPress()
-    ]
-  },
-
-  {
-    id: 'power-hour',
-    name: 'Power Hour',
-    tagline: 'Every muscle, every toy',
-    focus: 'whole-body',
-    blurb: 'Ten blocks using the whole kit — squats, swings, presses, rows, sprints. The big one.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 60,
-    blocks: [
-      blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
-      blockCycle('Rows & push-up mix', ['ringRow', 'pushup', 'ringPushup', 'pikePushup']),
-      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockCycle('Barbell press, rows & planks', ['barbellPress', 'plankHold', 'barbellRow', 'plankShoulderTaps']),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
-      blockCycle('Skipping & core', ['skipping', 'hollowRocks', 'highKnees', 'bicycleCrunch']),
-      blockSwap('Dumbbell press', 'dbPressHeavy', 'dbPressLight'),
-      blockCycle('Lunges, step-ups & hinges', ['dbLunge', 'stepUp', 'kbDeadlift15', 'gluteBridge']),
-      blockAlt('Ring dips & DB curls', 'ringDip', 'dbCurl'),
-      blockCleanPress()
-    ]
-  },
-
-  {
-    id: 'long-haul',
-    name: 'The Long Haul',
-    tagline: 'Sixty minutes of engine',
-    focus: 'whole-body',
-    blurb: 'Ten blocks of near-nonstop conditioning — jumps, sprints, skips, crawls. Pace yourself.',
-    format: 'tabata',
-    warmupSec: 300, cooldownSec: 300, blockRestSec: 60,
-    blocks: [
-      blockCycle('Jacks, knees & skaters', ['jumpingJacks', 'highKnees', 'skaterHops', 'mountainClimber']),
-      blockAlt('Burpees & Plank', 'burpee', 'plankHold'),
-      blockCycle('Skipping & squats', ['skipping', 'airSquat', 'highKnees', 'squatJump']),
-      blockAlt('Driveway sprint & Wall sit', 'sprint', 'wallSit'),
-      blockCycle('Climbers & core burners', ['mountainClimberFast', 'bicycleCrunch', 'flutterKicks', 'plankShoulderTaps']),
-      blockAlt('Squat jumps & Push-ups', 'squatJump', 'pushup'),
-      blockCycle('Crawls & bridges', ['bearCrawl', 'gluteBridge', 'inchworm', 'singleLegBridge']),
-      blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockAlt('Skipping & Hollow rocks', 'skipping', 'hollowRocks'),
-      blockCycle('Burpee finishers', ['burpee', 'russianTwistBw', 'skaterHops', 'supermanPull'])
-    ]
-  }
-];
-
-// =====================================================================
-// STATE & PREFS
-// =====================================================================
-const state = {
-  view: 'menu',
-  workout: null,
-  people: 2,
-  nameA: '',
-  nameB: '',
-  filterTime: 'all',
-  filterFocus: 'all',
-  equipment: { ...DEFAULT_EQUIPMENT },
-  muteAudio: false,
-  showAlts: false,
-  showPhotos: true,
-
-  // Per-workout runtime
-  sequence: [],
-  totalDuration: 0,
-  currentIdx: 0,
-  remainingInPhase: 0,
-  elapsedTotal: 0,
-  running: false,
-  intervalId: null,
-  wakeLock: null
-};
-
-function loadPrefs() {
-  try {
-    const raw = localStorage.getItem('tabata-prefs');
-    if (raw) {
-      const p = JSON.parse(raw);
-      Object.assign(state, p);
-      state.equipment = Object.assign({}, DEFAULT_EQUIPMENT, p.equipment || {});
-    }
-  } catch (e) {}
-}
-function savePrefs() {
-  try {
-    localStorage.setItem('tabata-prefs', JSON.stringify({
-      people: state.people,
-      nameA: state.nameA,
-      nameB: state.nameB,
-      filterTime: state.filterTime,
-      filterFocus: state.filterFocus,
-      equipment: state.equipment,
-      muteAudio: state.muteAudio,
-      showAlts: state.showAlts,
-      showPhotos: state.showPhotos
-    }));
-  } catch (e) {}
-}
-
-// =====================================================================
-// SEQUENCE BUILDER
-// =====================================================================
-const warmupExercise = {
-  task: 'Easy movement — skip / arm circles / squats / lunges / shake out',
-  alt: 'Walk + gentle dynamic stretches'
-};
-const cooldownExercise = {
-  task: 'Walk, deep breaths, stretch hammies / hips / shoulders / chest',
-  alt: ''
-};
-
-const TABATA = { rounds: 8, workSec: 20, restSec: 10 };
-
-// Real phase math for the menu labels — same numbers buildSequence uses,
-// so the cards can never drift from what the timer actually runs.
-function durationParts(w) {
-  if (w.format === 'stretch') {
-    const total = w.stretches.reduce((s, st) => s + st.hold, 0);
-    return { totalMin: Math.round(total / 60), workMin: null, bookendsMin: null };
-  }
-  const work = w.blocks.length * TABATA.rounds * (TABATA.workSec + TABATA.restSec)
-             + (w.blocks.length - 1) * w.blockRestSec;
-  const workMin = Math.round(work / 60);
-  const bookendsMin = Math.round((w.warmupSec + w.cooldownSec) / 60);
-  return { totalMin: workMin + bookendsMin, workMin, bookendsMin };
-}
-
-function buildSequence(workout, people) {
-  const seq = [];
-  const isDuo = people === 2;
-  const pair = (ex) => isDuo ? { a: ex, b: ex } : { a: ex, b: null };
-
-  if (workout.format === 'tabata') {
-    if (workout.warmupSec > 0) {
-      seq.push({
-        kind: 'warmup',
-        duration: workout.warmupSec,
-        name: `Warm-up — ${Math.round(workout.warmupSec / 60 * 10) / 10} min`,
-        ...pair(warmupExercise)
-      });
-    }
-
-    workout.blocks.forEach((block, blockIdx) => {
-      for (let round = 1; round <= TABATA.rounds; round++) {
-        let work;
-        if (isDuo) {
-          const d = block.duo(round);
-          work = { a: d.a, b: d.b };
-        } else {
-          const s = block.solo(round);
-          work = { a: s, b: null };
-        }
-        seq.push({
-          kind: 'work',
-          duration: TABATA.workSec,
-          blockIdx, round, totalBlocks: workout.blocks.length, totalRounds: TABATA.rounds,
-          name: `Block ${blockIdx + 1} of ${workout.blocks.length}: ${block.name}`,
-          a: work.a, b: work.b
-        });
-        seq.push({
-          kind: 'rest',
-          duration: TABATA.restSec,
-          blockIdx, round, totalBlocks: workout.blocks.length, totalRounds: TABATA.rounds,
-          name: `Block ${blockIdx + 1} of ${workout.blocks.length}: ${block.name}`,
-          ...pair({ task: 'Rest — breathe', alt: '' })
-        });
-      }
-      if (blockIdx < workout.blocks.length - 1) {
-        seq.push({
-          kind: 'blockrest',
-          duration: workout.blockRestSec,
-          blockIdx, totalBlocks: workout.blocks.length,
-          name: `Rest — next: Block ${blockIdx + 2}: ${workout.blocks[blockIdx + 1].name}`,
-          ...pair({ task: 'Hydrate, reset, swap equipment if needed', alt: '' })
-        });
-      }
-    });
-
-    if (workout.cooldownSec > 0) {
-      seq.push({
-        kind: 'cooldown',
-        duration: workout.cooldownSec,
-        name: `Cool-down — ${Math.round(workout.cooldownSec / 60 * 10) / 10} min`,
-        ...pair(cooldownExercise)
-      });
-    }
-  } else if (workout.format === 'stretch') {
-    workout.stretches.forEach((stretch, idx) => {
-      seq.push({
-        kind: 'stretch',
-        duration: stretch.hold,
-        stretchIdx: idx,
-        totalStretches: workout.stretches.length,
-        name: `Stretch ${idx + 1} of ${workout.stretches.length}: ${stretch.name}`,
-        ...pair({ task: stretch.name, alt: stretch.alt })
-      });
-    });
-  }
-  return seq;
-}
-
-// =====================================================================
-// AUDIO (Web Audio API)
-// =====================================================================
-let audioCtx = null;
-function ensureAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-}
-function beep(freq, duration, volume = 0.4) {
-  if (state.muteAudio) return;
-  try {
-    ensureAudio();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.frequency.value = freq;
-    osc.type = 'sine';
-    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-    osc.start();
-    osc.stop(audioCtx.currentTime + duration);
-  } catch (e) {}
-}
-// New round starting: a bright bell ding (fundamental + soft overtone).
-function workChime() {
-  beep(880, 0.12, 0.4);
-  setTimeout(() => { beep(1320, 0.6, 0.5); beep(1980, 0.5, 0.12); }, 140);
-}
-// Round over: a harsh two-oscillator square-wave buzz.
-function restChime() {
-  if (state.muteAudio) return;
-  try {
-    ensureAudio();
-    const duration = 0.45;
-    const gain = audioCtx.createGain();
-    gain.connect(audioCtx.destination);
-    gain.gain.setValueAtTime(0.22, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.22, audioCtx.currentTime + duration - 0.08);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-    [160, 163].forEach(f => {
-      const osc = audioCtx.createOscillator();
-      osc.type = 'square';
-      osc.frequency.value = f;
-      osc.connect(gain);
-      osc.start();
-      osc.stop(audioCtx.currentTime + duration);
-    });
-  } catch (e) {}
-}
-function stretchChime() { beep(660, 0.4, 0.35); }
-function bigBell() {
-  beep(660, 0.25, 0.5);
-  setTimeout(() => beep(880, 0.25, 0.5), 220);
-  setTimeout(() => beep(1320, 0.45, 0.5), 460);
-}
-function tick() { beep(700, 0.08, 0.3); }
-
-// =====================================================================
-// WAKE LOCK
-// =====================================================================
-async function requestWakeLock() {
-  if ('wakeLock' in navigator) {
-    try { state.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
-  }
-}
-function releaseWakeLock() {
-  if (state.wakeLock) { state.wakeLock.release(); state.wakeLock = null; }
-}
-
-// =====================================================================
-// ELEMENTS
-// =====================================================================
-const els = {
-  menuView: document.getElementById('menuView'),
-  workoutView: document.getElementById('workoutView'),
-  peoplePicker: document.getElementById('peoplePicker'),
-  nameInputs: document.getElementById('nameInputs'),
-  nameA: document.getElementById('nameA'),
-  nameB: document.getElementById('nameB'),
-  equipmentPicker: document.getElementById('equipmentPicker'),
-  timeFilter: document.getElementById('timeFilter'),
-  focusFilter: document.getElementById('focusFilter'),
-  workoutGrid: document.getElementById('workoutGrid'),
-
-  btnBack: document.getElementById('btnBack'),
-  workoutTitle: document.getElementById('workoutTitle'),
-  peopleBadge: document.getElementById('peopleBadge'),
-  overallProgress: document.getElementById('overallProgress'),
-
-  blockName: document.getElementById('blockName'),
-  roundDots: document.getElementById('roundDots'),
-  timerCard: document.getElementById('timerCard'),
-  phaseLabel: document.getElementById('phaseLabel'),
-  timeDisplay: document.getElementById('timeDisplay'),
-  totalTime: document.getElementById('totalTime'),
-
-  exerciseGrid: document.getElementById('exerciseGrid'),
-  labelA: document.getElementById('labelA'),
-  labelB: document.getElementById('labelB'),
-  exerciseA: document.getElementById('exerciseA'),
-  animA: document.getElementById('animA'),
-  alternativeA: document.getElementById('alternativeA'),
-  personB: document.getElementById('personB'),
-  exerciseB: document.getElementById('exerciseB'),
-  animB: document.getElementById('animB'),
-  alternativeB: document.getElementById('alternativeB'),
-
-  upcoming: document.getElementById('upcoming'),
-  previewCard: document.getElementById('previewCard'),
-  previewList: document.getElementById('previewList'),
-  btnStart: document.getElementById('btnStart'),
-  btnSkip: document.getElementById('btnSkip'),
-  btnReset: document.getElementById('btnReset'),
-  showPhotos: document.getElementById('showPhotos'),
-  showAlts: document.getElementById('showAlts'),
-  muteAudio: document.getElementById('muteAudio')
-};
-
-const PHASE_COLOR = {
-  work:      { hex: '#14b8a6', rgb: '20,184,166' },
-  rest:      { hex: '#ef4444', rgb: '239,68,68' },
-  blockrest: { hex: '#ef4444', rgb: '239,68,68' },
-  warmup:    { hex: '#0d9488', rgb: '13,148,136' },
-  cooldown:  { hex: '#0d9488', rgb: '13,148,136' },
-  stretch:   { hex: '#a855f7', rgb: '168,85,247' }
-};
-
-// =====================================================================
-// MENU RENDERING
-// =====================================================================
-const focusList = [
-  { id: 'all',         label: 'All' },
-  { id: 'whole-body',  label: 'Whole body' },
-  { id: 'upper-body',  label: 'Upper body' },
-  { id: 'lower-body',  label: 'Lower body' },
-  { id: 'core',        label: 'Core' },
-  { id: 'stretching',  label: 'Stretching' }
-];
-
-const focusClassMap = {
-  'whole-body': 'whole',
-  'upper-body': 'upper',
-  'lower-body': 'lower',
-  'core': 'core',
-  'stretching': 'stretching'
-};
-const focusLabelMap = {
-  'whole-body': 'Whole body',
-  'upper-body': 'Upper body',
-  'lower-body': 'Lower body',
-  'core': 'Core',
-  'stretching': 'Stretching'
-};
-
-function uniqueDurations() {
-  const set = new Set(workouts.map(w => durationParts(w).totalMin));
-  return Array.from(set).sort((a, b) => a - b);
-}
-
-// True when any exercise in the workout would swap to its bodyweight
-// fallback under the current equipment selection.
-function workoutAdapted(w) {
-  if (w.format === 'stretch') return false;
-  return w.blocks.some(b => (b.ids || []).some(id => resolveEx(id).adapted));
-}
-
-function renderPeoplePicker() {
-  els.peoplePicker.querySelectorAll('.chip').forEach(chip => {
-    chip.classList.toggle('active', Number(chip.dataset.people) === state.people);
-  });
-  els.nameInputs.classList.toggle('hidden', state.people !== 2);
-}
-
-// Display names for the two people; falls back to Person A / Person B.
-function personName(which) {
-  const raw = which === 'a' ? state.nameA : state.nameB;
-  const trimmed = (raw || '').trim();
-  return trimmed || (which === 'a' ? 'Person A' : 'Person B');
-}
-
-function renderEquipmentPicker() {
-  els.equipmentPicker.innerHTML = '';
-  Object.keys(EQUIPMENT).forEach(id => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (hasEquip(id) ? ' active' : '');
-    b.textContent = EQUIPMENT[id];
-    b.addEventListener('click', () => {
-      state.equipment[id] = !hasEquip(id);
-      savePrefs();
-      renderEquipmentPicker();
-      renderWorkoutGrid();
-    });
-    els.equipmentPicker.appendChild(b);
-  });
-}
-
-function renderTimeFilter() {
-  const durations = uniqueDurations();
-  if (state.filterTime !== 'all' && !durations.includes(state.filterTime)) state.filterTime = 'all';
-  const opts = [{ id: 'all', label: 'All' }, ...durations.map(d => ({ id: String(d), label: `${d} min` }))];
-  els.timeFilter.innerHTML = '';
-  opts.forEach(o => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (String(state.filterTime) === o.id ? ' active' : '');
-    b.textContent = o.label;
-    b.addEventListener('click', () => {
-      state.filterTime = o.id === 'all' ? 'all' : Number(o.id);
-      savePrefs();
-      renderTimeFilter();
-      renderWorkoutGrid();
-    });
-    els.timeFilter.appendChild(b);
-  });
-}
-
-function renderFocusFilter() {
-  els.focusFilter.innerHTML = '';
-  focusList.forEach(f => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (state.filterFocus === f.id ? ' active' : '');
-    b.textContent = f.label;
-    b.addEventListener('click', () => {
-      state.filterFocus = f.id;
-      savePrefs();
-      renderFocusFilter();
-      renderWorkoutGrid();
-    });
-    els.focusFilter.appendChild(b);
-  });
-}
-
-function renderWorkoutGrid() {
-  els.workoutGrid.innerHTML = '';
-  const filtered = workouts.filter(w =>
-    (state.filterTime === 'all' || durationParts(w).totalMin === state.filterTime) &&
-    (state.filterFocus === 'all' || w.focus === state.filterFocus)
-  ).sort((a, b) => durationParts(a).totalMin - durationParts(b).totalMin);
-
-  if (filtered.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    empty.textContent = 'No workouts match those filters.';
-    els.workoutGrid.appendChild(empty);
-    return;
-  }
-
-  filtered.forEach(w => {
-    const parts = durationParts(w);
-    const detail = parts.workMin !== null
-      ? `<div class="card-time-detail">${parts.workMin} min work + ${parts.bookendsMin} min warm-up/cool-down</div>`
-      : '';
-    const adapted = workoutAdapted(w)
-      ? '<div class="card-adapted">Adapted for your equipment</div>'
-      : '';
-    const card = document.createElement('button');
-    card.className = 'workout-card ' + focusClassMap[w.focus];
-    card.innerHTML = `
-      <div class="card-name">${w.name}</div>
-      <div class="card-tagline">${w.tagline}</div>
-      <div class="card-meta">
-        <span class="duration">${parts.totalMin} min</span>
-        <span>·</span>
-        <span class="focus-tag ${focusClassMap[w.focus]}">${focusLabelMap[w.focus]}</span>
-      </div>
-      ${detail}
-      <div class="card-blurb">${w.blurb}</div>
-      ${adapted}
-    `;
-    card.addEventListener('click', () => openWorkout(w));
-    els.workoutGrid.appendChild(card);
-  });
-}
-
-// =====================================================================
-// WORKOUT VIEW
-// =====================================================================
-function openWorkout(workout) {
-  state.workout = workout;
-  state.sequence = buildSequence(workout, state.people);
-  state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
-  state.currentIdx = 0;
-  state.remainingInPhase = state.sequence[0] ? state.sequence[0].duration : 0;
-  state.elapsedTotal = 0;
-  state.running = false;
-
-  els.workoutTitle.textContent = workout.name;
-  els.peopleBadge.textContent = state.people === 1
-    ? '1 person'
-    : ((state.nameA || '').trim() || (state.nameB || '').trim()
-        ? `${personName('a')} & ${personName('b')}`
-        : '2 people');
-  els.exerciseGrid.classList.toggle('solo', state.people === 1);
-  els.personB.style.display = state.people === 1 ? 'none' : '';
-  els.labelA.textContent = state.people === 1 ? 'You' : personName('a');
-  els.labelB.textContent = personName('b');
-
-  if (state.sequence[0]) enterPhase(state.sequence[0].kind, state.remainingInPhase);
-  renderPreview();
-  setView('workout');
-  render();
-}
-
-// Full exercise list shown before the workout starts (and after a reset).
-// Resolved against the equipment selection active when the workout opened.
-function renderPreview() {
-  const w = state.workout;
-  if (!w) return;
-  els.previewList.innerHTML = '';
-  const add = (name, sub) => {
-    const li = document.createElement('li');
-    const n = document.createElement('div');
-    n.className = 'preview-item-name';
-    n.textContent = name;
-    li.appendChild(n);
-    if (sub) {
-      const s = document.createElement('div');
-      s.className = 'preview-item-sub';
-      s.textContent = sub;
-      li.appendChild(s);
-    }
-    els.previewList.appendChild(li);
-  };
-  if (w.format === 'stretch') {
-    w.stretches.forEach((s, i) => add(`${i + 1}. ${s.name}`, `${s.hold}s hold`));
-  } else {
-    add(`Warm-up — ${Math.round(w.warmupSec / 60)} min`, warmupExercise.task);
-    w.blocks.forEach((b, i) => {
-      const tasks = Array.from(new Set((b.ids || []).map(id => resolveEx(id).task)));
-      add(`Block ${i + 1}: ${b.name}`, tasks.join('  ·  '));
-    });
-    add(`Cool-down — ${Math.round(w.cooldownSec / 60)} min`, cooldownExercise.task);
-  }
-}
-
-function setView(v) {
-  state.view = v;
-  els.menuView.classList.toggle('active', v === 'menu');
-  els.workoutView.classList.toggle('active', v === 'workout');
-}
-
-function goBackToMenu() {
-  stopTimer();
-  setView('menu');
-  state.workout = null;
-}
-
-function fmt(s) {
-  s = Math.max(0, Math.floor(s));
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${sec.toString().padStart(2, '0')}`;
-}
-
-// Escape text (e.g. typed names) before it is placed into innerHTML.
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-function setAlt(el, alt) {
-  el.textContent = alt || '';
-  el.classList.toggle('has-alt', !!alt);
-}
-
-// Swap the animated exercise demo in a person card. render() runs every
-// tick, so only touch the DOM when the exercise's media actually changes —
-// rewriting each second would restart the CSS animation.
-function updateAnim(el, ex) {
-  const base = ex && ex.img ? ex.img : '';
-  if (el.dataset.img === base) return;
-  el.dataset.img = base;
-  el.innerHTML = base
-    ? `<img src="img/exercises/${base}.svg" alt="">`
-    : '';
-}
-
-function renderSegBar(current, total, kind) {
-  const row = document.createElement('div');
-  row.className = 'round-row';
-  const count = document.createElement('div');
-  count.className = 'round-count';
-  count.innerHTML = `Round <b>${current}</b><span class="of"> of ${total}</span>`;
-  const remaining = document.createElement('div');
-  remaining.className = 'remaining-tag';
-  remaining.textContent = `${total - current + 1} left`;
-  row.appendChild(count);
-  row.appendChild(remaining);
-  els.roundDots.appendChild(row);
-
-  const segRow = document.createElement('div');
-  segRow.className = 'seg-row';
-  const color = PHASE_COLOR[kind];
-  for (let i = 1; i <= total; i++) {
-    const s = document.createElement('div');
-    s.className = 'seg';
-    if (i < current) s.classList.add('done');
-    else if (i === current && color) {
-      s.classList.add('current');
-      s.style.background = color.hex;
-      s.style.boxShadow = `0 0 10px 2px rgba(${color.rgb},0.6)`;
-    }
-    segRow.appendChild(s);
-  }
-  els.roundDots.appendChild(segRow);
-}
-
-function renderRoundDots(phase) {
-  els.roundDots.innerHTML = '';
-  if (phase.totalRounds) {
-    renderSegBar(phase.round, phase.totalRounds, phase.kind);
-  } else if (phase.totalStretches) {
-    renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind);
-  } else if (phase.totalBlocks) {
-    const label = document.createElement('div');
-    label.className = 'round-count';
-    label.textContent = `Between blocks — ${phase.blockIdx + 1} → ${phase.blockIdx + 2} of ${phase.totalBlocks}`;
-    els.roundDots.appendChild(label);
-  }
-}
-
-// =====================================================================
-// PHASE COLOR BLEED
-// Card starts each phase with a bold solid-color border; as the countdown
-// runs, the border bleeds out into an ambient wash behind the whole workout
-// view, finishing fully bled right as the phase ends. Driven by a plain CSS
-// transition (duration = the phase's remaining time) rather than per-tick
-// JS restyling, so it stays smooth regardless of the 1s tick rate.
-// =====================================================================
-function setBleedStartState(kind) {
-  const c = PHASE_COLOR[kind];
-  els.timerCard.style.transition = 'none';
-  els.workoutView.style.transition = 'none';
-  if (!c) {
-    els.timerCard.style.boxShadow = 'none';
-    els.workoutView.style.backgroundImage = 'none';
-    return;
-  }
-  els.timerCard.style.boxShadow =
-    `inset 0 0 0 8px ${c.hex}, 0 0 0 3px rgba(${c.rgb},0.25), 0 0 40px rgba(${c.rgb},0.55)`;
-  els.workoutView.style.backgroundImage =
-    `radial-gradient(1000px 700px at 50% 0%, rgba(${c.rgb},0.06), transparent 65%)`;
-}
-
-function applyBleedEndState(kind) {
-  const c = PHASE_COLOR[kind];
-  if (!c) return;
-  els.timerCard.style.boxShadow =
-    `inset 0 0 0 0px ${c.hex}, 0 0 0 0px rgba(${c.rgb},0), 0 0 60px 16px rgba(${c.rgb},0.55)`;
-  els.workoutView.style.backgroundImage =
-    `radial-gradient(1000px 700px at 50% 0%, rgba(${c.rgb},0.34), transparent 65%)`;
-}
-
-function beginBleed(seconds) {
-  const kind = state.sequence[state.currentIdx] ? state.sequence[state.currentIdx].kind : null;
-  if (!kind || !PHASE_COLOR[kind] || seconds <= 0) return;
-  void els.timerCard.offsetHeight; // force reflow so the transition below actually animates
-  els.timerCard.style.transition = `box-shadow ${seconds}s linear`;
-  els.workoutView.style.transition = `background-image ${seconds}s linear`;
-  applyBleedEndState(kind);
-}
-
-function enterPhase(kind, seconds) {
-  setBleedStartState(kind);
-  if (state.running) beginBleed(seconds);
-}
-
-function freezeBleed() {
-  const cardShadow = getComputedStyle(els.timerCard).boxShadow;
-  const viewBgImage = getComputedStyle(els.workoutView).backgroundImage;
-  els.timerCard.style.transition = 'none';
-  els.workoutView.style.transition = 'none';
-  els.timerCard.style.boxShadow = cardShadow;
-  els.workoutView.style.backgroundImage = viewBgImage;
-}
-
-function clearBleed() {
-  els.timerCard.style.transition = 'none';
-  els.workoutView.style.transition = 'none';
-  els.timerCard.style.boxShadow = 'none';
-  els.workoutView.style.backgroundImage = 'none';
-}
-
-function render() {
-  const phase = state.sequence[state.currentIdx];
-  if (!phase) return;
-
-  els.timerCard.className = 'timer-card ' + phase.kind;
-  els.phaseLabel.textContent = ({
-    work: 'Work', rest: 'Rest', blockrest: 'Block rest',
-    warmup: 'Warm-up', cooldown: 'Cool-down', stretch: 'Stretch'
-  })[phase.kind] || '';
-
-  els.timeDisplay.textContent = fmt(state.remainingInPhase);
-  els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
-  els.blockName.textContent = phase.name;
-  els.overallProgress.style.width = `${Math.min(100, (state.elapsedTotal / state.totalDuration) * 100)}%`;
-
-  renderRoundDots(phase);
-
-  // Rest phases become a big "up next" preview: the countdown compacts
-  // and the person cards show the next exercises (with demos) instead of
-  // "Rest — breathe", so there's time to read them and grab equipment.
-  const restLike = phase.kind === 'rest' || phase.kind === 'blockrest';
-  let dispA = phase.a, dispB = phase.b;
-  if (restLike) {
-    let j = state.currentIdx + 1;
-    while (j < state.sequence.length && state.sequence[j].kind !== 'work') j++;
-    const nxt = state.sequence[j] || state.sequence[state.currentIdx + 1];
-    if (nxt) { dispA = nxt.a; dispB = nxt.b; }
-  }
-  els.workoutView.classList.toggle('resting', restLike);
-
-  els.exerciseA.textContent = dispA ? dispA.task : '—';
-  setAlt(els.alternativeA, dispA ? dispA.alt : '');
-  updateAnim(els.animA, dispA);
-  if (state.people === 2 && dispB) {
-    els.exerciseB.textContent = dispB.task;
-    setAlt(els.alternativeB, dispB.alt);
-    updateAnim(els.animB, dispB);
-  } else {
-    updateAnim(els.animB, null);
-  }
-
-  // Up next
-  const next = state.sequence[state.currentIdx + 1];
-  if (next) {
-    const shortName = (which, fallback) => {
-      const raw = (which === 'a' ? state.nameA : state.nameB) || '';
-      return raw.trim() || fallback;
-    };
-    let preview;
-    if (next.kind === 'rest') preview = `Rest ${TABATA.restSec}s`;
-    else if (next.kind === 'work') {
-      preview = state.people === 2
-        ? `${shortName('a', 'A')}: ${next.a.task} · ${shortName('b', 'B')}: ${next.b.task}`
-        : next.a.task;
-    } else preview = next.name;
-    const nextColor = PHASE_COLOR[next.kind];
-    const swatchStyle = nextColor
-      ? `background:${nextColor.hex};box-shadow:0 0 8px 1px rgba(${nextColor.rgb},0.7)`
-      : '';
-    els.upcoming.innerHTML = `
-      <div class="swatch" style="${swatchStyle}"></div>
-      <div class="txt"><span class="eyebrow">Up next</span><strong>${esc(preview)}</strong></div>
-    `;
-  } else {
-    els.upcoming.innerHTML = '';
-  }
-
-  els.btnStart.textContent = state.running ? 'Pause' : (state.elapsedTotal > 0 ? 'Resume' : 'Start');
-  els.btnStart.classList.toggle('running', state.running);
-
-  els.previewCard.style.display = (!state.running && state.elapsedTotal === 0) ? '' : 'none';
-}
-
-// =====================================================================
-// TIMER
-// =====================================================================
-function step() {
-  state.remainingInPhase -= 1;
-  state.elapsedTotal += 1;
-  if (state.remainingInPhase === 3 || state.remainingInPhase === 2 || state.remainingInPhase === 1) tick();
-  if (state.remainingInPhase <= 0) advancePhase();
-  render();
-}
-
-function advancePhase() {
-  state.currentIdx++;
-  if (state.currentIdx >= state.sequence.length) { finish(); return; }
-  const next = state.sequence[state.currentIdx];
-  state.remainingInPhase = next.duration;
-  enterPhase(next.kind, next.duration);
-  if (next.kind === 'work') workChime();
-  else if (next.kind === 'rest') restChime();
-  else if (next.kind === 'blockrest') bigBell();
-  else if (next.kind === 'cooldown') bigBell();
-  else if (next.kind === 'stretch') stretchChime();
-}
-
-function finish() {
-  stopTimer();
-  bigBell();
-  clearBleed();
-  els.workoutView.classList.remove('resting');
-  els.timerCard.className = 'timer-card';
-  els.phaseLabel.textContent = 'Done';
-  els.timeDisplay.textContent = '✓';
-  els.blockName.textContent = 'Workout complete — nice work';
-  els.roundDots.innerHTML = '';
-  els.exerciseA.textContent = 'Well done.';
-  setAlt(els.alternativeA, '');
-  updateAnim(els.animA, null);
-  updateAnim(els.animB, null);
-  if (state.people === 2) { els.exerciseB.textContent = 'Well done.'; setAlt(els.alternativeB, ''); }
-  els.upcoming.innerHTML = '';
-  els.btnStart.textContent = 'Start over';
-  els.btnStart.classList.remove('running');
-  els.overallProgress.style.width = '100%';
-}
-
-function startTimer() {
-  if (state.running) return;
-  if (state.currentIdx >= state.sequence.length) resetWorkout();
-  ensureAudio();
-  requestWakeLock();
-  state.running = true;
-  workChime();
-  state.intervalId = setInterval(step, 1000);
-  beginBleed(state.remainingInPhase);
-  render();
-}
-function pauseTimer() {
-  freezeBleed();
-  state.running = false;
-  if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
-  releaseWakeLock();
-  render();
-}
-function stopTimer() {
-  state.running = false;
-  if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
-  releaseWakeLock();
-}
-function resetWorkout() {
-  stopTimer();
-  state.currentIdx = 0;
-  state.remainingInPhase = state.sequence[0] ? state.sequence[0].duration : 0;
-  state.elapsedTotal = 0;
-  if (state.sequence[0]) enterPhase(state.sequence[0].kind, state.remainingInPhase);
-  render();
-}
-
-function skipBlock() {
-  if (!state.sequence.length) return;
-  const cur = state.sequence[state.currentIdx];
-  let target = state.currentIdx + 1;
-
-  if (cur.kind === 'stretch') {
-    // Stretching: skip to next stretch only
-    // (target is already next)
-  } else {
-    // Tabata: walk to next phase outside this block
-    while (target < state.sequence.length) {
-      const t = state.sequence[target];
-      if (t.blockIdx !== undefined && t.blockIdx === cur.blockIdx && t.kind !== 'blockrest') target++;
-      else break;
-    }
-  }
-  let skipped = state.remainingInPhase;
-  for (let i = state.currentIdx + 1; i < target; i++) skipped += state.sequence[i].duration;
-  state.elapsedTotal += skipped;
-  state.currentIdx = target;
-  if (state.currentIdx >= state.sequence.length) { finish(); return; }
-  state.remainingInPhase = state.sequence[state.currentIdx].duration;
-  const k = state.sequence[state.currentIdx].kind;
-  enterPhase(k, state.remainingInPhase);
-  if (k === 'work') workChime();
-  else if (k === 'blockrest') bigBell();
-  else if (k === 'stretch') stretchChime();
-  render();
-}
-
-// =====================================================================
-// EVENT WIRING
-// =====================================================================
-els.peoplePicker.querySelectorAll('.chip').forEach(chip => {
-  chip.addEventListener('click', () => {
-    state.people = Number(chip.dataset.people);
-    savePrefs();
-    renderPeoplePicker();
-  });
-});
-
-els.nameA.addEventListener('input', (e) => { state.nameA = e.target.value; savePrefs(); });
-els.nameB.addEventListener('input', (e) => { state.nameB = e.target.value; savePrefs(); });
-
-els.btnBack.addEventListener('click', goBackToMenu);
-
-els.btnStart.addEventListener('click', () => {
-  if (state.running) pauseTimer(); else startTimer();
-});
-
-// Two-tap reset (avoids confirm dialog)
-let resetArmed = false;
-let resetTimer = null;
-els.btnReset.addEventListener('click', () => {
-  if (resetArmed) {
-    clearTimeout(resetTimer);
-    resetArmed = false;
-    els.btnReset.textContent = 'Reset';
-    resetWorkout();
-  } else {
-    resetArmed = true;
-    els.btnReset.textContent = 'Tap again';
-    resetTimer = setTimeout(() => {
-      resetArmed = false;
-      els.btnReset.textContent = 'Reset';
-    }, 2000);
-  }
-});
-els.btnSkip.addEventListener('click', skipBlock);
-
-els.showPhotos.addEventListener('change', (e) => {
-  state.showPhotos = e.target.checked;
-  document.body.classList.toggle('hide-photos', !state.showPhotos);
-  savePrefs();
-});
-els.showAlts.addEventListener('change', (e) => {
-  state.showAlts = e.target.checked;
-  document.body.classList.toggle('show-alternatives', state.showAlts);
-  savePrefs();
-});
-els.muteAudio.addEventListener('change', (e) => {
-  state.muteAudio = e.target.checked;
-  savePrefs();
-});
-
-document.addEventListener('visibilitychange', () => {
-  if (state.running && document.visibilityState === 'visible') requestWakeLock();
-});
-
-// =====================================================================
-// INIT
-// =====================================================================
-loadPrefs();
-els.nameA.value = state.nameA || '';
-els.nameB.value = state.nameB || '';
-els.showAlts.checked = state.showAlts;
-els.muteAudio.checked = state.muteAudio;
-els.showPhotos.checked = state.showPhotos !== false;
-document.body.classList.toggle('show-alternatives', state.showAlts);
-document.body.classList.toggle('hide-photos', state.showPhotos === false);
-renderPeoplePicker();
-renderEquipmentPicker();
-renderTimeFilter();
-renderFocusFilter();
-renderWorkoutGrid();
-</script>
+</div>
+
+<script src="js/exercises.js"></script>
+<script src="js/workouts.js"></script>
+<script src="js/generator.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

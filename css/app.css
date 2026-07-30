@@ -1,0 +1,695 @@
+/*
+  © 2026 Wayne Cavanagh / Flaux. All rights reserved.
+*/
+:root {
+  --bg: #050a0a;
+  --card: #0f1c1c;
+  --card-hi: #16292a;
+  --border: #1f3333;
+  --text: #f0fdfa;
+  --muted: #94a3b8;
+
+  --teal:        #14b8a6;
+  --teal-deep:   #0d9488;
+  --teal-bright: #2dd4bf;
+
+  --work:    #14b8a6;
+  --rest:    #ef4444;
+  --warmup:  #0d9488;
+  --accent:  #14b8a6;
+  --accent-b:#fbbf24;
+
+  --whole:      #f59e0b;
+  --upper:      #22d3ee;
+  --lower:      #10b981;
+  --core:       #f43f5e;
+  --stretching: #a855f7;
+
+  --grad-primary:    linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  --glow-teal:       0 6px 22px rgba(20,184,166,0.25);
+
+  /* User-adjustable exercise text size (the Text A A A control). */
+  --ex-scale: 1;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+  THE SCROLL CONTAINER
+
+  Everything scrolls in here rather than in the document.
+
+  This was introduced while chasing an iPad scrolling fault that turned out to
+  be a stuck touch state on the device, cleared by restarting it, and nothing
+  to do with this code. It is kept because it works and is well tested, but it
+  is not load-bearing: reverting to document scrolling would also be fine, and
+  would let Safari's toolbar auto-hide on a phone. On an iPad the toolbar is
+  always visible anyway, and from the home screen there is none.
+*/
+#scroller {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding: env(safe-area-inset-top, 0.75rem) 0.75rem env(safe-area-inset-bottom, 1rem);
+
+  /*
+    Text is not selectable anywhere in the app except in the two input
+    fields. Nothing here is prose to be copied, and a long press landing on
+    a heading mid-workout should not pop a selection handle over the timer.
+  */
+  -webkit-user-select: none;
+  user-select: none;
+  /* The other half of the same long press: no callout menu either. */
+  -webkit-touch-callout: none;
+}
+/* The two places selecting and editing text is the whole point. */
+#scroller input, #scroller textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/*
+  The ambient background lives on its own fixed, composited layer.
+
+  It used to be a `background-attachment: fixed` gradient on <body>, which
+  iOS Safari cannot composite: it repaints the whole gradient on every
+  scroll frame. That is what made scrolling stutter on the iPad. As a
+  fixed pseudo-element the compositor handles it once and leaves it alone.
+*/
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(20,184,166,0.10), transparent 60%),
+    radial-gradient(900px 500px at 90% 110%, rgba(13,148,136,0.08), transparent 60%);
+}
+
+/*
+  Phase colour wash. The gradient is written once when a phase starts and
+  only its opacity animates, because opacity is composited on the GPU.
+  Previously this transitioned `background-image` on the whole view, which
+  browsers cannot interpolate anyway, and a 60px-blur `box-shadow` on the
+  timer card, which forces a large repaint every frame for the entire
+  length of the phase.
+*/
+#phaseBleed {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  will-change: opacity;
+}
+
+/* Bottom edge fade, shown only while there is more page below. */
+#scrollHint {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: 0;
+  height: 3.25rem;
+  /* Below the sticky Build button, which already occupies this strip on the
+     setup screen. */
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  background: linear-gradient(to top, rgba(5,10,10,0.92), rgba(5,10,10,0.45) 55%, transparent);
+}
+body.can-scroll #scrollHint { opacity: 1; }
+
+.app { max-width: 1100px; margin: 0 auto; }
+.view { display: none; flex-direction: column; gap: 0.85rem; }
+.view.active { display: flex; }
+#workoutView.active { background-color: var(--bg); }
+
+button {
+  background: var(--grad-primary);
+  color: #fff;
+  border: none;
+  padding: 1rem;
+  font-size: 1.15rem;
+  font-weight: 800;
+  border-radius: 1rem;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: var(--glow-teal), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/*
+  The large tap surfaces are divs with role="button", not <button> elements, so
+  they need the resets they used to inherit from the rule above.
+
+  This also came out of the iPad scrolling hunt, but it is worth keeping on its
+  own merits: a <button> may not contain block-level content, and these cards
+  are full of divs. role="button" plus tabindex plus the delegated Enter/Space
+  handler in js/app.js reads identically to assistive technology.
+*/
+.path-card, .workout-card, .interval-card, .chip {
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.path-card:focus-visible, .workout-card:focus-visible,
+.interval-card:focus-visible, .chip:focus-visible {
+  outline: 3px solid var(--teal-bright);
+  outline-offset: 2px;
+}
+
+/*
+  Cards are tap targets, not drag handles: no long-press callout menu and no
+  native drag of the card itself. Inherited text selection is already off from
+  #scroller above.
+*/
+.path-card, .workout-card, .interval-card, .chip, .picker-row, .person,
+.timer-card, .block-info, .upcoming, .preview-card, .toggle-row,
+.brand-bar, .menu-header, .top-bar, .exclude-group, .bodymap {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+button.secondary {
+  background: var(--card);
+  color: var(--text);
+  border: 2px solid var(--border);
+  box-shadow: none;
+}
+/* Press feedback: a slight squash plus a lit border. */
+button:active { transform: scale(0.97); box-shadow: var(--glow-teal), inset 0 3px 10px rgba(0,0,0,0.3); }
+button.secondary:active,
+.path-card:active,
+.interval-card:active,
+.workout-card:active,
+.chip:active {
+  transform: scale(0.98);
+  border-color: var(--teal);
+  background-color: var(--card-hi);
+  box-shadow: none;
+}
+button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 6px 22px rgba(245,158,11,0.25); }
+
+/* ============== Brand + headings ============== */
+.brand-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem;
+  background:
+    linear-gradient(135deg, rgba(20,184,166,0.14), rgba(13,148,136,0.05) 60%),
+    var(--card);
+  border: 1px solid rgba(20,184,166,0.22);
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 28px rgba(20,184,166,0.08);
+}
+.brand-icon {
+  width: 46px; height: 46px; flex-shrink: 0;
+  color: var(--teal-bright);
+  filter: drop-shadow(0 2px 6px rgba(20,184,166,0.4));
+}
+.brand-text { display: flex; flex-direction: column; line-height: 1; }
+.brand-name {
+  font-size: 2.1rem; font-weight: 900;
+  letter-spacing: -0.04em; line-height: 0.95;
+  background: linear-gradient(135deg, #5eead4, #14b8a6 70%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+.brand-sub {
+  font-size: 0.78rem; color: var(--muted);
+  letter-spacing: 0.28em; margin-top: 0.35rem; font-weight: 700;
+}
+.menu-header { padding: 0.5rem 0.25rem 0; }
+.menu-title {
+  font-size: clamp(1.5rem, 3.2vw, 2.2rem);
+  font-weight: 800; letter-spacing: -0.02em; line-height: 1.15;
+}
+.welcome-foot {
+  color: var(--muted); font-size: 0.9rem;
+  text-align: center; padding: 0.5rem 1rem 0;
+}
+.welcome-actions {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0.6rem; padding: 0.35rem 0 0;
+}
+.welcome-actions button { font-size: 1rem; padding: 0.8rem 1.4rem; }
+.install-hint {
+  color: var(--muted); font-size: 0.9rem; line-height: 1.45;
+  text-align: center; max-width: 30rem;
+}
+.install-hint strong { color: var(--teal-bright); }
+
+/* ============== Welcome path cards ============== */
+/* 250px lets all four sit on one row on an iPad in landscape, and fall to
+   a tidy 2x2 in portrait, rather than 3-then-1. */
+.path-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.85rem;
+}
+.path-card {
+  background: linear-gradient(135deg, rgba(20,184,166,0.05) 0%, transparent 55%), var(--card);
+  border: 2px solid var(--border);
+  border-radius: 1.25rem;
+  padding: 1.4rem 1.3rem;
+  text-align: left;
+  color: var(--text);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 200px;
+  transition: transform 0.12s, box-shadow 0.2s, border-color 0.2s;
+}
+.path-card:hover { border-color: rgba(20,184,166,0.4); box-shadow: 0 10px 30px rgba(20,184,166,0.12); }
+.path-card.primary {
+  border-color: rgba(20,184,166,0.5);
+  background: linear-gradient(135deg, rgba(20,184,166,0.16), rgba(13,148,136,0.04) 60%), var(--card);
+}
+.path-icon { font-size: 1.9rem; line-height: 1; color: var(--teal-bright); }
+.path-name { font-size: clamp(1.3rem, 2.4vw, 1.7rem); font-weight: 850; letter-spacing: -0.01em; }
+.path-blurb { color: var(--muted); font-size: 1rem; line-height: 1.45; flex: 1; font-weight: 500; }
+.path-go { color: var(--teal-bright); font-weight: 800; font-size: 1rem; }
+
+/* ============== Pickers ============== */
+.picker-row { background: var(--card); border-radius: 1rem; padding: 0.95rem 1rem; }
+.picker-label {
+  font-size: 0.85rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.12em;
+  font-weight: 700; margin-bottom: 0.6rem;
+}
+.picker-hint { color: var(--muted); font-size: 0.88rem; margin-top: 0.6rem; line-height: 1.4; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.chip {
+  background: var(--bg); color: var(--text);
+  border: 2px solid var(--border);
+  padding: 0.6rem 1rem; border-radius: 999px;
+  cursor: pointer; font-size: 1.02rem; font-weight: 600;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.chip.active {
+  background: var(--grad-primary); border-color: transparent; color: #fff;
+  box-shadow: 0 2px 10px rgba(20,184,166,0.3);
+}
+.people-chip { min-width: 95px; text-align: center; }
+.name-inputs { display: flex; gap: 0.45rem; margin-top: 0.6rem; }
+.name-inputs.hidden { display: none; }
+/* Text fields only, deliberately NOT a bare `.exclude-panel input`, which
+   would also catch the checkboxes in the movement list and stretch them. */
+.name-inputs input, .exclude-panel input[type="search"] {
+  flex: 1; min-width: 0;
+  background: var(--bg); color: var(--text);
+  border: 2px solid var(--border); border-radius: 999px;
+  padding: 0.6rem 1rem; font-size: 1rem; font-weight: 600;
+  font-family: inherit;
+  -webkit-appearance: none; appearance: none;
+}
+.name-inputs input::placeholder,
+.exclude-panel input[type="search"]::placeholder { color: var(--muted); font-weight: 500; }
+.name-inputs input:focus, .exclude-panel input[type="search"]:focus {
+  outline: none; border-color: var(--teal);
+  box-shadow: 0 2px 10px rgba(20,184,166,0.25);
+}
+
+/* Interval choice, two explanatory cards, not a bare toggle, because
+   neither option is "easier": they run the same total work. */
+.interval-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.6rem; }
+.interval-card {
+  background: var(--bg); border: 2px solid var(--border);
+  border-radius: 1rem; padding: 0.9rem 1rem;
+  text-align: left; color: var(--text); box-shadow: none;
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.interval-card.active { border-color: var(--teal); background: rgba(20,184,166,0.1); }
+.interval-name { font-size: 1.15rem; font-weight: 800; }
+.interval-sub { color: var(--teal-bright); font-weight: 700; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+.interval-blurb { color: var(--muted); font-size: 0.9rem; line-height: 1.35; font-weight: 500; }
+
+/* ============== Body map ============== */
+.bodymap-wrap { display: flex; justify-content: center; padding: 0.35rem 0 0.85rem; }
+.bodymap { width: 100%; max-width: 250px; height: auto; }
+.bm-head { fill: var(--border); }
+.zone { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.zone .hit { fill: transparent; stroke: none; }
+.zone .fill { fill: #16292a; stroke: var(--border); stroke-width: 2; transition: fill 0.15s, stroke 0.15s; }
+.zone text {
+  fill: var(--muted); font-size: 10px; font-weight: 800;
+  letter-spacing: 0.1em; text-anchor: middle;
+  font-family: inherit; pointer-events: none;
+}
+.zone:hover .fill { stroke: rgba(20,184,166,0.5); }
+.zone.on .fill { fill: var(--teal-deep); stroke: var(--teal-bright); }
+.zone.on text { fill: #ecfeff; }
+.zone:focus { outline: none; }
+.zone:focus-visible .fill { stroke: var(--teal-bright); stroke-width: 3; }
+
+/* ============== Exclusions ============== */
+.link-btn {
+  background: none; border: none; box-shadow: none;
+  color: var(--teal-bright); font-weight: 700; font-size: 1rem;
+  padding: 0.75rem 0 0.15rem; text-align: left; text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.exclude-panel { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
+/* An author `display` beats the UA rule for [hidden], so the attribute has
+   to be honoured explicitly or the panel is always open. */
+.exclude-panel[hidden] { display: none; }
+.exclude-panel input { border-radius: 0.85rem; }
+.exclude-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.exclude-count { color: var(--muted); font-size: 0.88rem; font-weight: 600; }
+.mini-btn {
+  background: var(--bg); color: var(--text);
+  border: 2px solid var(--border); box-shadow: none;
+  padding: 0.4rem 0.8rem; border-radius: 0.7rem;
+  font-size: 0.9rem; font-weight: 700;
+}
+.mini-btn.active { background: var(--grad-primary); border-color: transparent; color: #fff; }
+.exclude-list {
+  max-height: 45vh; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 2px solid var(--border); border-radius: 0.85rem;
+  background: var(--bg);
+}
+.exclude-group {
+  padding: 0.5rem 0.85rem 0.2rem;
+  font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted);
+  position: sticky; top: 0; background: var(--bg);
+}
+.exclude-item {
+  display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.6rem 0.85rem; cursor: pointer;
+  border-top: 1px solid rgba(31,51,51,0.6);
+}
+.exclude-item input { width: 1.2rem; height: 1.2rem; accent-color: var(--rest); flex-shrink: 0; }
+.exclude-item span { font-size: 1rem; font-weight: 600; }
+.exclude-item.off span { color: var(--muted); text-decoration: line-through; }
+.exclude-empty { padding: 1rem; color: var(--muted); text-align: center; }
+
+/* Sticky so you never have to scroll to reach it, whatever the screen. */
+.build-btn {
+  font-size: 1.3rem;
+  padding: 1.2rem;
+  position: sticky;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  z-index: 5;
+}
+.build-note { color: var(--accent-b); font-size: 0.95rem; text-align: center; line-height: 1.45; }
+
+/*
+  Two columns once there is room, so the Custom screen fits on an iPad
+  instead of running 750px past the bottom. Rows pair up as
+  people|equipment, time|interval, target areas|exclusions.
+*/
+.setup-grid { display: flex; flex-direction: column; gap: 0.85rem; }
+@media (min-width: 860px) {
+  .setup-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  /* Body map beside its labels rather than above them, which is the
+     single biggest saving on this screen. */
+  #rowRegions .bodymap-wrap {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+    align-items: center;
+    justify-content: start;
+    padding-bottom: 0;
+  }
+  #rowRegions .bodymap { max-width: 180px; }
+  .bodymap-side { display: flex; flex-direction: column; gap: 0.6rem; }
+}
+
+/* ============== Library cards ============== */
+.workout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+.workout-card {
+  background: linear-gradient(135deg, rgba(20,184,166,0.06) 0%, transparent 50%), var(--card);
+  border: 2px solid var(--border); border-left-width: 6px;
+  border-radius: 1rem; padding: 1rem 1.1rem;
+  cursor: pointer; text-align: left; color: var(--text);
+  display: flex; flex-direction: column; gap: 0.45rem;
+  box-shadow: none;
+  transition: transform 0.12s, box-shadow 0.2s, border-color 0.2s;
+}
+.workout-card:hover { border-color: rgba(20,184,166,0.35); box-shadow: 0 8px 28px rgba(20,184,166,0.12); }
+.workout-card.whole { border-left-color: var(--whole); }
+.workout-card.upper { border-left-color: var(--upper); }
+.workout-card.lower { border-left-color: var(--lower); }
+.workout-card.core  { border-left-color: var(--core); }
+.workout-card.stretching { border-left-color: var(--stretching); }
+.card-name { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.01em; }
+.card-tagline { color: var(--muted); font-size: 0.95rem; font-style: italic; }
+.card-meta {
+  display: flex; gap: 0.6rem; margin-top: 0.15rem;
+  font-size: 0.85rem; color: var(--muted); font-weight: 600; flex-wrap: wrap;
+}
+.card-meta .duration { color: var(--text); }
+.card-meta .focus-tag.whole { color: var(--whole); }
+.card-meta .focus-tag.upper { color: var(--upper); }
+.card-meta .focus-tag.lower { color: var(--lower); }
+.card-meta .focus-tag.core  { color: var(--core); }
+.card-meta .focus-tag.stretching { color: var(--stretching); }
+.card-blurb { color: var(--muted); font-size: 0.95rem; line-height: 1.35; }
+.card-time-detail { color: var(--muted); font-size: 0.82rem; font-weight: 600; margin-top: -0.2rem; }
+.card-adapted { color: var(--teal-bright); font-size: 0.85rem; font-weight: 700; }
+.card-adapted::before { content: '↻ '; }
+.card-remove {
+  align-self: flex-start; margin-top: 0.2rem;
+  background: none; border: none; box-shadow: none; padding: 0.2rem 0;
+  color: var(--muted); font-size: 0.85rem; font-weight: 700; text-decoration: underline;
+}
+.empty-state { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 2rem; }
+
+/* ============== Library sections ============== */
+#librarySections { display: flex; flex-direction: column; gap: 1.4rem; }
+.library-section { display: flex; flex-direction: column; gap: 0.7rem; }
+.section-head {
+  display: flex; align-items: baseline; gap: 0.75rem;
+  flex-wrap: wrap; padding: 0 0.25rem;
+}
+.section-title {
+  font-size: 1.15rem; font-weight: 800; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--teal-bright);
+}
+.section-sub { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.section-action { margin-left: auto; }
+
+.history-card { cursor: pointer; }
+.card-actions { display: flex; gap: 0.9rem; margin-top: 0.35rem; flex-wrap: wrap; }
+.card-actions .card-remove { margin-top: 0; }
+.card-remove[disabled] { opacity: 0.5; text-decoration: none; cursor: default; }
+.card-done { color: var(--teal-bright); font-size: 0.85rem; font-weight: 700; }
+.card-done::before { content: '✓ '; }
+.card-part { color: var(--muted); font-size: 0.85rem; font-weight: 700; }
+
+/* ============== Workout view ============== */
+.top-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.25rem; }
+.back-btn {
+  background: var(--card); color: var(--text);
+  border: 2px solid var(--border); box-shadow: none;
+  padding: 0.6rem 0.95rem; border-radius: 0.75rem;
+  font-size: 1rem; font-weight: 700; flex-shrink: 0;
+}
+.workout-title {
+  font-size: 1.15rem; font-weight: 800; flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.people-badge {
+  color: var(--muted); font-size: 0.85rem; background: var(--card);
+  padding: 0.4rem 0.7rem; border-radius: 0.75rem; font-weight: 700; white-space: nowrap;
+}
+
+.progress-bar-wrap { background: var(--card); border-radius: 999px; height: 6px; overflow: hidden; }
+.progress-bar { background: var(--accent); height: 100%; width: 0%; transition: width 0.3s ease; }
+
+.block-info {
+  background: var(--card); padding: 0.75rem 1rem; border-radius: 1rem;
+  display: flex; flex-direction: column; gap: 0.45rem;
+}
+.block-name { font-weight: 700; font-size: 1.15rem; line-height: 1.25; }
+.round-dots { display: flex; flex-direction: column; gap: 0.4rem; }
+.round-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.round-count { color: var(--text); font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.round-count .of { color: var(--muted); font-weight: 700; }
+.remaining-tag { color: var(--muted); font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
+.seg-row { display: flex; gap: 0.28rem; }
+.seg { flex: 1; height: 14px; border-radius: 4px; background: rgba(148,163,184,0.22); }
+.seg.done { background: var(--muted); }
+
+.timer-card {
+  background: var(--card); border-radius: 1.5rem;
+  padding: 1.25rem 1rem; text-align: center; border: 2px solid transparent;
+  position: relative;
+}
+/* The bold phase ring, on its own layer so it can fade out on opacity
+   alone rather than animating a large box-shadow. */
+.timer-card .ring {
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  will-change: opacity;
+}
+.phase-label {
+  text-transform: uppercase; letter-spacing: 0.25em;
+  font-size: 1.15rem; font-weight: 800; color: var(--muted);
+}
+.timer-card.work .phase-label { color: var(--work); }
+.timer-card.rest .phase-label,
+.timer-card.blockrest .phase-label { color: var(--rest); }
+.timer-card.warmup .phase-label,
+.timer-card.cooldown .phase-label { color: var(--warmup); }
+.timer-card.stretch .phase-label { color: var(--stretching); }
+.time-display {
+  font-size: clamp(4.5rem, 13vw, 9rem);
+  font-weight: 900; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  margin: 0.25rem 0; letter-spacing: -0.05em;
+}
+.total-time { color: var(--muted); font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+
+.exercise-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.exercise-grid.solo { grid-template-columns: 1fr; }
+.person {
+  background: var(--card); border-radius: 1.25rem;
+  padding: 1.1rem 1.2rem; border: 2px solid var(--border);
+  display: flex; flex-direction: column; min-height: 120px;
+}
+.person.a { border-top: 6px solid var(--accent); }
+.person.b { border-top: 6px solid var(--accent-b); }
+.person-label {
+  font-size: 0.85rem; font-weight: 800; letter-spacing: 0.15em;
+  text-transform: uppercase; margin-bottom: 0.4rem;
+}
+.person.a .person-label { color: var(--accent); }
+.person.b .person-label { color: var(--accent-b); }
+
+/*
+  THE EXERCISE NAME: the thing that was too small to read on an iPad.
+
+  Three changes together: the movement name is now separated from its
+  coaching cue so the headline can be short; it scales with the viewport
+  instead of sitting at a fixed 1.4rem (an iPad fell between the old
+  breakpoints and got the smallest size); and --ex-scale lets it be
+  pushed larger still from the Text control.
+*/
+.exercise-name {
+  font-size: calc(clamp(1.7rem, 3.6vw, 3rem) * var(--ex-scale));
+  font-weight: 900;
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.exercise-grid.solo .exercise-name {
+  font-size: calc(clamp(2.1rem, 6vw, 4.6rem) * var(--ex-scale));
+}
+.exercise-cue {
+  font-size: calc(clamp(0.95rem, 1.5vw, 1.3rem) * var(--ex-scale));
+  color: var(--muted); font-weight: 600;
+  line-height: 1.3; margin-top: 0.45rem;
+}
+.exercise-cue:empty { display: none; }
+
+.ex-anim {
+  position: relative; width: 100%;
+  aspect-ratio: 3 / 2; max-height: 210px;
+  margin-top: 0.7rem; border-radius: 0.65rem;
+  overflow: hidden; background: var(--bg);
+}
+.ex-anim:empty { display: none; }
+body.hide-photos .ex-anim { display: none; }
+.ex-anim img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+
+.alternative {
+  font-size: 0.95rem; color: var(--muted); line-height: 1.4;
+  margin-top: 0.6rem; padding-top: 0.6rem;
+  border-top: 1px solid var(--border); display: none;
+}
+body.show-alternatives .alternative.has-alt { display: block; }
+.alternative::before { content: 'Injury alt: '; font-weight: 700; color: var(--accent); }
+
+/* Rest phases: the countdown compacts and the person cards flip to a big
+   "Up next" preview, so there's time to read it and grab equipment. */
+.next-eyebrow {
+  display: none;
+  font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
+  font-weight: 800; color: var(--work); margin-bottom: 0.3rem;
+}
+#workoutView.resting .next-eyebrow { display: block; }
+#workoutView.resting .timer-card { padding: 0.55rem 1rem; }
+#workoutView.resting .time-display { font-size: calc(clamp(2.8rem, 7vw, 4.6rem)); margin: 0.05rem 0; }
+#workoutView.resting .phase-label { font-size: 0.9rem; letter-spacing: 0.2em; }
+#workoutView.resting .total-time { font-size: 0.85rem; }
+#workoutView.resting .exercise-name { font-size: calc(clamp(2rem, 4.4vw, 3.6rem) * var(--ex-scale)); }
+#workoutView.resting .exercise-grid.solo .exercise-name { font-size: calc(clamp(2.4rem, 7vw, 5.2rem) * var(--ex-scale)); }
+#workoutView.resting .upcoming { display: none; }
+#workoutView.resting .person { border-color: rgba(20,184,166,0.4); }
+
+.upcoming {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.75rem 1rem; border-radius: 1rem;
+  background: var(--card); border: 2px solid var(--border);
+}
+.upcoming:empty { display: none; }
+.upcoming .swatch { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+.upcoming .txt { font-size: 1.02rem; font-weight: 600; color: var(--text); }
+.upcoming .txt strong { font-weight: 800; }
+.upcoming .eyebrow {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--muted); font-weight: 800; display: block; margin-bottom: 0.1rem;
+}
+
+.controls { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.6rem; }
+.pre-start { display: flex; flex-direction: column; gap: 0.75rem; }
+.pre-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.pre-actions button { font-size: 1rem; padding: 0.85rem; }
+.preview-card { background: var(--card); border-radius: 1rem; padding: 0.9rem 1rem; }
+.preview-title {
+  font-size: 0.85rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.12em; font-weight: 700; margin-bottom: 0.6rem;
+}
+.preview-list { list-style: none; display: flex; flex-direction: column; gap: 0.65rem; }
+.preview-item-name { font-weight: 700; font-size: 1rem; line-height: 1.3; }
+.preview-item-sub { color: var(--muted); font-size: 0.9rem; line-height: 1.4; margin-top: 0.1rem; }
+
+.toggle-row {
+  display: flex; justify-content: space-around; gap: 1rem;
+  padding: 0.7rem 1rem; background: var(--card);
+  border-radius: 1rem; font-size: 0.95rem; flex-wrap: wrap;
+}
+.toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.toggle input { width: 1.25rem; height: 1.25rem; cursor: pointer; accent-color: var(--accent); }
+.text-size { gap: 0.35rem; color: var(--muted); font-weight: 600; }
+.text-size .mini-btn { padding: 0.3rem 0.6rem; line-height: 1; }
+.text-size .mini-btn:nth-of-type(1) { font-size: 0.85rem; }
+.text-size .mini-btn:nth-of-type(2) { font-size: 1.05rem; }
+.text-size .mini-btn:nth-of-type(3) { font-size: 1.3rem; }
+
+/* Phones: stack the two people so each name still gets full width. */
+@media (max-width: 700px) {
+  .exercise-grid { grid-template-columns: 1fr; }
+  .exercise-grid:not(.solo) .exercise-name {
+    font-size: calc(clamp(1.9rem, 7.5vw, 3rem) * var(--ex-scale));
+  }
+  #workoutView.resting .exercise-grid:not(.solo) .exercise-name {
+    font-size: calc(clamp(2rem, 8vw, 3.2rem) * var(--ex-scale));
+  }
+  .controls { grid-template-columns: 1fr 1fr; }
+  .controls button:first-child { grid-column: 1 / -1; }
+  .pre-actions { grid-template-columns: 1fr; }
+}
