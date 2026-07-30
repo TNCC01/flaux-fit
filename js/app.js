@@ -322,6 +322,40 @@ function setView(v) {
   queueScrollHint();
 }
 
+/*
+  Large tap targets are divs with role="button", not real <button> elements.
+
+  On iPadOS a slow press-and-drag starting on a form control does not become a
+  scroll: the control holds the touch for a potential activation, and only a
+  fast flick outruns that. Normally nobody notices, because buttons are small.
+  Here the cards cover most of the screen, which left almost nowhere to drag
+  from. A div with role="button" is announced identically to assistive
+  technology, is focusable, and responds to Enter and Space, but it is not a
+  form control. It is also more correct markup, since these contain block
+  content that is not valid inside a <button>.
+*/
+function tappable(className, onActivate) {
+  const el = document.createElement('div');
+  el.className = className;
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  el.addEventListener('click', onActivate);
+  return el;
+}
+
+/*
+  A div with role="button" is not a form control, so Enter and Space do not
+  activate it for free. One delegated handler covers every one of them,
+  including the cards written in the markup rather than created here.
+*/
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target instanceof Element && e.target.closest('[role="button"]');
+  if (!el) return;
+  e.preventDefault();
+  el.click();
+});
+
 function esc(s) {
   const d = document.createElement('div');
   d.textContent = s == null ? '' : String(s);
@@ -380,15 +414,13 @@ function renderPeoplePicker() {
 function renderEquipmentPicker() {
   els.equipmentPicker.innerHTML = '';
   Object.keys(EQUIPMENT).forEach(id => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (hasEquip(id) ? ' active' : '');
-    b.textContent = EQUIPMENT[id];
-    b.setAttribute('aria-pressed', String(hasEquip(id)));
-    b.addEventListener('click', () => {
+    const b = tappable('chip' + (hasEquip(id) ? ' active' : ''), () => {
       state.equipment[id] = !hasEquip(id);
       savePrefs();
       renderEquipmentPicker();
     });
+    b.textContent = EQUIPMENT[id];
+    b.setAttribute('aria-pressed', String(hasEquip(id)));
     els.equipmentPicker.appendChild(b);
   });
 }
@@ -396,14 +428,12 @@ function renderEquipmentPicker() {
 function renderTimePicker() {
   els.timePicker.innerHTML = '';
   TIME_OPTIONS.forEach(m => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (state.minutes === m ? ' active' : '');
-    b.textContent = `${m} min`;
-    b.addEventListener('click', () => {
+    const b = tappable('chip' + (state.minutes === m ? ' active' : ''), () => {
       state.minutes = m;
       savePrefs();
       renderTimePicker();
     });
+    b.textContent = `${m} min`;
     els.timePicker.appendChild(b);
   });
 }
@@ -412,17 +442,15 @@ function renderIntervalPicker() {
   els.intervalPicker.innerHTML = '';
   Object.keys(INTERVALS).forEach(id => {
     const iv = INTERVALS[id];
-    const b = document.createElement('button');
-    b.className = 'interval-card' + (state.intervalStyle === id ? ' active' : '');
-    b.innerHTML = `
-      <div class="interval-name">${esc(iv.label)}</div>
-      <div class="interval-sub">${esc(iv.sub)} × ${iv.rounds} rounds</div>
-      <div class="interval-blurb">${esc(iv.blurb)}</div>`;
-    b.addEventListener('click', () => {
+    const b = tappable('interval-card' + (state.intervalStyle === id ? ' active' : ''), () => {
       state.intervalStyle = id;
       savePrefs();
       renderIntervalPicker();
     });
+    b.innerHTML = `
+      <div class="interval-name">${esc(iv.label)}</div>
+      <div class="interval-sub">${esc(iv.sub)} × ${iv.rounds} rounds</div>
+      <div class="interval-blurb">${esc(iv.blurb)}</div>`;
     els.intervalPicker.appendChild(b);
   });
 }
@@ -431,11 +459,9 @@ function renderRegionPicker() {
   els.regionPicker.innerHTML = '';
   REGIONS.forEach(r => {
     const on = state.regions.includes(r.id);
-    const b = document.createElement('button');
-    b.className = 'chip' + (on ? ' active' : '');
+    const b = tappable('chip' + (on ? ' active' : ''), () => toggleRegion(r.id));
     b.textContent = r.label;
     b.setAttribute('aria-pressed', String(on));
-    b.addEventListener('click', () => toggleRegion(r.id));
     els.regionPicker.appendChild(b);
   });
   // Keep the drawing and the labels showing the same truth.
@@ -460,17 +486,15 @@ function renderTagPicker() {
   els.tagPicker.innerHTML = '';
   EXCLUSION_TAGS.forEach(t => {
     const on = state.blockedTags.includes(t.id);
-    const b = document.createElement('button');
-    b.className = 'chip' + (on ? ' active' : '');
-    b.textContent = t.label;
-    b.title = t.blurb;
-    b.setAttribute('aria-pressed', String(on));
-    b.addEventListener('click', () => {
+    const b = tappable('chip' + (on ? ' active' : ''), () => {
       const i = state.blockedTags.indexOf(t.id);
       if (i >= 0) state.blockedTags.splice(i, 1); else state.blockedTags.push(t.id);
       savePrefs();
       renderTagPicker();
     });
+    b.textContent = t.label;
+    b.title = t.blurb;
+    b.setAttribute('aria-pressed', String(on));
     els.tagPicker.appendChild(b);
   });
 }
@@ -604,15 +628,13 @@ function renderFocusFilter() {
                 ...Object.keys(focusLabelMap).map(id => ({ id, label: focusLabelMap[id] }))];
   els.focusFilter.innerHTML = '';
   list.forEach(f => {
-    const b = document.createElement('button');
-    b.className = 'chip' + (state.filterFocus === f.id ? ' active' : '');
-    b.textContent = f.label;
-    b.addEventListener('click', () => {
+    const b = tappable('chip' + (state.filterFocus === f.id ? ' active' : ''), () => {
       state.filterFocus = f.id;
       savePrefs();
       renderFocusFilter();
       renderLibrary();
     });
+    b.textContent = f.label;
     els.focusFilter.appendChild(b);
   });
 }
@@ -688,8 +710,7 @@ function renderLibrary() {
 
 function namedCard(w) {
   const parts = durationParts(w);
-  const card = document.createElement('button');
-  card.className = 'workout-card ' + focusClassMap[w.focus];
+  const card = tappable('workout-card ' + focusClassMap[w.focus], () => openWorkout(w));
   const detail = parts.workMin !== null
     ? `<div class="card-time-detail">${parts.workMin} min work + ${parts.bookendsMin} min warm-up/cool-down</div>` : '';
   const adapted = workoutAdapted(w)
@@ -705,7 +726,6 @@ function namedCard(w) {
     ${detail}
     <div class="card-blurb">${esc(w.blurb)}</div>
     ${adapted}`;
-  card.addEventListener('click', () => openWorkout(w));
   return card;
 }
 

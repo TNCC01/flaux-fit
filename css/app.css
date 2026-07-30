@@ -141,29 +141,56 @@ button {
 }
 
 /*
-  SCROLLING FROM ANYWHERE
+  The large tap surfaces are divs with role="button", not <button> elements,
+  so they need the resets they used to inherit from the rule above.
 
-  The cards cover most of the screen, so a drag starting on one has to scroll
-  the page. On iPad (Safari, and Chrome, which is WebKit underneath too) a
-  fast flick scrolled but a slow press-and-drag did not. Three candidates,
-  all now removed:
+  Why they are not buttons: on iPadOS a slow press-and-drag starting on a form
+  control does not become a scroll, because the control holds the touch for a
+  possible activation and only a fast flick outruns it. Buttons are usually
+  small so this goes unnoticed; these cards cover most of the screen, which
+  left almost nowhere to drag from. role="button" plus tabindex plus
+  Enter/Space handling reads the same to assistive technology without being a
+  form control.
+*/
+.path-card, .workout-card, .interval-card, .chip {
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.path-card:focus-visible, .workout-card:focus-visible,
+.interval-card:focus-visible, .chip:focus-visible {
+  outline: 3px solid var(--teal-bright);
+  outline-offset: 2px;
+}
 
-  1. `touch-action`. Any value other than `auto` sends the touch down a
-     different gesture path. There is none in this file at all now.
+/*
+  SCROLLING FROM ANYWHERE, and what has been tried
 
-  2. `user-select: none`. On iPad this makes a long press start a
-     drag-and-drop gesture rather than a text selection, and that recogniser
-     owns the touch. Replaced with `-webkit-user-drag: none`, which says the
-     same thing without affecting selection or scrolling.
+  Symptom, iPad only (Safari and Chrome, which is WebKit underneath), not
+  Android and not desktop: a fast flick starting on a card scrolls the page, a
+  slow press-and-drag does not. Dragging from the gaps between cards always
+  works. It reproduces on old production builds, so nothing in this rework
+  caused it.
 
-  3. `transform: scale()` on `:active`, plus `transition: transform`. See the
-     press-feedback block below. This is the likeliest of the three, because
-     it applied to precisely the elements that failed (buttons and cards) and
-     to nothing on the background, which always scrolled.
+  Removed so far, none of which fixed it on the device:
 
-  selfcheck.mjs fails the build if any of the three come back, since none of
-  it reproduces in a desktop browser or on Android and it is therefore easy
-  to reintroduce by accident. scroll-test.html measures them on the device.
+  1. `touch-action`. Any non-`auto` value routes the touch through a different
+     gesture path. There is none in this file now.
+  2. `user-select: none` on the cards, replaced by `-webkit-user-drag: none`.
+  3. `transform: scale()` on `:active` plus `transition: transform`, replaced
+     by paint-only press feedback (see below).
+  4. Document scrolling, replaced by the #scroller container above.
+
+  Current attempt: the large surfaces are no longer `<button>` elements. That
+  is the one difference between a card and the background gaps that had not
+  been touched, and it fits why this is not a widely known problem, since
+  buttons are normally too small to start a drag on.
+
+  All four removals are worth keeping regardless (1 and 3 are genuine
+  performance and correctness wins), and selfcheck.mjs guards 1 and 3 so they
+  cannot come back unnoticed. scroll-test.html measures each on the device:
+  panel A is a plain div and panel B a plain button, which is the comparison
+  that tests the current theory.
 */
 .path-card, .workout-card, .interval-card, .chip, .picker-row, .person,
 .timer-card, .block-info, .upcoming, .preview-card, .toggle-row,
