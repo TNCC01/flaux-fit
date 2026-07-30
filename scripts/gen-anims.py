@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-"""Generate the stick-figure exercise demo SVGs for FIT.
+"""Generate the animated exercise demo SVGs for FIT.
 
-Each exercise gets two poses (start / end position) written to
-img/exercises/<base>-0.svg and <base>-1.svg; the app cross-fades them.
-Figures are drawn in the app palette: teal figure, amber equipment,
-transparent background. Re-run after editing poses:  python3 scripts/gen-anims.py
+Each exercise declares two poses — start and end — as joint coordinates.
+They are interpolated into a ping-pong flipbook and baked to a single
+self-animating file at img/exercises/<base>.svg (CSS keyframes, no JS),
+which the app drops straight into an <img>.
+
+Figures are android-styled in the app palette: teal limbs with a dark
+core, amber equipment, the working muscle group lit in rose (see ACTIVE),
+transparent background.
+
+The two poses of an exercise MUST use the same number of arm chains, leg
+chains and decorations, or the flipbook frames won't line up — the build
+fails loudly with the offending exercise name if they don't.
+
+Re-run after editing poses:  python3 scripts/gen-anims.py
 """
 import os
 
@@ -898,24 +908,1220 @@ def _(i):
             [(x + 38, 230 - tuck), (x + 46, 256 - tuck)]]
     return [rings(hands), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
 
+# ======================================================================
+# EXPANDED LIBRARY
+# One bespoke animation per new exercise. Grouped by family; the shared
+# depth/stance helpers below take a continuous parameter so each exercise
+# gets its own distinct start and end pose rather than reusing another's.
+# ======================================================================
+
+def _squat_d(x=240, d=0.0, arm='front'):
+    """Side-on squat at depth d (0 = standing, 1 = bottom position)."""
+    hip = (x - 32 * d, 192 + 46 * d)
+    neck = (x - 10 * d, 118 + 40 * d)
+    head = (x + 2 - 6 * d, 90 + 40 * d)
+    legs = [[(x - 6 + 32 * d, 240 + 4 * d), (x - 8 + 22 * d, GY)],
+            [(x + 8 + 22 * d, 240 + 6 * d), (x + 6 + 14 * d, GY)]]
+    if arm == 'front':
+        arms = [[(x + 38 - 12 * d, 128 + 40 * d), (x + 74 - 12 * d, 126 + 40 * d)]]
+    elif arm == 'chest':
+        arms = [[(x + 26 - 10 * d, 145 + 41 * d), (x + 20 - 8 * d, 128 + 40 * d)]]
+    elif arm == 'rack':
+        arms = [[(x + 24 - 8 * d, 148 + 41 * d), (x + 14 - 6 * d, 126 + 40 * d)]]
+    elif arm == 'up':
+        arms = [[(x + 10, 82 + 40 * d), (x + 14, 46 + 40 * d)]]
+    else:                                              # 'down'
+        arms = [[(x + 4 + 8 * d, 155 + 40 * d), (x + 2 + 8 * d, 185 + 40 * d)]]
+    return dict(head=head, neck=neck, hip=hip, arms=arms, legs=legs)
+
+def _split_d(x=240, d=0.0, s=1, arms=None):
+    """Side-on split stance at depth d (0 = tall, 1 = back knee low)."""
+    hip = (x, 196 + 26 * d)
+    neck = (x - 2 * s, 122 + 26 * d)
+    head = (x, 94 + 26 * d)
+    legs = [[(x + 34 * s, 244 + 6 * d), (x + 30 * s, GY)],
+            [(x - 46 * s, 240 + 20 * d), (x - 88 * s, GY - 2)]]
+    if arms is None:
+        arms = [[(x + 2 * s, 160 + 26 * d), (x, 190 + 26 * d)]]
+    return dict(head=head, neck=neck, hip=hip, arms=arms, legs=legs)
+
+def _front_stand(x=240, d=0.0, arms=None, wide=0):
+    """Front-on standing figure; d bends the knees, wide spreads the feet."""
+    neck, hip = (x, 112 + 30 * d), (x, 190 + 22 * d)
+    head = (x, 84 + 30 * d)
+    legs = [[(x - 10 - wide, 234 + 24 * d), (x - 12 - wide * 1.4, GY)],
+            [(x + 10 + wide, 234 + 24 * d), (x + 12 + wide * 1.4, GY)]]
+    if arms is None:
+        arms = [[(x - 20, 150 + 28 * d), (x - 16, 186 + 22 * d)],
+                [(x + 20, 150 + 28 * d), (x + 16, 186 + 22 * d)]]
+    return dict(head=head, neck=neck, hip=hip, arms=arms, legs=legs)
+
+def _supine(x=240, head_dx=88):
+    """Lying on the back, head to the right. Caller supplies arms/legs."""
+    return dict(hip=(x - 14, 266), neck=(x + head_dx - 18, 260),
+                head=(x + head_dx + 8, 254))
+
+def _quadruped(x=230):
+    """On hands and knees, head to the right. Caller supplies arms/legs."""
+    return dict(neck=(x + 60, 196), head=(x + 88, 188), hip=(x - 40, 198))
+
+# ---- new squat family --------------------------------------------------
+@pose('squatPulse')
+def _(i):
+    return [ground(), figure(**_squat_d(d=0.72 if i == 0 else 1.0, arm='front'))]
+
+@pose('sumoSquat')
+def _(i):
+    x = 240
+    d = 0.1 if i == 0 else 1.0
+    arms = [[(x - 16, 154 + 30 * d), (x - 6, 196 + 26 * d)],
+            [(x + 16, 154 + 30 * d), (x + 6, 196 + 26 * d)]]
+    return [ground(), figure(**_front_stand(x, d, arms, wide=46))]
+
+@pose('dbSquat')
+def _(i):
+    x = 240
+    d = 0.05 if i == 0 else 1.0
+    hands = [(x - 30, 196 + 24 * d), (x + 30, 196 + 24 * d)]
+    arms = [[(x - 22, 152 + 28 * d), hands[0]], [(x + 22, 152 + 28 * d), hands[1]]]
+    return [ground(), figure(**_front_stand(x, d, arms)),
+            [p for h in hands for p in dumbbell(h, 12)]]
+
+@pose('kbFrontSquat')
+def _(i):
+    f = _squat_d(d=0.05 if i == 0 else 1.0, arm='rack')
+    hand = f['arms'][0][-1]
+    return [ground(), figure(**f), kb((hand[0], hand[1] - 2), 10)]
+
+@pose('kbThruster')
+def _(i):
+    x = 240
+    if i == 0:
+        f = _squat_d(x, 1.0, arm='rack')
+        hand = f['arms'][0][-1]
+        return [ground(), figure(**f), kb((hand[0], hand[1] - 2), 9)]
+    f = _squat_d(x, 0.0, arm='up')
+    hand = (x + 14, 46)
+    return [ground(), figure(**f), kb(hand, 9)]
+
+@pose('barbellThruster')
+def _(i):
+    x = 240
+    d = 1.0 if i == 0 else 0.0
+    hands_y = (134 + 40) if i == 0 else 44
+    arms = [[(x - 34, hands_y + 18), (x - 30, hands_y)],
+            [(x + 34, hands_y + 18), (x + 30, hands_y)]]
+    return [ground(), figure(**_front_stand(x, d, arms)),
+            barbell_front(hands_y, x - 30, x + 30)]
+
+@pose('boxJump')
+def _(i):
+    x = 218
+    bx = box(x + 76, GY - 56, 92, 56)
+    if i == 0:
+        f = _squat_d(x, 0.85, arm='down')
+        return [ground(), bx, figure(**f)]
+    lift = 60
+    hip = (x + 108, 200 - lift)
+    neck, head = (x + 110, 126 - lift), (x + 112, 98 - lift)
+    legs = [[(x + 98, 244 - lift), (x + 100, GY - 56)],
+            [(x + 118, 244 - lift), (x + 120, GY - 56)]]
+    arms = [[(x + 118, 160 - lift), (x + 128, 192 - lift)]]
+    return [ground(), bx, figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+# ---- new lunge family -------------------------------------------------
+@pose('splitSquat')
+def _(i):
+    return [ground(), figure(**_split_d(d=0.15 if i == 0 else 1.0))]
+
+@pose('bulgarianSplitSquat')
+def _(i):
+    x = 252
+    bx = box(x - 152, GY - 44, 84, 44)
+    d = 0.15 if i == 0 else 1.0
+    hip = (x, 190 + 30 * d)
+    neck, head = (x - 2, 116 + 30 * d), (x, 88 + 30 * d)
+    legs = [[(x + 30, 244 + 6 * d), (x + 26, GY)],
+            [(x - 58, 230 + 26 * d), (x - 106, GY - 44)]]
+    arms = [[(x + 2, 152 + 30 * d), (x, 182 + 30 * d)]]
+    return [ground(), bx, figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('dbSplitSquat')
+def _(i):
+    d = 0.15 if i == 0 else 1.0
+    x = 240
+    hand = (x + 6, 196 + 26 * d)
+    f = _split_d(x, d, arms=[[(x + 2, 158 + 26 * d), hand]])
+    return [ground(), figure(**f), dumbbell(hand, 12)]
+
+@pose('overheadLunge')
+def _(i):
+    d = 0.15 if i == 0 else 1.0
+    x = 240
+    hand = (x + 10, 46)
+    f = _split_d(x, d, arms=[[(x + 6, 84), hand]])
+    return [ground(), figure(**f), dumbbell(hand, 12)]
+
+@pose('pistolSquat')
+def _(i):
+    x = 232
+    hand = (x + 74, 118)
+    d = 0.0 if i == 0 else 1.0
+    hip = (x - 8 * d, 196 + 52 * d)
+    neck, head = (x, 122 + 40 * d), (x + 2, 94 + 40 * d)
+    legs = [[(x - 2 + 18 * d, 244 + 4 * d), (x - 4 + 12 * d, GY)],
+            [(x + 22 + 28 * d, 240 - 6 * d), (x + 66 + 44 * d, 236 + 18 * d)]]
+    arms = [[(x + 40, 146 + 18 * d), hand]]
+    return [ground(), rings([hand]),
+            figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('walkingLunge')
+def _(i):
+    x = 208 if i == 0 else 270
+    d = 1.0 if i == 0 else 0.25
+    hip = (x, 196 + 26 * d)
+    neck, head = (x - 4, 122 + 26 * d), (x - 2, 94 + 26 * d)
+    legs = [[(x + 36, 244 + 6 * d), (x + 32, GY)],
+            [(x - 44, 240 + 20 * d), (x - 86, GY - 2)]]
+    arms = [[(x - 24, 152 + 26 * d), (x - 48, 176 + 26 * d)],
+            [(x + 24, 152 + 26 * d), (x + 50, 130 + 26 * d)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('lateralLunge')
+def _(i):
+    x = 240
+    if i == 0:
+        return [ground(), figure(**_front_stand(x))]
+    neck, hip = (x - 34, 146), (x - 42, 218)
+    head = (x - 32, 118)
+    legs = [[(x - 78, 250), (x - 88, GY)],
+            [(x + 36, 262), (x + 98, GY - 2)]]
+    arms = [[(x - 26, 176), (x - 8, 198)], [(x - 14, 172), (x + 14, 192)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('curtsyLunge')
+def _(i):
+    x = 240
+    if i == 0:
+        return [ground(), figure(**_front_stand(x))]
+    neck, hip = (x - 6, 138), (x - 10, 214)
+    head = (x - 4, 110)
+    legs = [[(x - 34, 250), (x - 38, GY)],
+            [(x + 24, 244), (x - 56, 282)]]
+    arms = [[(x - 28, 168), (x - 36, 198)], [(x + 14, 166), (x + 24, 196)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('jumpLunge')
+def _(i):
+    x = 240
+    if i == 0:
+        arms = [[(x - 22, 186), (x - 44, 208)], [(x + 22, 186), (x + 46, 164)]]
+        return [ground(), figure(**_split_d(x, 1.0, arms=arms))]
+    lift = 34
+    hip = (x, 176 - lift)
+    neck, head = (x - 2, 102 - lift), (x, 74 - lift)
+    legs = [[(x - 28, 214 - lift), (x - 46, 250 - lift)],
+            [(x + 30, 216 - lift), (x + 50, 252 - lift)]]
+    arms = [[(x - 26, 132 - lift), (x - 50, 108 - lift)],
+            [(x + 26, 132 - lift), (x + 50, 108 - lift)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('stepUpJump')
+def _(i):
+    x = 250
+    bx = box(x + 10, GY - 52, 96, 52)
+    if i == 0:
+        neck, hip = (x - 30, 128), (x - 30, 202)
+        head = (x - 28, 100)
+        legs = [[(x - 36, 246), (x - 38, GY)], [(x + 18, 218), (x + 40, GY - 52)]]
+        arms = [[(x - 26, 165), (x - 28, 195)]]
+    else:
+        lift = 96
+        neck, hip = (x + 40, 128 - lift), (x + 40, 202 - lift)
+        head = (x + 42, 100 - lift)
+        legs = [[(x + 26, 240 - lift), (x + 24, 270 - lift)],
+                [(x + 50, 240 - lift), (x + 54, 270 - lift)]]
+        arms = [[(x + 48, 158 - lift), (x + 62, 128 - lift)]]
+    return [ground(), bx, figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('stepDown')
+def _(i):
+    x = 250
+    bx = box(x - 44, GY - 52, 96, 52)
+    if i == 0:
+        neck, hip = (x + 6, 76), (x + 6, 150)
+        head = (x + 8, 48)
+        legs = [[(x, 196), (x + 2, GY - 52)], [(x + 20, 190), (x + 38, 214)]]
+        arms = [[(x + 12, 112), (x + 10, 142)]]
+    else:
+        neck, hip = (x + 2, 108), (x - 4, 182)
+        head = (x + 4, 80)
+        legs = [[(x + 4, 226), (x + 6, GY - 52)], [(x - 48, 228), (x - 68, GY)]]
+        arms = [[(x + 6, 144), (x + 4, 174)]]
+    return [ground(), bx, figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('singleLegCalfRaise')
+def _(i):
+    x = 236
+    lift = 0 if i == 0 else 16
+    wall = line([(x + 78, 40), (x + 78, GY)], BORDER, 6)
+    neck, hip = (x, 118 - lift), (x, 192 - lift)
+    head = (x + 2, 90 - lift)
+    heel = GY if i == 0 else GY - 16
+    legs = [[(x - 2, 240 - lift), (x - 2, heel)],
+            [(x + 18, 234 - lift), (x + 38, 256 - lift)]]
+    arms = [[(x + 32, 148 - lift), (x + 60, 140 - lift)]]
+    toes = line([(x - 2, heel), (x + 8, GY)], TEAL, SW)
+    return [ground(), wall,
+            figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs), toes]
+
+# ---- new hinge / glute family -----------------------------------------
+@pose('singleLegRdl')
+def _(i):
+    x = 240
+    if i == 0:
+        legs = [[(x - 2, 240), (x - 4, GY)], [(x + 16, 236), (x + 34, 258)]]
+        arms = [[(x + 6, 156), (x + 4, 188)]]
+        return [ground(), figure(head=(x + 2, 90), neck=(x, 118), hip=(x, 192),
+                                 arms=arms, legs=legs)]
+    hip = (x + 8, 202)
+    neck, head = (x - 62, 178), (x - 88, 176)
+    legs = [[(x + 12, 246), (x + 8, GY)], [(x + 56, 184), (x + 112, 172)]]
+    arms = [[(x - 56, 224), (x - 52, 256)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('dbRdl')
+def _(i):
+    x = 240
+    if i == 0:
+        hands = [(x - 26, 196), (x + 26, 196)]
+        f = _front_stand(x, 0.0, arms=[[(x - 20, 152), hands[0]], [(x + 20, 152), hands[1]]])
+        return [ground(), figure(**f), [p for h in hands for p in dumbbell(h, 12)]]
+    hip = (x + 6, 200)
+    neck, head = (x - 62, 156), (x - 86, 150)
+    legs = [[(x + 6, 246), (x, GY)], [(x + 16, 246), (x + 10, GY)]]
+    hands = [(x - 48, 236), (x - 40, 240)]
+    arms = [[(x - 54, 190), hands[0]], [(x - 46, 192), hands[1]]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs),
+            [p for h in hands for p in dumbbell(h, 12)]]
+
+@pose('barbellRdl')
+def _(i):
+    x = 240
+    if i == 0:
+        hand = (x - 8, 198)
+        f = _squat_d(x, 0.0, arm='down')
+        f['arms'] = [[(x - 4, 160), hand]]
+        return [ground(), figure(**f), barbell_side(hand)]
+    hand = (x - 44, 240)
+    f = _hinge(x, deep=False, arm_end=hand)
+    f['neck'] = (x - 58, 148); f['head'] = (x - 82, 140)
+    return [ground(), figure(**f), barbell_side(hand)]
+
+@pose('barbellGoodMorning')
+def _(i):
+    x = 240
+    if i == 0:
+        f = _squat_d(x, 0.0, arm='down')
+        f['arms'] = [[(x - 22, 108), (x + 20, 106)]]
+        return [ground(), figure(**f), barbell_front(104, x - 22, x + 20)]
+    f = _hinge(x, deep=False)
+    f['neck'] = (x - 54, 140); f['head'] = (x - 78, 128)
+    f['arms'] = [[(x - 74, 120), (x - 34, 132)]]
+    return [ground(), figure(**f), barbell_front(126, x - 74, x - 34)]
+
+@pose('kbSumoDeadlift')
+def _(i):
+    x = 240
+    d = 0.0 if i else 1.0
+    hand = (x, 214 + 46 * d)
+    f = _front_stand(x, d, wide=40,
+                     arms=[[(x - 12, 152 + 30 * d), hand], [(x + 12, 152 + 30 * d), hand]])
+    return [ground(), figure(**f), kb(hand, 11)]
+
+@pose('kbSingleLegRdl')
+def _(i):
+    x = 240
+    if i == 0:
+        hand = (x + 4, 190)
+        legs = [[(x - 2, 240), (x - 4, GY)], [(x + 16, 236), (x + 34, 258)]]
+        f = dict(head=(x + 2, 90), neck=(x, 118), hip=(x, 192),
+                 arms=[[(x + 6, 156), hand]], legs=legs)
+        return [ground(), figure(**f), kb(hand, 10)]
+    hip = (x + 8, 202)
+    hand = (x - 54, 248)
+    neck, head = (x - 62, 178), (x - 88, 176)
+    legs = [[(x + 12, 246), (x + 8, GY)], [(x + 56, 184), (x + 112, 172)]]
+    arms = [[(x - 58, 216), hand]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs),
+            kb(hand, 10)]
+
+@pose('kbSwingSingle')
+def _(i):
+    x = 240
+    if i == 0:
+        hand = (x - 28, 240)
+        f = _hinge(x, arm_end=hand)
+        f['arms'] = [[(x - 46, 210), hand]]
+        return [ground(), figure(**f), kb(hand, 11)]
+    hand = (x - 76, 148)
+    f = _squat_d(x, 0.0, arm='down')
+    f['arms'] = [[(x - 40, 138), hand]]
+    return [ground(), figure(**f), kb(hand, 11)]
+
+@pose('kbHighPull')
+def _(i):
+    x = 240
+    if i == 0:
+        hand = (x - 26, 244)
+        f = _hinge(x, arm_end=hand)
+        f['arms'] = [[(x - 44, 214), hand]]
+        return [ground(), figure(**f), kb(hand, 11)]
+    hand = (x - 44, 128)
+    f = _squat_d(x, 0.0, arm='down')
+    f['arms'] = [[(x - 20, 116), hand]]
+    return [ground(), figure(**f), kb(hand, 11)]
+
+@pose('kbSnatch')
+def _(i):
+    x = 240
+    if i == 0:
+        hand = (x - 28, 246)
+        f = _hinge(x, arm_end=hand)
+        f['arms'] = [[(x - 46, 216), hand]]
+        return [ground(), figure(**f), kb(hand, 10)]
+    hand = (x + 12, 40)
+    f = _squat_d(x, 0.0, arm='down')
+    f['arms'] = [[(x + 8, 78), hand]]
+    return [ground(), figure(**f), kb(hand, 10)]
+
+@pose('hipThrust')
+def _(i):
+    x = 236
+    bench = box(x + 62, GY - 62, 104, 62)
+    if i == 0:
+        hip = (x - 16, 262)
+        neck, head = (x + 58, 236), (x + 84, 230)
+    else:
+        hip = (x - 16, 214)
+        neck, head = (x + 58, 232), (x + 84, 228)
+    legs = [[(x - 60, 240), (x - 66, GY)], [(x - 48, 244), (x - 54, GY)]]
+    arms = [[(x + 78, 232), (x + 108, GY - 62)]]
+    return [ground(), bench,
+            figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('frogPump')
+def _(i):
+    x = 240
+    f = _supine(x)
+    lift = 0 if i == 0 else 34
+    f['hip'] = (x - 14, 266 - lift)
+    legs = [[(x - 74, 250 - lift // 2), (x - 44, 276)],
+            [(x - 66, 262 - lift // 2), (x - 36, 284)]]
+    arms = [[(x + 46, GY - 6)]]
+    return [ground(), figure(**f, arms=arms, legs=legs)]
+
+@pose('gluteKickback')
+def _(i):
+    x = 230
+    f = _quadruped(x)
+    arms = [[(x + 66, GY)], [(x + 78, GY)]]
+    if i == 0:
+        legs = [[(x - 52, 244), (x - 56, GY)], [(x - 48, 230), (x - 20, 250)]]
+    else:
+        legs = [[(x - 52, 244), (x - 56, GY)], [(x - 84, 178), (x - 138, 168)]]
+    return [ground(), figure(**f, arms=arms, legs=legs)]
+
+@pose('fireHydrant')
+def _(i):
+    x = 230
+    f = _quadruped(x)
+    arms = [[(x + 66, GY)], [(x + 78, GY)]]
+    if i == 0:
+        legs = [[(x - 52, 244), (x - 56, GY)], [(x - 44, 238), (x - 40, GY - 8)]]
+    else:
+        legs = [[(x - 52, 244), (x - 56, GY)], [(x - 58, 196), (x - 100, 168)]]
+    return [ground(), figure(**f, arms=arms, legs=legs)]
+
+# ---- new push family ---------------------------------------------------
+def _pushup_d(x=225, d=0.0, hands_y=GY, hand_dx=0, feet_y=None, tilt=0.0):
+    """Horizontal push-up at depth d (0 = arms locked, 1 = chest down).
+    tilt raises (+) or drops (-) the head end for incline / decline."""
+    drop = 44 * d
+    neck = (x + 90, 196 + drop - tilt)
+    head = (x + 117, 188 + drop - tilt)
+    hip = (x - 10, 214 + drop - tilt * 0.35)
+    hand = (x + 78 + hand_dx, hands_y)
+    elbow = (x + 100 + hand_dx, 202 + drop - tilt)
+    arms = [[elbow, hand]]
+    legs = [[(x - 66, 244 + drop * 0.5), (x - 122, GY - 6 if feet_y is None else feet_y)]]
+    return dict(head=head, neck=neck, hip=hip, arms=arms, legs=legs)
+
+@pose('widePushup')
+def _(i):
+    x, d = 225, 0.0 if i == 0 else 1.0
+    f = _pushup_d(x, d)
+    f['arms'] = [[(x + 84 + 20 * d, 204 + 44 * d), (x + 54, GY)],
+                 [(x + 96 + 22 * d, 200 + 44 * d), (x + 104, GY)]]
+    return [ground(), figure(**f)]
+
+@pose('diamondPushup')
+def _(i):
+    x, d = 225, 0.0 if i == 0 else 1.0
+    f = _pushup_d(x, d, hand_dx=-8)
+    f['arms'] = [[(x + 92 + 8 * d, 204 + 44 * d), (x + 70, GY)],
+                 [(x + 96 + 8 * d, 202 + 44 * d), (x + 74, GY)]]
+    return [ground(), figure(**f)]
+
+@pose('tempoPushup')
+def _(i):
+    return [ground(), figure(**_pushup_d(d=0.32 if i == 0 else 1.0))]
+
+@pose('inclinePushup')
+def _(i):
+    x = 210
+    bench = box(x + 106, GY - 58, 96, 58)
+    f = _pushup_d(x, 0.0 if i == 0 else 1.0, hands_y=GY - 58, tilt=44)
+    return [ground(), bench, figure(**f)]
+
+@pose('declinePushup')
+def _(i):
+    x = 240
+    bench = box(x - 178, GY - 52, 92, 52)
+    f = _pushup_d(x, 0.0 if i == 0 else 1.0, tilt=-34, feet_y=GY - 52)
+    return [ground(), bench, figure(**f)]
+
+@pose('clapPushup')
+def _(i):
+    x = 225
+    if i == 0:
+        return [ground(), figure(**_pushup_d(x, 1.0))]
+    f = _pushup_d(x, 0.0)
+    f['neck'] = (x + 90, 176); f['head'] = (x + 117, 168)
+    f['hip'] = (x - 10, 196)
+    f['arms'] = [[(x + 104, 190), (x + 86, GY - 26)]]
+    f['legs'] = [[(x - 66, 228), (x - 122, GY - 14)]]
+    return [ground(), figure(**f)]
+
+@pose('elevatedPikePushup')
+def _(i):
+    x = 250
+    bench = box(x - 20, GY - 56, 96, 56)
+    hip = (x + 8, 128)
+    if i == 0:
+        neck, head = (x - 68, 200), (x - 78, 226)
+        arms = [[(x - 96, GY)]]
+    else:
+        neck, head = (x - 78, 240), (x - 86, 264)
+        arms = [[(x - 108, 248), (x - 96, GY)]]
+    legs = [[(x + 6, 190), (x + 34, GY - 56)]]
+    return [ground(), bench,
+            figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('wallHandstand')
+def _(i):
+    x = 250
+    wall = line([(x + 56, 24), (x + 56, GY)], BORDER, 6)
+    sway = 0 if i == 0 else 5
+    hip = (x + 30 - sway, 122)
+    neck, head = (x + 16 - sway, 210), (x + 12 - sway, 240)
+    arms = [[(x + 6, 250), (x, GY)], [(x + 22, 250), (x + 18, GY)]]
+    legs = [[(x + 36, 74), (x + 40, 34)], [(x + 44, 74), (x + 48, 34)]]
+    return [ground(), wall,
+            figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('wallWalk')
+def _(i):
+    x = 258
+    wall = line([(x + 58, 24), (x + 58, GY)], BORDER, 6)
+    if i == 0:
+        hip = (x - 12, 190)
+        neck, head = (x - 62, 236), (x - 76, 258)
+        arms = [[(x - 92, 250), (x - 100, GY)]]
+        legs = [[(x + 22, 174), (x + 44, 122)]]
+    else:
+        hip = (x + 24, 128)
+        neck, head = (x + 2, 208), (x - 4, 236)
+        arms = [[(x - 16, 250), (x - 24, GY)]]
+        legs = [[(x + 34, 82), (x + 44, 40)]]
+    return [ground(), wall,
+            figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+# ---- new pull family ---------------------------------------------------
+@pose('supermanYtw')
+def _(i):
+    x = 240
+    lift = 16
+    hip = (x, 262)
+    neck = (x + 84, 254)
+    head = (x + 110, 246)
+    if i == 0:                                    # Y — arms forward and wide
+        arms = [[(x + 126, 232), (x + 158, 214)], [(x + 132, 250), (x + 166, 244)]]
+    else:                                         # T — arms straight out
+        arms = [[(x + 112, 216), (x + 118, 178)], [(x + 122, 252), (x + 156, 262)]]
+    legs = [[(x - 66, 254), (x - 126, 244 - lift)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('ringChinup')
+def _(i):
+    x = 240
+    hands = [(x - 26, 82), (x + 26, 82)]
+    if i == 0:
+        neck, head = (x, 146), (x, 118)
+        hip = (x, 220)
+        arms = [[(x - 14, 112), hands[0]], [(x + 14, 112), hands[1]]]
+        legs = [[(x - 6, 254), (x - 14, 282)], [(x + 8, 254), (x + 2, 282)]]
+    else:
+        neck, head = (x, 106), (x, 78)
+        hip = (x, 180)
+        arms = [[(x - 34, 118), hands[0]], [(x + 34, 118), hands[1]]]
+        legs = [[(x - 10, 216), (x - 20, 246)], [(x + 6, 216), (x, 246)]]
+    return [rings(hands), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('ringHang')
+def _(i):
+    x = 240
+    hands = [(x - 26, 74), (x + 26, 74)]
+    pack = 0 if i == 0 else 8
+    neck, head = (x, 150 - pack), (x, 122 - pack)
+    hip = (x, 226 - pack)
+    arms = [[hands[0]], [hands[1]]]
+    legs = [[(x - 6, 262 - pack), (x - 14, 288 - pack)],
+            [(x + 8, 262 - pack), (x + 2, 288 - pack)]]
+    return [rings(hands), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+# ---- new core family ---------------------------------------------------
+@pose('plankReach')
+def _(i):
+    f = _plank()
+    x = 225
+    if i == 0:
+        f['arms'] = [[(x + 70, GY)], [(x + 86, GY)]]
+    else:
+        f['arms'] = [[(x + 70, GY)], [(x + 134, 186), (x + 176, 180)]]
+    return [ground(), figure(**f)]
+
+@pose('plankUpDown')
+def _(i):
+    x = 225
+    if i == 0:
+        f = _plank(forearm=True)
+        f['arms'] = [[(x + 62, GY), (x + 96, GY)]]
+    else:
+        f = _plank()
+        f['arms'] = [[(x + 96, 218), (x + 80, GY)]]
+        f['hip'] = (x - 10, 208)
+        f['neck'] = (x + 88, 190); f['head'] = (x + 116, 182)
+    return [ground(), figure(**f)]
+
+@pose('plankJack')
+def _(i):
+    f = _plank()
+    x = 225
+    f['arms'] = [[(x + 70, GY)], [(x + 86, GY)]]
+    if i == 0:
+        f['legs'] = [[(x - 64, 246), (x - 120, GY - 8)], [(x - 68, 242), (x - 124, GY - 4)]]
+    else:
+        f['legs'] = [[(x - 62, 232), (x - 116, GY - 34)], [(x - 70, 256), (x - 128, GY + 14)]]
+    return [ground(), figure(**f)]
+
+@pose('bearHold')
+def _(i):
+    x = 230
+    f = _quadruped(x)
+    hov = 12 if i == 0 else 16
+    arms = [[(x + 66, GY)], [(x + 78, GY)]]
+    legs = [[(x - 52, 240), (x - 56, GY - hov)], [(x - 40, 242), (x - 44, GY - hov)]]
+    return [ground(), figure(**f, arms=arms, legs=legs)]
+
+@pose('vUp')
+def _(i):
+    x = 240
+    if i == 0:
+        f = _supine(x, head_dx=78)
+        arms = [[(x + 104, 250), (x + 140, 254)]]
+        legs = [[(x - 78, 262), (x - 138, 266)]]
+        return [ground(), figure(**f, arms=arms, legs=legs)]
+    hip = (x - 6, 264)
+    neck, head = (x + 44, 194), (x + 56, 168)
+    arms = [[(x + 14, 168), (x - 20, 148)]]
+    legs = [[(x - 48, 198), (x - 88, 152)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('tuckUp')
+def _(i):
+    x = 240
+    if i == 0:
+        f = _supine(x, head_dx=78)
+        arms = [[(x + 104, 252), (x + 138, 258)]]
+        legs = [[(x - 74, 264), (x - 134, 268)]]
+        return [ground(), figure(**f, arms=arms, legs=legs)]
+    hip = (x - 4, 262)
+    neck, head = (x + 46, 202), (x + 58, 176)
+    arms = [[(x + 22, 224), (x - 8, 236)]]
+    legs = [[(x - 30, 214), (x + 6, 238)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('crunch')
+def _(i):
+    x = 240
+    curl = 0 if i == 0 else 24
+    hip = (x - 14, 268)
+    neck = (x + 62, 258 - curl)
+    head = (x + 86, 250 - curl * 1.3)
+    arms = [[(x + 70, 234 - curl), (x + 56, 250 - curl)]]
+    legs = [[(x - 62, 234), (x - 40, 274)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('reverseCrunch')
+def _(i):
+    x = 240
+    f = _supine(x, head_dx=80)
+    arms = [[(x + 44, GY - 4)]]
+    if i == 0:
+        legs = [[(x - 56, 236), (x - 30, 272)]]
+    else:
+        legs = [[(x - 22, 214), (x + 14, 226)]]
+    return [ground(), figure(**f, arms=arms, legs=legs)]
+
+@pose('sidePlankHold')
+def _(i):
+    x = 235
+    rise = 0 if i == 0 else 6
+    hip = (x - 6, 226 - rise)
+    neck, head = (x + 80, 208), (x + 106, 200)
+    arms = [[(x + 62, 250), (x + 92, GY)], [(x + 74, 176), (x + 80, 138)]]
+    legs = [[(x - 68, 248 - rise), (x - 126, GY - 4)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('sidePlankThread')
+def _(i):
+    x = 235
+    hip = (x - 6, 226)
+    neck, head = (x + 80, 208), (x + 106, 200)
+    if i == 0:
+        arms = [[(x + 62, 250), (x + 92, GY)], [(x + 74, 174), (x + 80, 136)]]
+    else:
+        arms = [[(x + 62, 250), (x + 92, GY)], [(x + 42, 224), (x - 4, 240)]]
+    legs = [[(x - 68, 248), (x - 126, GY - 4)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('crabWalk')
+def _(i):
+    x = 236 if i == 0 else 258
+    s = 1 if i == 0 else -1
+    hip = (x - 30, 224)
+    neck, head = (x + 44, 214), (x + 66, 200)
+    arms = [[(x + 56, 248), (x + 64, GY)]]
+    legs = [[(x - 62, 240 - 6 * s), (x - 70, GY)], [(x - 50, 244 + 6 * s), (x - 58, GY)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('crabReach')
+def _(i):
+    x = 240
+    hip = (x - 30, 228)
+    if i == 0:
+        neck, head = (x + 44, 216), (x + 66, 202)
+        arms = [[(x + 58, 250), (x + 66, GY)], [(x + 50, 248), (x + 56, GY)]]
+        legs = [[(x - 64, 244), (x - 72, GY)], [(x - 52, 246), (x - 60, GY)]]
+    else:
+        neck, head = (x + 40, 210), (x + 62, 196)
+        arms = [[(x + 56, 250), (x + 64, GY)], [(x - 6, 176), (x - 54, 168)]]
+        legs = [[(x - 66, 246), (x - 74, GY)], [(x - 62, 190), (x - 96, 160)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('mountainClimberCross')
+def _(i):
+    f = _plank()
+    x = 225
+    f['arms'] = [[(x + 70, GY)], [(x + 86, GY)]]
+    ext = [(x - 66, 244), (x - 122, GY - 6)]
+    if i == 0:
+        f['legs'] = [ext, [(x - 14, 236), (x + 30, 214)]]
+    else:
+        f['legs'] = [[(x - 14, 258), (x + 30, 250)], ext]
+    return [ground(), figure(**f)]
+
+@pose('bearCrawlLateral')
+def _(i):
+    x = 230
+    neck, head = (x + 58, 200), (x + 84, 192)
+    hip = (x - 42, 202)
+    sp = 10 if i == 0 else 30
+    arms = [[(x + 72 - sp, GY)], [(x + 72 + sp, GY)]]
+    legs = [[(x - 60 - sp * 0.7, 246), (x - 58 - sp, GY)],
+            [(x - 60 + sp * 0.7, 246), (x - 58 + sp, GY)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('inchwormPushup')
+def _(i):
+    x = 225
+    if i == 0:
+        f = _plank()
+        f['arms'] = [[(x + 100, 202), (x + 80, GY)]]
+        return [ground(), figure(**f)]
+    f = _pushup_d(x, 1.0)
+    return [ground(), figure(**f)]
+
+# ---- new standing cardio family ---------------------------------------
+@pose('squatThrust')
+def _(i):
+    if i == 0:
+        x = 240
+        f = _squat_d(x, 1.0, arm='down')
+        f['arms'] = [[(x + 20, 210), (x + 30, 262)]]
+        return [ground(), figure(**f)]
+    x = 225
+    f = _plank()
+    f['arms'] = [[(x + 96, 214), (x + 80, GY)]]
+    f['legs'] = [[(x - 62, 246), (x - 118, GY - 8)], [(x - 68, 242), (x - 124, GY - 4)]]
+    return [ground(), figure(**f)]
+
+@pose('burpeeBroadJump')
+def _(i):
+    if i == 0:
+        x = 205
+        f = _plank(x)
+        f['arms'] = [[(x + 96, 214), (x + 80, GY)]]
+        f['legs'] = [[(x - 62, 246), (x - 118, GY - 8)], [(x - 68, 242), (x - 124, GY - 4)]]
+        return [ground(), figure(**f)]
+    x = 288
+    lift = 46
+    hip = (x, 186 - lift)
+    neck, head = (x + 12, 114 - lift), (x + 20, 88 - lift)
+    legs = [[(x - 14, 226 - lift), (x - 44, 250 - lift)],
+            [(x - 4, 230 - lift), (x - 34, 256 - lift)]]
+    arms = [[(x + 34, 128 - lift), (x + 66, 108 - lift)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('sealJack')
+def _(i):
+    x = 240
+    if i == 0:
+        arms = [[(x - 30, 148), (x - 4, 142)], [(x + 30, 148), (x + 4, 142)]]
+        f = _front_stand(x, 0.0, arms=arms)
+        f['legs'] = [[(x - 10, 240), (x - 12, GY)], [(x + 10, 240), (x + 12, GY)]]
+    else:
+        arms = [[(x - 40, 144), (x - 82, 138)], [(x + 40, 144), (x + 82, 138)]]
+        f = _front_stand(x, 0.0, arms=arms)
+        f['legs'] = [[(x - 38, 238), (x - 58, GY)], [(x + 38, 238), (x + 58, GY)]]
+    return [ground(), figure(**f)]
+
+@pose('jackSquat')
+def _(i):
+    x = 240
+    if i == 0:
+        arms = [[(x - 44, 82), (x - 58, 46)], [(x + 44, 82), (x + 58, 46)]]
+        f = _front_stand(x, 0.0, arms=arms)
+        f['legs'] = [[(x - 38, 238), (x - 58, GY)], [(x + 38, 238), (x + 58, GY)]]
+        return [ground(), figure(**f)]
+    arms = [[(x - 24, 178), (x - 6, 200)], [(x + 24, 178), (x + 6, 200)]]
+    f = _front_stand(x, 1.0, arms=arms, wide=30)
+    return [ground(), figure(**f)]
+
+@pose('buttKicks')
+def _(i):
+    x = 240
+    neck, hip = (x, 116), (x, 190)
+    head = (x + 2, 88)
+    kick = [(x - 6, 240), (x + 34, 232)]
+    down = [(x + 4, 240), (x + 2, GY)]
+    legs = [down, kick] if i == 0 else [kick, down]
+    arms = [[(x + 28, 142), (x + 50, 124)]] if i == 0 else [[(x - 20, 148), (x - 42, 132)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('skiJump')
+def _(i):
+    x = 240
+    s = 1 if i == 0 else -1
+    hip = (x + 26 * s, 196)
+    neck, head = (x + 18 * s, 122), (x + 20 * s, 94)
+    legs = [[(x + 34 * s, 240), (x + 44 * s, GY - 10)],
+            [(x + 42 * s, 242), (x + 54 * s, GY - 8)]]
+    arms = [[(x - 6 * s, 152), (x - 32 * s, 168)], [(x + 4 * s, 150), (x - 22 * s, 172)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('tuckJump')
+def _(i):
+    x = 240
+    if i == 0:
+        arms = [[(x - 22, 178), (x - 8, 204)], [(x + 22, 178), (x + 8, 204)]]
+        return [ground(), figure(**_front_stand(x, 0.85, arms=arms))]
+    lift = 52
+    hip = (x, 190 - lift)
+    neck, head = (x, 112 - lift), (x, 84 - lift)
+    legs = [[(x - 30, 190 - lift), (x - 22, 224 - lift)],
+            [(x + 30, 190 - lift), (x + 22, 224 - lift)]]
+    arms = [[(x - 26, 150 - lift), (x - 44, 176 - lift)],
+            [(x + 26, 150 - lift), (x + 44, 176 - lift)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('broadJump')
+def _(i):
+    if i == 0:
+        x = 190
+        f = _squat_d(x, 0.9, arm='down')
+        f['arms'] = [[(x + 16, 214), (x + 4, 254)]]
+        return [ground(), figure(**f)]
+    x = 292
+    lift = 40
+    hip = (x, 190 - lift)
+    neck, head = (x + 10, 116 - lift), (x + 18, 90 - lift)
+    legs = [[(x - 16, 224 - lift), (x - 46, 246 - lift)],
+            [(x - 6, 228 - lift), (x - 36, 252 - lift)]]
+    arms = [[(x + 34, 122 - lift), (x + 68, 104 - lift)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('lateralShuffle')
+def _(i):
+    # front view, low athletic stance skating side to side
+    x = 240
+    s = 1 if i == 0 else -1
+    hip = (x + 18 * s, 224)
+    neck, head = (x + 10 * s, 154), (x + 12 * s, 126)
+    legs = [[(x - 34 * s, 258), (x - 74 * s, GY)],
+            [(x + 62 * s, 256), (x + 96 * s, GY)]]
+    arms = [[(x - 20 * s, 184), (x - 52 * s, 196)],
+            [(x + 34 * s, 182), (x + 62 * s, 168)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('shuttleRun')
+def _(i):
+    # running out, then planting low to turn — both poses stay upright-ish
+    # so the interpolated frames read as a stride rather than a tangle
+    x = 240
+    if i == 0:
+        neck, head = (x + 22, 128), (x + 36, 102)
+        hip = (x, 200)
+        legs = [[(x + 42, 238), (x + 38, 282)], [(x - 38, 240), (x - 64, GY)]]
+        arms = [[(x - 6, 158), (x - 24, 190)], [(x + 48, 154), (x + 74, 130)]]
+    else:
+        neck, head = (x - 14, 168), (x - 34, 148)
+        hip = (x + 16, 226)
+        legs = [[(x - 10, 258), (x - 44, GY)], [(x + 50, 252), (x + 84, GY)]]
+        arms = [[(x - 40, 206), (x - 62, 248)], [(x + 10, 200), (x + 40, 188)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+
+@pose('doubleUnder')
+def _(i):
+    x = 240
+    lift = 8 if i == 0 else 34
+    neck, hip = (x, 118 - lift), (x, 192 - lift)
+    head = (x + 2, 90 - lift)
+    legs = [[(x - 6, 236 - lift), (x - 10, 268 - lift)],
+            [(x + 8, 236 - lift), (x + 4, 268 - lift)]]
+    arms = [[(x - 30, 158 - lift), (x - 54, 168 - lift)],
+            [(x + 30, 158 - lift), (x + 54, 168 - lift)]]
+    # two rope passes: one under the feet, one arcing overhead
+    lo = qarc((x - 54, 168 - lift), (x, GY + 20), (x + 54, 168 - lift))
+    hi = qarc((x - 54, 168 - lift), (x, 26 + lift), (x + 54, 168 - lift))
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs), lo, hi]
+
+# ---- new kettlebell family ---------------------------------------------
+@pose('kbPressSingle')
+def _(i):
+    x = 240
+    hand = (x + 22, 128) if i == 0 else (x + 16, 44)
+    elbow = (x + 30, 152) if i == 0 else (x + 26, 84)
+    arms = [[(x - 20, 152), (x - 16, 186)], [elbow, hand]]
+    return [ground(), figure(**_front_stand(x, 0.0, arms=arms)), kb(hand, 10)]
+
+@pose('kbRow')
+def _(i):
+    x = 240
+    hand = (x - 46, 250) if i == 0 else (x - 42, 194)
+    f = _hinge(x, deep=False, arm_end=hand)
+    f['neck'] = (x - 60, 150); f['head'] = (x - 84, 138)
+    f['arms'] = [[(x - 54, 250)], [(x - 52, 214), hand]]
+    return [ground(), figure(**f), kb(hand, 11)]
+
+@pose('kbHalo')
+def _(i):
+    x = 240
+    s = 1 if i == 0 else -1
+    bell = (x + 44 * s, 74)
+    arms = [[(x - 26 * s, 132), (x + 26 * s, 96)], [(x - 14 * s, 126), (x + 34 * s, 88)]]
+    return [ground(), figure(**_front_stand(x, 0.0, arms=arms)), kb(bell, 10)]
+
+@pose('kbWindmill')
+def _(i):
+    x = 240
+    hand = (x + 34, 46)
+    if i == 0:
+        neck, hip = (x, 118), (x, 194)
+        head = (x, 90)
+        legs = [[(x - 26, 240), (x - 42, GY)], [(x + 26, 240), (x + 42, GY)]]
+        arms = [[(x + 22, 82), hand], [(x - 22, 152), (x - 26, 188)]]
+    else:
+        neck, hip = (x + 6, 148), (x + 18, 214)
+        head = (x + 8, 120)
+        legs = [[(x - 22, 250), (x - 46, GY)], [(x + 40, 250), (x + 60, GY)]]
+        arms = [[(x + 26, 104), hand], [(x - 22, 216), (x - 44, 272)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs),
+            kb(hand, 10)]
+
+@pose('kbSuitcaseHold')
+def _(i):
+    x = 240
+    lean = 0 if i == 0 else 4
+    hand = (x + 38, 196)
+    arms = [[(x - 22, 152 + lean), (x - 20, 188 + lean)], [(x + 30, 152), hand]]
+    f = _front_stand(x, 0.0, arms=arms)
+    f['neck'] = (x - lean, 112); f['head'] = (x - lean * 1.5, 84)
+    return [ground(), figure(**f), kb(hand, 11)]
+
+@pose('kbFarmersWalk')
+def _(i):
+    x = 240
+    s = 1 if i == 0 else -1
+    neck, hip = (x, 120), (x, 194)
+    head = (x + 4, 92)
+    legs = [[(x - 20 * s, 240), (x - 34 * s, GY)], [(x + 22 * s, 240), (x + 34 * s, GY)]]
+    hand = (x + 46, 200)
+    arms = [[(x + 32, 158), hand], [(x - 24, 158), (x - 22, 192)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs),
+            kb(hand, 12)]
+
+@pose('halfGetup')
+def _(i):
+    x = 232
+    hand = (x + 46, 168)
+    if i == 0:                                  # flat on the back, bell pressed up
+        hip = (x - 18, 266)
+        neck, head = (x + 62, 260), (x + 88, 254)
+        arms = [[(x + 54, 214), hand], [(x + 78, 268)]]
+        legs = [[(x - 62, 238), (x - 38, 276)], [(x - 74, 262), (x - 132, 272)]]
+    else:                                       # propped up on the elbow
+        hip = (x - 22, 258)
+        neck, head = (x + 40, 206), (x + 56, 182)
+        arms = [[(x + 44, 178), hand], [(x + 16, 244), (x - 12, 272)]]
+        legs = [[(x - 58, 232), (x - 34, 272)], [(x - 80, 254), (x - 138, 266)]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs),
+            kb(hand, 10)]
+
+# ---- new barbell family -------------------------------------------------
+@pose('barbellCurl')
+def _(i):
+    x = 240
+    hands_y = 200 if i == 0 else 136
+    arms = [[(x - 26, 158), (x - 24, hands_y)], [(x + 26, 158), (x + 24, hands_y)]]
+    return [ground(), figure(**_front_stand(x, 0.0, arms=arms)),
+            barbell_front(hands_y, x - 24, x + 24)]
+
+@pose('barbellFloorPress')
+def _(i):
+    x = 236
+    f = _supine(x, head_dx=84)
+    hands_y = 248 if i == 0 else 188
+    arms = [[(x + 58, 268), (x + 50, hands_y)], [(x + 66, 270), (x + 58, hands_y)]]
+    legs = [[(x - 58, 238), (x - 34, 276)], [(x - 46, 242), (x - 22, 278)]]
+    return [ground(), figure(**f, arms=arms, legs=legs),
+            barbell_front(hands_y, x + 50, x + 58)]
+
+# ---- new dumbbell family ------------------------------------------------
+@pose('dbArnoldPress')
+def _(i):
+    x = 240
+    if i == 0:                                  # palms in, elbows tucked front
+        hands = [(x - 16, 132), (x + 16, 132)]
+        arms = [[(x - 30, 154), hands[0]], [(x + 30, 154), hands[1]]]
+        dbs = [p for h in hands for p in dumbbell(h, 0, 12)]
+    else:                                       # rotated out, locked overhead
+        hands = [(x - 38, 46), (x + 38, 46)]
+        arms = [[(x - 36, 86), hands[0]], [(x + 36, 86), hands[1]]]
+        dbs = [p for h in hands for p in dumbbell(h, 12, 0)]
+    return [ground(), figure(**_front_stand(x, 0.0, arms=arms)), dbs]
+
+@pose('dbPushPress')
+def _(i):
+    x = 240
+    if i == 0:                                  # dip
+        hands = [(x - 34, 130), (x + 34, 130)]
+        arms = [[(x - 34, 158), hands[0]], [(x + 34, 158), hands[1]]]
+        f = _front_stand(x, 0.4, arms=arms)
+    else:                                       # drive overhead
+        hands = [(x - 38, 44), (x + 38, 44)]
+        arms = [[(x - 36, 84), hands[0]], [(x + 36, 84), hands[1]]]
+        f = _front_stand(x, 0.0, arms=arms)
+    return [ground(), figure(**f), [p for h in hands for p in dumbbell(h, 12)]]
+
+@pose('dbFrontRaise')
+def _(i):
+    x = 240
+    hand = (x + 8, 196) if i == 0 else (x + 74, 118)
+    elbow = (x + 6, 158) if i == 0 else (x + 42, 130)
+    f = _squat_d(x, 0.0, arm='down')
+    f['arms'] = [[elbow, hand]]
+    return [ground(), figure(**f), dumbbell(hand, 12)]
+
+@pose('dbUprightRow')
+def _(i):
+    x = 240
+    hands_y = 198 if i == 0 else 132
+    elbow_dx = 24 if i == 0 else 54
+    arms = [[(x - elbow_dx, 156), (x - 18, hands_y)], [(x + elbow_dx, 156), (x + 18, hands_y)]]
+    f = _front_stand(x, 0.0, arms=arms)
+    hands = [(x - 18, hands_y), (x + 18, hands_y)]
+    return [ground(), figure(**f), [p for h in hands for p in dumbbell(h, 11)]]
+
+@pose('dbShrug')
+def _(i):
+    x = 240
+    up = 0 if i == 0 else 14
+    hands = [(x - 34, 200), (x + 34, 200)]
+    arms = [[(x - 32, 152 - up), hands[0]], [(x + 32, 152 - up), hands[1]]]
+    f = _front_stand(x, 0.0, arms=arms)
+    f['neck'] = (x, 112 + up * 0.2)
+    return [ground(), figure(**f), [p for h in hands for p in dumbbell(h, 12)]]
+
+@pose('dbHammerCurl')
+def _(i):
+    x = 240
+    hand = (x + 10, 192) if i == 0 else (x + 30, 130)
+    f = _squat_d(x, 0.0, arm='down')
+    f['arms'] = [[(x + 6, 158), hand]]
+    return [ground(), figure(**f), dumbbell(hand, 0, 13)]
+
+@pose('dbRowSingle')
+def _(i):
+    x = 250
+    bench = box(x + 14, GY - 60, 104, 60)
+    hand = (x - 40, 252) if i == 0 else (x - 34, 198)
+    f = _hinge(x, deep=False, arm_end=hand)
+    f['neck'] = (x - 56, 148); f['head'] = (x - 80, 138)
+    f['arms'] = [[(x + 22, 180), (x + 52, GY - 60)], [(x - 46, 212), hand]]
+    f['legs'] = [[(x + 4, 248), (x - 2, GY)], [(x + 16, 248), (x + 12, GY)]]
+    return [ground(), bench, figure(**f), dumbbell(hand, 11, -3)]
+
+@pose('dbRearDeltFly')
+def _(i):
+    x = 240
+    f = _hinge(x, deep=False)
+    f['neck'] = (x - 58, 148); f['head'] = (x - 82, 140)
+    if i == 0:
+        hands = [(x - 48, 246), (x - 40, 250)]
+        f['arms'] = [[(x - 52, 208), hands[0]], [(x - 44, 210), hands[1]]]
+    else:
+        hands = [(x - 96, 196), (x - 4, 214)]
+        f['arms'] = [[(x - 70, 200), hands[0]], [(x - 30, 206), hands[1]]]
+    return [ground(), figure(**f), [p for h in hands for p in dumbbell(h, 11)]]
+
+@pose('dbFloorPress')
+def _(i):
+    x = 236
+    f = _supine(x, head_dx=84)
+    hy = 246 if i == 0 else 188
+    hands = [(x + 48, hy), (x + 60, hy + 6)]
+    arms = [[(x + 60, 266), hands[0]], [(x + 70, 268), hands[1]]]
+    legs = [[(x - 58, 238), (x - 34, 276)], [(x - 46, 242), (x - 22, 278)]]
+    return [ground(), figure(**f, arms=arms, legs=legs),
+            [p for h in hands for p in dumbbell(h, 11)]]
+
+@pose('dbSkullcrusher')
+def _(i):
+    x = 236
+    f = _supine(x, head_dx=84)
+    if i == 0:
+        hands = [(x + 86, 224), (x + 96, 230)]
+        arms = [[(x + 58, 212), hands[0]], [(x + 66, 216), hands[1]]]
+    else:
+        hands = [(x + 50, 182), (x + 60, 188)]
+        arms = [[(x + 56, 216), hands[0]], [(x + 64, 220), hands[1]]]
+    legs = [[(x - 58, 238), (x - 34, 276)], [(x - 46, 242), (x - 22, 278)]]
+    return [ground(), figure(**f, arms=arms, legs=legs),
+            [p for h in hands for p in dumbbell(h, 11)]]
+
+@pose('dbOverheadTricep')
+def _(i):
+    x = 240
+    hand = (x + 4, 104) if i == 0 else (x + 12, 40)
+    arms = [[(x - 8, 74), hand], [(x + 14, 76), hand]]
+    f = _front_stand(x, 0.0, arms=arms)
+    return [ground(), figure(**f), dumbbell(hand, 0, 14)]
+
+@pose('dbWoodchop')
+def _(i):
+    x = 240
+    if i == 0:
+        hand = (x - 46, 226)
+        arms = [[(x - 26, 168), hand], [(x - 18, 172), hand]]
+        f = _front_stand(x, 0.5, arms=arms)
+    else:
+        hand = (x + 62, 62)
+        arms = [[(x + 28, 108), hand], [(x + 20, 114), hand]]
+        f = _front_stand(x, 0.0, arms=arms)
+    return [ground(), figure(**f), dumbbell(hand, 11)]
+
+@pose('dbFarmersWalk')
+def _(i):
+    x = 240
+    s = 1 if i == 0 else -1
+    neck, hip = (x, 120), (x, 194)
+    head = (x + 4, 92)
+    legs = [[(x - 20 * s, 240), (x - 34 * s, GY)], [(x + 22 * s, 240), (x + 34 * s, GY)]]
+    hands = [(x - 36, 202), (x + 36, 202)]
+    arms = [[(x - 30, 158), hands[0]], [(x + 30, 158), hands[1]]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs),
+            [p for h in hands for p in dumbbell(h, 13)]]
+
+@pose('dbOverheadCarry')
+def _(i):
+    x = 240
+    s = 1 if i == 0 else -1
+    neck, hip = (x, 118), (x, 192)
+    head = (x, 90)
+    legs = [[(x - 20 * s, 238), (x - 34 * s, GY)], [(x + 22 * s, 238), (x + 34 * s, GY)]]
+    hands = [(x - 36, 44), (x + 36, 44)]
+    arms = [[(x - 34, 82), hands[0]], [(x + 34, 82), hands[1]]]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs),
+            [p for h in hands for p in dumbbell(h, 12)]]
+
 # -------------------------------------------------- muscle-group highlight
 # Primary region lit in rose per exercise: arms / legs / torso (core+back).
 ACTIVE = {
     'arms': ['pushup', 'pikePushup', 'benchDips', 'dbCurl', 'dbPress',
              'barbellPress', 'lateralRaise', 'kbCleanPress', 'ringDip',
              'ringPushup', 'ringRow', 'barbellRow', 'dbRow', 'renegadeRow',
-             'farmersWalk', 'kbRackHold', 'bearCrawl'],
+             'farmersWalk', 'kbRackHold', 'bearCrawl',
+             # expanded library
+             'widePushup', 'diamondPushup', 'declinePushup', 'inclinePushup',
+             'tempoPushup', 'clapPushup', 'elevatedPikePushup', 'wallHandstand',
+             'wallWalk', 'supermanYtw', 'ringChinup', 'ringHang', 'plankUpDown',
+             'kbPressSingle', 'kbRow', 'kbHalo', 'kbHighPull', 'barbellCurl',
+             'barbellFloorPress', 'dbArnoldPress', 'dbPushPress', 'dbFrontRaise',
+             'dbUprightRow', 'dbShrug', 'dbHammerCurl', 'dbRowSingle',
+             'dbRearDeltFly', 'dbFloorPress', 'dbSkullcrusher',
+             'dbOverheadTricep', 'dbOverheadCarry', 'dbFarmersWalk',
+             'kbFarmersWalk'],
     'legs': ['bwSquat', 'squatReach', 'jumpSquat', 'gobletSquat',
              'cossackSquat', 'wallSit', 'calfRaise', 'reverseLunge', 'stepUp',
              'highKnees', 'skaterHops', 'sprint', 'ropeJumping', 'kbDeadlift',
              'gluteBridge', 'singleLegBridge', 'kbSwing', 'jumpingJacks',
-             'burpee', 'goodMorning'],
+             'burpee', 'goodMorning',
+             # expanded library
+             'squatPulse', 'sumoSquat', 'dbSquat', 'kbFrontSquat', 'kbThruster',
+             'barbellThruster', 'boxJump', 'splitSquat', 'bulgarianSplitSquat',
+             'dbSplitSquat', 'overheadLunge', 'pistolSquat', 'walkingLunge',
+             'lateralLunge', 'curtsyLunge', 'jumpLunge', 'stepUpJump',
+             'stepDown', 'singleLegCalfRaise', 'singleLegRdl', 'dbRdl',
+             'barbellRdl', 'barbellGoodMorning', 'kbSumoDeadlift',
+             'kbSingleLegRdl', 'kbSwingSingle', 'kbSnatch', 'hipThrust',
+             'frogPump', 'gluteKickback', 'fireHydrant', 'sealJack',
+             'jackSquat', 'buttKicks', 'skiJump', 'tuckJump', 'broadJump',
+             'lateralShuffle', 'shuttleRun', 'doubleUnder', 'burpeeBroadJump'],
     'torso': ['plank', 'plankShoulderTaps', 'mountainClimber', 'hollow',
               'vSit', 'deadBug', 'birdDog', 'legRaise', 'flutterKicks',
               'bicycleCrunch', 'russianTwist', 'sideBridge', 'superman',
-              'inchworm', 'ringTuckHold'],
+              'inchworm', 'ringTuckHold',
+              # expanded library
+              'plankReach', 'plankJack', 'bearHold', 'vUp', 'tuckUp', 'crunch',
+              'reverseCrunch', 'sidePlankHold', 'sidePlankThread', 'crabWalk',
+              'crabReach', 'mountainClimberCross', 'bearCrawlLateral',
+              'inchwormPushup', 'squatThrust', 'kbSuitcaseHold', 'kbWindmill',
+              'halfGetup', 'dbWoodchop'],
 }
 ROLE_OF = {b: role for role, bases in ACTIVE.items() for b in bases}
+_UNTAGGED = sorted(set(POSES) - set(ROLE_OF))
 
 # ---------------------------------------------------------------- main
 if __name__ == '__main__':
@@ -927,9 +2133,16 @@ if __name__ == '__main__':
         _CTX['active'] = {ROLE_OF.get(base)}
         _CTX['variant'] = 'a' if idx % 2 == 0 else 'b'   # mix of body types
         p0, p1 = flatten(fn(0)), flatten(fn(1))
-        out = animated_svg(p0, p1)
+        try:
+            out = animated_svg(p0, p1)
+        except ValueError as e:
+            raise SystemExit(f'{base}: {e} — the two poses must use the same '
+                             f'number of arm/leg chains and decorations')
         path = os.path.join(OUT, f'{base}.svg')
         with open(path, 'w') as f:
             f.write(out)
         total += os.path.getsize(path)
     print(f'wrote {len(POSES)} animated SVGs, {total / 1024:.0f} KB total')
+    if _UNTAGGED:
+        print(f'warning: no ACTIVE muscle group for {", ".join(_UNTAGGED)} '
+              f'— they render without the rose highlight')
