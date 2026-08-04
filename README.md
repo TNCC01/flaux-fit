@@ -87,6 +87,16 @@ scripts/selfcheck.mjs   data + generator validation
 scripts/export-sequence.mjs   expand a workout to timed steps as JSON
 ```
 
+## Garmin watch export
+
+`garmin/` holds one structured-workout `.fit` file per workout (18 files),
+generated from the workouts array by `scripts/generate-fit.mjs` (plain Node,
+no dependencies). Sideload them onto a Garmin watch and it guides every
+interval with the exercise name and a vibration - matching the app. The
+generator reads the app's real `EXERCISES` dictionary and `buildSequence`
+out of `index.html`, so it stays in sync. See [garmin/README.md](garmin/README.md)
+for watch setup and `GARMIN-HANDOFF.md` for the data model.
+
 ## Local dev
 
 ```sh
