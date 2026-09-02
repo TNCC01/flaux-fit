@@ -145,6 +145,7 @@ const els = {
   previewList: $('previewList'),
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'),
   btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'),
+  workoutNote: $('workoutNote'),
   showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio')
 };
 
@@ -849,6 +850,7 @@ function openWorkout(workout) {
   const alreadySaved = gen && state.saved.some(s => s.seed === workout.seed);
   els.btnSave.textContent = alreadySaved ? '★ Saved' : '☆ Save as favourite';
   els.btnSave.disabled = alreadySaved;
+  els.workoutNote.textContent = '';
 
   if (state.sequence[0]) enterPhaseVisual(state.sequence[0].kind, state.remainingInPhase);
   renderPreview();
@@ -1322,7 +1324,11 @@ function openFromRecord(rec) {
   const w = CLASSICS.find(x => x.id === rec.workoutId) ||
             STRETCH_ROUTINES.find(x => x.id === rec.workoutId);
   if (!w) return 'That workout is no longer in the library.';
-  openWorkout(w);
+  // Reopen it the way it was run: a classic takes whichever interval was
+  // selected at the time, so carry the recorded one, not today's preference.
+  const asRun = w.format === 'tabata' && rec.intervalId && INTERVALS[rec.intervalId]
+    ? { ...w, intervalId: rec.intervalId } : w;
+  openWorkout(asRun);
   return null;
 }
 
@@ -1391,7 +1397,7 @@ els.btnBuild.addEventListener('click', () => {
 els.btnShuffle.addEventListener('click', () => {
   const request = state.lastRequest || requestFromState();
   const err = buildAndOpen(request, newSeed());
-  if (err) els.blockName.textContent = err;
+  if (err) els.workoutNote.textContent = err;
 });
 
 els.btnSave.addEventListener('click', () => {

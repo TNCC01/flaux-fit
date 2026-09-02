@@ -84,7 +84,9 @@ js/app.js               views, setup flows, rendering, timer
 img/exercises/*.svg     generated, do not hand-edit
 scripts/gen-anims.py    pose source for the animations
 scripts/selfcheck.mjs   data + generator validation
+scripts/e2e.mjs         drives the app in headless Chromium
 scripts/export-sequence.mjs   expand a workout to timed steps as JSON
+.github/workflows/      runs every check on each pull request
 ```
 
 ## Local dev
@@ -95,17 +97,32 @@ python3 -m http.server 4173      # then open http://localhost:4173
 
 ## Checks
 
-Run before committing:
-
 ```sh
-node scripts/selfcheck.mjs
+npm install                      # once: Playwright, for the browser suite
+npx playwright install chromium  # once
+npm test                         # self-check, then the browser suite
 ```
 
-It validates every exercise's fields, that every movement has artwork and a
-bodyweight fallback, that no block hands one item to two people in any
-round of either interval style, that duration labels match what the timer
-actually runs, and that all 496 generator input combinations either build a
-valid workout or refuse for a good reason.
+`node scripts/selfcheck.mjs` needs nothing installed. It validates every
+exercise's fields, that every movement has artwork and a bodyweight
+fallback, that no block hands one item to two people in any round of either
+interval style, that duration labels match what the timer actually runs,
+and that all 496 generator input combinations either build a valid workout
+or refuse for a good reason. It also proves a workout rebuilds exactly from
+its stored request and seed, and that a seed builds the same workout
+whatever sort algorithm the browser uses. Safari and Chrome sort
+differently, and a favourite saved on the iPad has to come back identical
+on the phone.
+
+`node scripts/e2e.mjs` serves the app itself and drives it in headless
+Chromium at iPad size: every path from the welcome screen, saving and
+replaying a favourite, the interval preference surviving a replay, history,
+the timer recovering time after a suspension, exclusions, stretch, text
+size, corrupt preferences and a phone-width layout. It fails on any console
+error.
+
+Both run on every pull request through GitHub Actions, along with a check
+that the animations on disk still match their poses.
 
 After editing poses:
 

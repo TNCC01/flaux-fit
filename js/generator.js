@@ -208,8 +208,16 @@ function generateWorkout(opts) {
 
   // Score: unseen beats recently-used, with seeded jitter so two runs at
   // the same settings still differ.
+  //
+  // The jitter is drawn once per movement, up front, in dictionary order.
+  // It must never be drawn inside a sort comparator: how many times a
+  // comparator runs depends on the engine's sort algorithm, so the same
+  // seed would build one workout in Safari and another in Chrome, and a
+  // favourite saved on the iPad would come back different on the phone.
+  // The self-check rebuilds seeds under a different sort to keep it so.
+  const idJitter = new Map(Object.keys(EXERCISES).map(id => [id, rand() * 5]));
   const used = new Set();
-  const score = (id) => (used.has(id) ? 100 : 0) + (recent.has(id) ? 10 : 0) + rand() * 5;
+  const score = (id) => (used.has(id) ? 100 : 0) + (recent.has(id) ? 10 : 0) + idJitter.get(id);
   const shareSingle = (a, b) => EXERCISES[a].equipment.some(e =>
     SINGLE_INSTANCE.includes(e) && EXERCISES[b].equipment.includes(e));
 

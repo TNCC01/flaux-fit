@@ -1,0 +1,36 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Data and generator self-check
+        run: node scripts/selfcheck.mjs
+
+      - name: Install the browser suite
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Browser suite
+        run: node scripts/e2e.mjs
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Animations on disk match their poses
+        run: |
+          python3 scripts/gen-anims.py
+          git diff --exit-code --stat img/
