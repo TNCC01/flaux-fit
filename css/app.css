@@ -407,6 +407,8 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   z-index: 5;
 }
 .build-note { color: var(--accent-b); font-size: 0.95rem; text-align: center; line-height: 1.45; }
+/* Empty notes must not leave a gap in the flex column. */
+.build-note:empty { display: none; }
 
 /*
   Two columns once there is room, so the Custom screen fits on an iPad

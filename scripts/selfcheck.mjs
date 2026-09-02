@@ -315,6 +315,45 @@ if (worstOverlap > 0.5) {
   }
 }
 
+// ------------------------------- 12. seeds must not depend on the sort engine
+// Safari and Chrome sort with different algorithms, so a comparator runs a
+// different number of times in each. If the generator drew random numbers
+// inside a comparator, one seed would build one workout on the iPad and
+// another on the phone, and a saved favourite would not travel. Rebuild a
+// few seeds under a deliberately different sort and demand identical output.
+{
+  const nativeSort = Array.prototype.sort;
+  const build = (seed) => {
+    const w = generateWorkout({
+      minutes: 30, people: 2, intervalId: 'short', regions: REGION_IDS,
+      equipment: ALL_EQUIP, excluded: [], blockedTags: [], seed, recent: ids.slice(40, 60)
+    });
+    return w.error ? `error: ${w.error}` : w.exerciseIds.join(',');
+  };
+  const seeds = [1, 77, 4242, 90210];
+  const withNative = seeds.map(build);
+  // A stable insertion sort: correct, but it calls the comparator in a
+  // completely different pattern from V8's TimSort.
+  Array.prototype.sort = function (cmp) {
+    const c = cmp || ((a, b) => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0));
+    for (let i = 1; i < this.length; i++) {
+      const v = this[i];
+      let j = i - 1;
+      while (j >= 0 && c(this[j], v) > 0) { this[j + 1] = this[j]; j--; }
+      this[j + 1] = v;
+    }
+    return this;
+  };
+  let withOther;
+  try { withOther = seeds.map(build); } finally { Array.prototype.sort = nativeSort; }
+  seeds.forEach((seed, i) => {
+    if (withNative[i] !== withOther[i]) {
+      fail(`seed ${seed} builds a different workout under a different sort algorithm, ` +
+           `so it would differ between Safari and Chrome`);
+    }
+  });
+}
+
 // ------------------------------------------------------------- report
 const reused = ids.filter(id => EXERCISES[id].equipment.length === 0).length;
 console.log(`exercises          ${ids.length} (${reused} bodyweight)`);
