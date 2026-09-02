@@ -30,7 +30,7 @@ function loadApp() {
 const A = loadApp();
 const { EXERCISES, INTERVALS, DEFAULT_EQUIPMENT, DEFAULT_INTERVAL, CLASSICS,
         STRETCH_ROUTINES, REGIONS, stretchList, describeEx, generateWorkout,
-        bookends, blockSeconds } = A;
+        classicBookends } = A;
 
 // --- args -------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -77,10 +77,7 @@ if (has('generate')) {
   }
   if (workout.format === 'tabata' && workout.warmupSec === undefined) {
     // Classics derive their bookends at runtime; do the same here.
-    const workSec = workout.blocks.length * 240 + (workout.blocks.length - 1) * workout.blockRestSec;
-    const b = bookends(Math.round(workSec / 60) + 8);
-    workout.warmupSec = b.warmupSec;
-    workout.cooldownSec = b.cooldownSec;
+    Object.assign(workout, classicBookends(workout));
   }
 }
 

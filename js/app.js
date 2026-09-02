@@ -73,6 +73,12 @@ function loadPrefs() {
     if (!Array.isArray(state.recent)) state.recent = [];
     if (!Array.isArray(state.saved)) state.saved = [];
     if (!Array.isArray(state.history)) state.history = [];
+    if (!Array.isArray(state.blockedTags)) state.blockedTags = [];
+    if (state.people !== 1 && state.people !== 2) state.people = 2;
+    if (!TIME_OPTIONS.includes(state.minutes)) state.minutes = 20;
+    if (typeof state.textScale !== 'number' || !(state.textScale > 0)) state.textScale = 1;
+    if (typeof state.nameA !== 'string') state.nameA = '';
+    if (typeof state.nameB !== 'string') state.nameB = '';
   } catch (e) { /* corrupt store: fall back to defaults */ }
 }
 function savePrefs() {
@@ -85,19 +91,17 @@ function savePrefs() {
 
 const hasEquip = (id) => state.equipment[id] !== false;
 const currentInterval = () => INTERVALS[state.intervalStyle] || INTERVALS[DEFAULT_INTERVAL];
-const buildCtx = () => {
-  const iv = currentInterval();
+// A generated workout carries the interval it was built for, so a saved
+// favourite replays as built without overwriting the interval chosen in
+// setup. The classics have none of their own and take whatever is selected.
+const intervalFor = (w) => (w && w.intervalId && INTERVALS[w.intervalId]) || currentInterval();
+const buildCtx = (w) => {
+  const iv = intervalFor(w);
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, hasEquip };
 };
 
-// Classics carry no bookends of their own, they scale to the length of
-// the work, so a 9-minute session isn't wrapped in 10 minutes of walking.
-CLASSICS.forEach(w => {
-  const workSec = w.blocks.length * 240 + (w.blocks.length - 1) * w.blockRestSec;
-  const b = bookends(Math.round(workSec / 60) + 8);
-  w.warmupSec = b.warmupSec;
-  w.cooldownSec = b.cooldownSec;
-});
+// Classics carry no bookends of their own; derive them once at load.
+CLASSICS.forEach(w => Object.assign(w, classicBookends(w)));
 
 // =====================================================================
 // ELEMENTS
@@ -117,7 +121,6 @@ const els = {
   nameA: $('nameA'), nameB: $('nameB'),
   equipmentPicker: $('equipmentPicker'), timePicker: $('timePicker'),
   intervalPicker: $('intervalPicker'),
-  rowRegions: $('rowRegions'), rowExclude: $('rowExclude'),
   bodyMap: $('bodyMap'), regionPicker: $('regionPicker'), tagPicker: $('tagPicker'),
   btnOpenExclude: $('btnOpenExclude'), excludeSummary: $('excludeSummary'),
   excludePanel: $('excludePanel'), excludeSearch: $('excludeSearch'),
@@ -139,7 +142,7 @@ const els = {
   personB: $('personB'), exerciseB: $('exerciseB'), cueB: $('cueB'),
   animB: $('animB'), alternativeB: $('alternativeB'),
   upcoming: $('upcoming'), preStart: $('preStart'),
-  previewCard: $('previewCard'), previewList: $('previewList'),
+  previewList: $('previewList'),
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'),
   btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'),
   showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio')
@@ -178,7 +181,7 @@ function durationParts(w) {
     const total = stretchList(w).reduce((s, x) => s + x.hold, 0);
     return { totalMin: Math.round(total / 60), totalSec: total, workMin: null, bookendsMin: null };
   }
-  const iv = currentInterval();
+  const iv = intervalFor(w);
   const work = w.blocks.length * blockSeconds(iv) + (w.blocks.length - 1) * w.blockRestSec;
   const bookend = w.warmupSec + w.cooldownSec;
   return {
@@ -189,8 +192,8 @@ function durationParts(w) {
 
 function buildSequence(workout, people) {
   const seq = [];
-  const iv = currentInterval();
-  const ctx = buildCtx();
+  const iv = intervalFor(workout);
+  const ctx = buildCtx(workout);
   const isDuo = people === 2;
   const pair = (ex) => isDuo ? { a: ex, b: ex } : { a: ex, b: null };
 
@@ -400,7 +403,9 @@ function renderSetup() {
 
 function renderPeoplePicker() {
   els.peoplePicker.querySelectorAll('.chip').forEach(chip => {
-    chip.classList.toggle('active', Number(chip.dataset.people) === state.people);
+    const on = Number(chip.dataset.people) === state.people;
+    chip.classList.toggle('active', on);
+    chip.setAttribute('aria-pressed', String(on));
   });
   els.nameInputs.classList.toggle('hidden', state.people !== 2);
 }
@@ -428,6 +433,7 @@ function renderTimePicker() {
       renderTimePicker();
     });
     b.textContent = `${m} min`;
+    b.setAttribute('aria-pressed', String(state.minutes === m));
     els.timePicker.appendChild(b);
   });
 }
@@ -445,6 +451,7 @@ function renderIntervalPicker() {
       <div class="interval-name">${esc(iv.label)}</div>
       <div class="interval-sub">${esc(iv.sub)} × ${iv.rounds} rounds</div>
       <div class="interval-blurb">${esc(iv.blurb)}</div>`;
+    b.setAttribute('aria-pressed', String(state.intervalStyle === id));
     els.intervalPicker.appendChild(b);
   });
 }
@@ -573,23 +580,32 @@ function requestFromState() {
     people: state.people,
     intervalId: state.intervalStyle,
     regions: custom ? state.regions.slice() : REGIONS.map(r => r.id),
-    equipment: { ...state.equipment },
-    excluded: state.excluded.slice(),
-    blockedTags: custom ? state.blockedTags.slice() : [],
-    recent: state.recent.slice()
+    blockedTags: custom ? state.blockedTags.slice() : []
   };
 }
 
-function buildAndOpen(request, seed) {
-  const opts = { ...request, seed: seed || newSeed() };
-  const w = generateWorkout(opts);
-  if (w.error) {
-    els.buildNote.textContent = w.error;
-    return false;
-  }
+// Equipment and exclusions always come from live state, never from a stored
+// request: a favourite reopened with the kettlebells switched off has to
+// adapt, and a Shuffle after it has to respect the current filters. The
+// recency list defaults to live too; a replay overrides it with the list the
+// original build used, so the seed rebuilds exactly what was saved.
+function liveOpts(request, extra) {
+  return {
+    ...request,
+    equipment: { ...state.equipment },
+    excluded: state.excluded.slice(),
+    recent: state.recent.slice(),
+    ...extra
+  };
+}
+
+// Builds and opens a workout. Returns an error message, or null on success.
+function buildAndOpen(request, seed, extra) {
+  const w = generateWorkout(liveOpts(request, { seed: seed || newSeed(), ...extra }));
+  if (w.error) return w.error;
   state.lastRequest = request;
   openWorkout(w);
-  return true;
+  return null;
 }
 
 const newSeed = () => (Math.floor(Math.random() * 0x7fffffff) || 1);
@@ -613,7 +629,7 @@ function openStretchLibrary() {
 // version under the current equipment selection.
 function workoutAdapted(w) {
   if (w.format === 'stretch') return false;
-  const ctx = buildCtx();
+  const ctx = buildCtx(w);
   return w.blocks.some(b => (b.ids || []).some(id => resolveEx(id, ctx).adapted));
 }
 
@@ -629,6 +645,7 @@ function renderFocusFilter() {
       renderLibrary();
     });
     b.textContent = f.label;
+    b.setAttribute('aria-pressed', String(state.filterFocus === f.id));
     els.focusFilter.appendChild(b);
   });
 }
@@ -810,10 +827,6 @@ function savedCard(saved) {
 function openWorkout(workout) {
   stopTimer();
   state.workout = workout;
-  // A generated workout carries its own interval; honour it so a saved
-  // favourite replays as it was built.
-  if (workout.intervalId && INTERVALS[workout.intervalId]) state.intervalStyle = workout.intervalId;
-
   state.sequence = buildSequence(workout, state.people);
   state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
   seekTo(0);
@@ -833,8 +846,9 @@ function openWorkout(workout) {
   const gen = !!workout.generated;
   els.btnShuffle.style.display = gen ? '' : 'none';
   els.btnSave.style.display = gen ? '' : 'none';
-  els.btnSave.textContent = '☆ Save as favourite';
-  els.btnSave.disabled = false;
+  const alreadySaved = gen && state.saved.some(s => s.seed === workout.seed);
+  els.btnSave.textContent = alreadySaved ? '★ Saved' : '☆ Save as favourite';
+  els.btnSave.disabled = alreadySaved;
 
   if (state.sequence[0]) enterPhaseVisual(state.sequence[0].kind, state.remainingInPhase);
   renderPreview();
@@ -850,7 +864,7 @@ function personName(which) {
 function renderPreview() {
   const w = state.workout;
   if (!w) return;
-  const ctx = buildCtx();
+  const ctx = buildCtx(w);
   els.previewList.innerHTML = '';
   const add = (name, sub) => {
     const li = document.createElement('li');
@@ -873,7 +887,7 @@ function renderPreview() {
     stretchList(w).forEach((s, i) => add(`${i + 1}. ${s.name}`, `${s.hold}s hold`));
     return;
   }
-  const iv = currentInterval();
+  const iv = intervalFor(w);
   add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupExercise.cue);
   w.blocks.forEach((b, i) => {
     const names = Array.from(new Set((b.ids || []).map(id => describeEx(id, ctx).display)));
@@ -1279,12 +1293,12 @@ function recordHistory() {
     focus: w.focus || 'whole-body',
     minutes: durationParts(w).totalMin,
     people: state.people,
-    intervalId: w.intervalId || state.intervalStyle,
+    intervalId: intervalFor(w).id,
     generated: !!w.generated,
     // Enough to rebuild it exactly: a seed and a request for generated
     // workouts, an id for the named ones.
     seed: w.seed || null,
-    request: w.request ? { ...w.request, recent: [] } : null,
+    request: w.request || null,
     workoutId: w.generated ? null : w.id,
     at: now,
     completed: false
@@ -1303,17 +1317,7 @@ function markHistoryComplete() {
 // Rebuild a workout from a history entry (or a saved favourite: same shape).
 function openFromRecord(rec) {
   if (rec.generated) {
-    const w = generateWorkout({
-      ...rec.request,
-      equipment: { ...state.equipment },
-      excluded: state.excluded.slice(),
-      seed: rec.seed,
-      recent: []
-    });
-    if (w.error) return w.error;
-    state.lastRequest = rec.request;
-    openWorkout(w);
-    return null;
+    return buildAndOpen(rec.request, rec.seed, { recent: (rec.request && rec.request.recent) || [] });
   }
   const w = CLASSICS.find(x => x.id === rec.workoutId) ||
             STRETCH_ROUTINES.find(x => x.id === rec.workoutId);
@@ -1380,12 +1384,14 @@ els.btnClearExclude.addEventListener('click', () => {
 
 els.btnBuild.addEventListener('click', () => {
   els.buildNote.textContent = '';
-  buildAndOpen(requestFromState());
+  const err = buildAndOpen(requestFromState());
+  if (err) els.buildNote.textContent = err;
 });
 
 els.btnShuffle.addEventListener('click', () => {
   const request = state.lastRequest || requestFromState();
-  buildAndOpen(request, newSeed());
+  const err = buildAndOpen(request, newSeed());
+  if (err) els.blockName.textContent = err;
 });
 
 els.btnSave.addEventListener('click', () => {
@@ -1394,7 +1400,7 @@ els.btnSave.addEventListener('click', () => {
   if (state.saved.some(s => s.seed === w.seed)) return;
   state.saved.unshift({
     name: w.name, blurb: w.blurb, focus: w.focus, seed: w.seed,
-    request: { ...w.request, recent: [] },
+    request: w.request,
     savedOn: new Date().toLocaleDateString()
   });
   savePrefs();
@@ -1495,7 +1501,11 @@ function setupFullscreen() {
                            document.documentElement.webkitRequestFullscreen);
   // Already launched from the home screen: nothing left to hide.
   if (isStandalone()) return;
-  els.installHint.hidden = false;
+  // The hint describes the Safari share sheet, so only show it where that
+  // exists. iPadOS reports itself as a Mac, hence the touch-points check.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  els.installHint.hidden = !isIOS;
   if (!canFullscreen) return;
   els.btnFullscreen.hidden = false;
   els.btnFullscreen.addEventListener('click', async () => {
