@@ -162,8 +162,8 @@ for (const ivId of Object.keys(INTERVALS)) {
   const seen = new Set();
   for (let r = 1; r <= iv.rounds; r++) seen.add(swapBlock.solo(r, ctx).id);
   if (seen.size !== 2) {
-    fail(`blockSwap only used ${seen.size} of its 2 loads over ${iv.rounds} rounds (${ivId}) ` +
-         `. The halfway swap is not firing.`);
+    fail(`blockSwap only used ${seen.size} of its 2 loads over ${iv.rounds} rounds (${ivId}). ` +
+         `The halfway swap is not firing.`);
   }
 }
 
@@ -294,7 +294,25 @@ for (let i = 0; i < 8; i++) {
 }
 if (worstOverlap > 0.5) {
   fail(`consecutive generated sessions shared ${Math.round(worstOverlap * 100)}% of movements ` +
-       `,  the recency weighting is not working`);
+       `, so the recency weighting is not working`);
+}
+
+// ------------------------------------------ 11. a favourite replays exactly
+// The app stores a workout's request and seed and rebuilds from those. The
+// recency list weights the picks, so it has to be part of the stored request
+// or the replay quietly differs from what was saved.
+{
+  const first = generateWorkout({
+    minutes: 30, people: 2, intervalId: 'long', regions: ['legs', 'core'],
+    equipment: ALL_EQUIP, excluded: [], blockedTags: ['impact'], seed: 31337,
+    recent: ids.slice(0, 25)
+  });
+  const again = first.error ? first
+    : generateWorkout({ ...first.request, equipment: ALL_EQUIP, excluded: [], seed: first.seed });
+  if (first.error || again.error) fail(`replay check could not build: ${first.error || again.error}`);
+  else if (JSON.stringify(first.exerciseIds) !== JSON.stringify(again.exerciseIds)) {
+    fail('rebuilding a workout from its stored request and seed gave a different workout');
+  }
 }
 
 // ------------------------------------------------------------- report

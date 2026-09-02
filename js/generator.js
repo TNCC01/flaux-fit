@@ -12,11 +12,11 @@
   combinations x arbitrary exclusions. Presets can only ever cover a
   corner of that, which is exactly why the short sessions kept handing
   back a trimmed-down copy of the long ones. This composes from the whole
-  156-movement library every time, and remembers what it used last time so
+  library every time, and remembers what it used last time so
   consecutive sessions don't rhyme.
 */
 
-// Deterministic RNG so a given seed always rebuilds the same workout , 
+// Deterministic RNG so a given seed always rebuilds the same workout:
 // that's what lets "regenerate" be a real choice rather than a lottery,
 // and lets a saved favourite come back identical.
 function mulberry32(seed) {
@@ -33,13 +33,13 @@ function mulberry32(seed) {
 // from exactly one group, which is how a session ends up covering
 // distinct patterns instead of six variations on a squat.
 const GROUPS = {
-  legsBig: { label: 'Squats & hinges',    patterns: ['squat', 'hinge'],  regions: ['legs'] },
-  push:    { label: 'Presses & push-ups', patterns: ['pushH', 'pushV'],  regions: ['push'] },
-  pull:    { label: 'Rows & pulls',       patterns: ['pullH', 'pullV'],  regions: ['pull'] },
-  legsUni: { label: 'Lunges & step-ups',  patterns: ['lunge'],           regions: ['legs'] },
-  core:    { label: 'Core',               patterns: ['coreAnti', 'coreFlex', 'coreRot', 'coreLat', 'crawl'], regions: ['core'] },
-  cardio:  { label: 'Conditioning',       patterns: ['cardio'],          regions: ['cardio'] },
-  carry:   { label: 'Carries & holds',    patterns: ['carry'],           regions: ['core', 'pull'] }
+  legsBig: { label: 'Squats & hinges',    patterns: ['squat', 'hinge'] },
+  push:    { label: 'Presses & push-ups', patterns: ['pushH', 'pushV'] },
+  pull:    { label: 'Rows & pulls',       patterns: ['pullH', 'pullV'] },
+  legsUni: { label: 'Lunges & step-ups',  patterns: ['lunge'] },
+  core:    { label: 'Core',               patterns: ['coreAnti', 'coreFlex', 'coreRot', 'coreLat', 'crawl'] },
+  cardio:  { label: 'Conditioning',       patterns: ['cardio'] },
+  carry:   { label: 'Carries & holds',    patterns: ['carry'] }
 };
 
 // Scheduling order: open with a big compound, alternate push against
@@ -65,6 +65,18 @@ function bookends(minutes) {
 }
 
 const restForBlocks = (n) => n <= 3 ? 30 : (n <= 6 ? 45 : 60);
+
+// The named classics carry no bookends of their own: they scale to the
+// length of the work, so a 9-minute session isn't wrapped in 10 minutes of
+// walking. The +8 stands in for the bookends when picking a tier, so a
+// classic lands in the tier a generated session of the same overall length
+// would. Both interval styles run the same block length (the self-check
+// enforces it), so the default one is used for the arithmetic.
+function classicBookends(w) {
+  const per = blockSeconds(INTERVALS[DEFAULT_INTERVAL]);
+  const workSec = w.blocks.length * per + (w.blocks.length - 1) * w.blockRestSec;
+  return bookends(Math.round(workSec / 60) + 8);
+}
 
 // How many blocks fit in the time, and what the result actually runs to.
 function planBlocks(minutes, iv) {
@@ -160,7 +172,7 @@ function generateWorkout(opts) {
     .filter(id => usable(id) && EXERCISES[id].regions.some(r => regions.includes(r)))
     .sort((a, b) => score(a) - score(b));
 
-  // A group needs at least two movements to make a block worth doing , 
+  // A group needs at least two movements to make a block worth doing:
   // a whole 4-minute block of one exercise is what "limited range" felt
   // like in the first place. Only fall back to thin groups if that would
   // otherwise leave nothing at all.
@@ -318,7 +330,7 @@ function generateWorkout(opts) {
     id: `gen-${opts.seed}`,
     generated: true,
     name: `${title} · ${realMin} min`,
-    tagline: iv.label.toLowerCase() === 'long efforts' ? 'Long efforts, fewer stops' : 'Sharp bursts',
+    tagline: iv.id === 'long' ? 'Long efforts, fewer stops' : 'Sharp bursts',
     focus: focusFor(regions),
     blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()}, ${iv.sub}.`,
     format: 'tabata',
@@ -329,9 +341,14 @@ function generateWorkout(opts) {
     blocks,
     notes,
     seed: opts.seed,
+    // Everything that shaped this build apart from the live equipment and
+    // exclusions, which are always re-read at replay time. `recent` must be
+    // kept: it weights the picks, so replaying the seed without it would
+    // rebuild a different workout from the one that was saved.
     request: {
       minutes: opts.minutes, people: opts.people, intervalId: iv.id,
-      regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice()
+      regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice(),
+      recent: [...recent]
     },
     // Everything this session will ask you to do, used for the preview
     // and for the recency list next time.

@@ -2145,4 +2145,4 @@ if __name__ == '__main__':
     print(f'wrote {len(POSES)} animated SVGs, {total / 1024:.0f} KB total')
     if _UNTAGGED:
         print(f'warning: no ACTIVE muscle group for {", ".join(_UNTAGGED)} '
-              f',  they render without the rose highlight')
+              f', so they render without the rose highlight')

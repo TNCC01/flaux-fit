@@ -28,7 +28,7 @@ const blockSeconds = (iv) => iv.rounds * (iv.workSec + iv.restSec);
 
 // ---------------------------------------------------------------------
 // EXERCISE RESOLUTION
-// ctx = { rounds, workSec, restSec, hasEquip } , hasEquip(id) => bool
+// ctx = { rounds, workSec, restSec, hasEquip }, where hasEquip(id) => bool
 // ---------------------------------------------------------------------
 
 // Walk bw fallbacks until everything the exercise needs is on hand.
@@ -114,24 +114,25 @@ function blockCycle(name, ids) {
   };
 }
 
-// One movement at two weights, swapping between the pair at the halfway
-// round, derived from ctx.rounds so it works at 8 rounds and at 4.
+// True once round r is past the halfway point of the block. Derived from
+// ctx.rounds so it works at 8 rounds and at 4.
+const pastHalfway = (r, ctx) => r > Math.ceil(((ctx && ctx.rounds) || 8) / 2);
+
+// One movement at two weights, swapping between the pair at the halfway round.
 function blockSwap(name, heavyId, lightId) {
-  const past = (r, ctx) => r > Math.ceil(((ctx && ctx.rounds) || 8) / 2);
   return {
     name, ids: [heavyId, lightId], shape: 'swap',
     duo: (r, ctx) => {
       const h = describeEx(heavyId, ctx), l = describeEx(lightId, ctx);
-      return past(r, ctx) ? { a: l, b: h } : { a: h, b: l };
+      return pastHalfway(r, ctx) ? { a: l, b: h } : { a: h, b: l };
     },
-    solo: (r, ctx) => describeEx(past(r, ctx) ? lightId : heavyId, ctx)
+    solo: (r, ctx) => describeEx(pastHalfway(r, ctx) ? lightId : heavyId, ctx)
   };
 }
 
 // Like blockSwap but also alternates which arm works each round, for
 // single-arm lifts where that matters.
 function blockSwapAlternating(name, heavyId, lightId) {
-  const past = (r, ctx) => r > Math.ceil(((ctx && ctx.rounds) || 8) / 2);
   const arm = (r) => r % 2 === 1 ? 'Left arm' : 'Right arm';
   // The arm cue is dropped once an exercise has adapted to bodyweight,
   // where it no longer means anything.
@@ -141,9 +142,9 @@ function blockSwapAlternating(name, heavyId, lightId) {
     name, ids: [heavyId, lightId], shape: 'swap',
     duo: (r, ctx) => {
       const h = tag(describeEx(heavyId, ctx), r), l = tag(describeEx(lightId, ctx), r);
-      return past(r, ctx) ? { a: l, b: h } : { a: h, b: l };
+      return pastHalfway(r, ctx) ? { a: l, b: h } : { a: h, b: l };
     },
-    solo: (r, ctx) => tag(describeEx(past(r, ctx) ? lightId : heavyId, ctx), r)
+    solo: (r, ctx) => tag(describeEx(pastHalfway(r, ctx) ? lightId : heavyId, ctx), r)
   };
 }
 
