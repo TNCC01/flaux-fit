@@ -49,6 +49,7 @@ const GEAR = ['15kg kettlebell', '10kg kettlebell', '10kg barbell', 'Dumbbells',
 
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1180, height: 820 } });
+await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 const p = await context.newPage();
 p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 p.on('pageerror', e => errors.push(String(e)));
@@ -190,6 +191,44 @@ try {
   note(`${small}px -> ${large}px`);
   ok('text size control works');
 
+  step = 'share link rebuilds the same workout on another device';
+  await p.click('#btnBack'); await p.click('#pathQuick'); await p.click('#btnBuild');
+  const sharedIds = await st(() => state.workout.exerciseIds.join(','));
+  const sharedSeed = await st(() => state.workout.seed);
+  const shareUrl = await st(() => shareUrlFor(state.workout));
+  assert(shareUrl.includes('#w='), 'share url carries a payload');
+  // No share sheet in headless Chromium, so the button copies the link.
+  await p.click('#btnShare');
+  await p.waitForFunction(() => document.getElementById('workoutNote').textContent.length > 0);
+  const shareNote = await p.$eval('#workoutNote', e => e.textContent);
+  assert(/Link copied/.test(shareNote), 'share button reports the copy, got: ' + shareNote.slice(0, 80));
+  const clip = await st(() => navigator.clipboard.readText().catch(() => null));
+  if (clip === null) note('clipboard not readable here, skipping that check');
+  else assert(clip === shareUrl, 'clipboard holds the link');
+  // "Another device": a fresh browser context with nothing stored.
+  const other = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const q = await other.newPage();
+  q.on('pageerror', e => errors.push('other device: ' + e));
+  q.on('console', m => { if (m.type() === 'error') errors.push('other device: ' + m.text()); });
+  await q.goto(shareUrl);
+  assert(await q.evaluate(() => document.querySelector('.view.active').id) === 'workoutView', 'link opens the workout');
+  assert(await q.evaluate(() => state.workout.exerciseIds.join(',')) === sharedIds, 'same movements on the other device');
+  assert(await q.evaluate(() => state.workout.seed) === sharedSeed, 'same seed');
+  assert(await q.evaluate(() => location.hash) === '', 'hash cleared once opened');
+  assert(await q.$eval('#workoutNote', e => /shared link/.test(e.textContent)), 'says it came from a link');
+  await p.click('#btnBack'); await p.click('#pathClassics');
+  assert(await st(() => state.filterFocus) === 'all', 'Workouts path shows the whole library after a Stretch visit');
+  await p.click(card('Power Hour'));
+  const classicUrl = await st(() => shareUrlFor(state.workout));
+  await q.goto(classicUrl);
+  assert(await q.evaluate(() => state.workout.id) === 'power-hour', 'a classic shares by id');
+  await q.goto(URL + '#w=notaworkout');
+  assert(await q.evaluate(() => document.querySelector('.view.active').id) === 'welcomeView', 'a bad link lands on welcome');
+  assert(await q.$eval('#welcomeNote', e => e.textContent.length > 0), 'a bad link explains itself');
+  await other.close();
+  note(`link is ${shareUrl.length} characters`);
+  ok('share link rebuilds the same workout on a fresh device; classics and bad links handled');
+
   step = 'corrupt preferences fall back, favourites persist';
   await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
@@ -211,6 +250,28 @@ try {
   });
   assert(!overflow, 'no horizontal overflow on a phone');
   ok('no horizontal overflow on a phone');
+
+  step = 'opens offline after the first visit';
+  await p.goto(URL);
+  await st(() => navigator.serviceWorker.ready);
+  // The worker precaches the shell and every animation; wait for it to fill.
+  const expected = await st(() => 12 + new Set(Object.values(EXERCISES).map(e => e.img)).size);
+  await p.waitForFunction(async (n) => {
+    const keys = await caches.keys();
+    if (!keys.length) return false;
+    const c = await caches.open(keys[0]);
+    return (await c.keys()).length >= n;
+  }, expected, { timeout: 60000 });
+  await p.reload();
+  assert(await st(() => !!navigator.serviceWorker.controller), 'page is controlled by the worker');
+  await context.setOffline(true);
+  await p.reload();
+  assert((await p.$$('.path-card')).length === 4, 'welcome renders with no network');
+  await p.click('#pathQuick'); await p.click('#btnBuild');
+  assert(await activeView() === 'workoutView', 'a workout builds with no network');
+  assert(await st(() => fetch('img/exercises/pushup.svg').then(r => r.ok)), 'an animation comes from the cache with no network');
+  await context.setOffline(false);
+  ok(`opens, builds and animates offline from a ${expected}-file cache`);
 
   if (errors.length) {
     console.log('\nCONSOLE ERRORS:'); errors.forEach(e => console.log('  ' + e));
