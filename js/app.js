@@ -113,8 +113,8 @@ const els = {
   pathQuick: $('pathQuick'), pathCustom: $('pathCustom'),
   pathStretch: $('pathStretch'), pathClassics: $('pathClassics'),
   scroller: $('scroller'),
-  welcomeFoot: $('welcomeFoot'), btnFullscreen: $('btnFullscreen'),
-  installHint: $('installHint'),
+  welcomeFoot: $('welcomeFoot'), welcomeNote: $('welcomeNote'),
+  btnFullscreen: $('btnFullscreen'), installHint: $('installHint'),
 
   btnSetupBack: $('btnSetupBack'), setupTitle: $('setupTitle'),
   peoplePicker: $('peoplePicker'), nameInputs: $('nameInputs'),
@@ -143,7 +143,7 @@ const els = {
   animB: $('animB'), alternativeB: $('alternativeB'),
   upcoming: $('upcoming'), preStart: $('preStart'),
   previewList: $('previewList'),
-  btnShuffle: $('btnShuffle'), btnSave: $('btnSave'),
+  btnShuffle: $('btnShuffle'), btnSave: $('btnSave'), btnShare: $('btnShare'),
   btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'),
   workoutNote: $('workoutNote'),
   showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio')
@@ -363,6 +363,7 @@ function esc(s) {
 function goWelcome() {
   stopTimer();
   state.workout = null;
+  els.welcomeNote.textContent = '';
   setView('welcome');
   renderWelcomeFoot();
 }
@@ -1346,12 +1347,87 @@ function whenLabel(ts) {
 }
 
 // =====================================================================
+// SHARE LINKS
+// A workout travels as a URL. For a generated one that is the seed plus
+// the request that built it, and the equipment and exclusions in force at
+// the time; for a named one, its id and interval. Packed into the hash, so
+// no server ever sees it and the static host needs nothing. Seeds build
+// identically in every browser, so the phone rebuilds exactly what the
+// iPad had, and it works for someone else's device too: their own gear
+// still adapts the display, the way it does for a classic.
+// =====================================================================
+const SHARE_VERSION = 1;
+
+function sharePayload(w) {
+  if (w.generated) {
+    return { v: SHARE_VERSION, seed: w.seed, request: w.request,
+             equipment: { ...state.equipment }, excluded: state.excluded.slice() };
+  }
+  return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id };
+}
+
+// URL-safe base64 of UTF-8 text, and back.
+function encodeShare(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decodeShare(s) {
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function shareUrlFor(w) {
+  return `${location.origin}${location.pathname}#w=${encodeShare(JSON.stringify(sharePayload(w)))}`;
+}
+
+// Opens the workout in a share link. Returns an error message, or null.
+function openSharedLink(hash) {
+  let payload;
+  try { payload = JSON.parse(decodeShare(hash.slice(3))); }
+  catch (e) { return 'That link is not a FIT workout.'; }
+  if (!payload || typeof payload !== 'object') return 'That link is not a FIT workout.';
+  if (payload.v !== SHARE_VERSION) return 'That link was made by a different version of FIT.';
+  if (payload.id) {
+    return openFromRecord({ workoutId: payload.id, intervalId: payload.intervalId, generated: false });
+  }
+  if (!payload.seed || !payload.request) return 'That link is missing its workout.';
+  return buildAndOpen(payload.request, payload.seed, {
+    equipment: payload.equipment || { ...state.equipment },
+    excluded: Array.isArray(payload.excluded) ? payload.excluded : [],
+    recent: Array.isArray(payload.request.recent) ? payload.request.recent : []
+  });
+}
+
+// A link in the address bar, on load or pasted into the open app.
+function openLinkFromHash() {
+  if (!location.hash.startsWith('#w=')) return;
+  const err = openSharedLink(location.hash);
+  // Clear it so a reload comes back to the home screen, not the link.
+  history.replaceState(null, '', location.pathname + location.search);
+  if (err) {
+    goWelcome();
+    els.welcomeNote.textContent = err;
+  } else {
+    els.workoutNote.textContent = 'Opened from a shared link.';
+  }
+}
+
+// =====================================================================
 // EVENT WIRING
 // =====================================================================
 els.pathQuick.addEventListener('click', () => openSetup('quick'));
 els.pathCustom.addEventListener('click', () => openSetup('custom'));
 els.pathStretch.addEventListener('click', openStretchLibrary);
-els.pathClassics.addEventListener('click', openLibrary);
+// The Stretch path narrows the library to stretching; the Workouts path is
+// the whole library, so it must not inherit that filter from a previous visit.
+els.pathClassics.addEventListener('click', () => {
+  state.filterFocus = 'all';
+  savePrefs();
+  openLibrary();
+});
 els.btnSetupBack.addEventListener('click', goWelcome);
 els.btnLibraryBack.addEventListener('click', goWelcome);
 els.btnBack.addEventListener('click', goWelcome);
@@ -1412,6 +1488,23 @@ els.btnSave.addEventListener('click', () => {
   savePrefs();
   els.btnSave.textContent = '★ Saved';
   els.btnSave.disabled = true;
+});
+
+els.btnShare.addEventListener('click', async () => {
+  const w = state.workout;
+  if (!w) return;
+  const url = shareUrlFor(w);
+  const title = `FIT: ${w.name}`;
+  try {
+    // The share sheet where there is one (iOS, Android), the clipboard
+    // elsewhere, and the bare link as the last resort.
+    if (navigator.share) { await navigator.share({ title, text: title, url }); return; }
+    await navigator.clipboard.writeText(url);
+    els.workoutNote.textContent = 'Link copied. Open it on any phone or tablet for this exact workout.';
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;      // share sheet dismissed
+    els.workoutNote.textContent = url;
+  }
 });
 
 els.btnStart.addEventListener('click', () => {
@@ -1556,3 +1649,18 @@ applyTextScale();
 setupFullscreen();
 renderWelcomeFoot();
 updateScrollHint();
+openLinkFromHash();
+window.addEventListener('hashchange', openLinkFromHash);
+
+// =====================================================================
+// OFFLINE
+// sw.js caches the app and every animation on the first visit, so from
+// then on it opens with no network at all. The app files themselves are
+// fetched network-first, so online it is always the current version.
+// =====================================================================
+if ('serviceWorker' in navigator) {
+  const register = () => navigator.serviceWorker.register('sw.js')
+    .catch(() => { /* offline support is a nicety; the app runs without it */ });
+  if (document.readyState === 'complete') register();
+  else window.addEventListener('load', register);
+}

@@ -66,6 +66,11 @@ rather than hardcoded.
   preferences, there is no account and no server, and clearing the browser
   clears it too
 - Wall-clock timer, wake lock, audio cues, two-tap reset
+- Share a workout as a link. The seed and the request that built it are
+  packed into the URL, so it opens the exact same session on any phone or
+  tablet, with no account and no server involved
+- Works offline after the first visit. A service worker caches the app
+  and every animation, so it opens in the gym with no wifi
 
 Two people never get handed the same single-instance item (one 15kg KB, one
 10kg KB, one barbell, one rope, one set of rings) in the same round. That
@@ -76,6 +81,7 @@ since a workout can be reopened later with two people selected.
 
 ```
 index.html              markup only
+sw.js                   service worker: offline cache
 css/app.css
 js/exercises.js         the movement dictionary + regions + stretches
 js/workouts.js          intervals, block helpers, the named classics
@@ -88,6 +94,15 @@ scripts/e2e.mjs         drives the app in headless Chromium
 scripts/export-sequence.mjs   expand a workout to timed steps as JSON
 .github/workflows/      runs every check on each pull request
 ```
+
+## Offline
+
+`sw.js` caches the app shell and all 145 animations when it installs, on
+the first visit. The app files are served network-first with a four-second
+timeout, so online you always get the current version and a flaky
+connection falls back to the cache rather than hanging; the animations are
+served cache-first and refreshed in the background. Bump `VERSION` in
+`sw.js` to force old caches out, though nothing depends on remembering to.
 
 ## Local dev
 
@@ -118,8 +133,9 @@ on the phone.
 Chromium at iPad size: every path from the welcome screen, saving and
 replaying a favourite, the interval preference surviving a replay, history,
 the timer recovering time after a suspension, exclusions, stretch, text
-size, corrupt preferences and a phone-width layout. It fails on any console
-error.
+size, a share link opened in a fresh browser context, corrupt preferences,
+a phone-width layout, and the app opening with the network switched off.
+It fails on any console error.
 
 Both run on every pull request through GitHub Actions, along with a check
 that the animations on disk still match their poses.

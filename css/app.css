@@ -409,6 +409,9 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
 .build-note { color: var(--accent-b); font-size: 0.95rem; text-align: center; line-height: 1.45; }
 /* Empty notes must not leave a gap in the flex column. */
 .build-note:empty { display: none; }
+/* The workout note can hold a share link when the clipboard is refused, so
+   it is the one piece of text outside the inputs that can be selected. */
+#workoutNote { -webkit-user-select: text; user-select: text; word-break: break-all; }
 
 /*
   Two columns once there is room, so the Custom screen fits on an iPad
@@ -656,8 +659,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
 
 .controls { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.6rem; }
 .pre-start { display: flex; flex-direction: column; gap: 0.75rem; }
-.pre-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-.pre-actions button { font-size: 1rem; padding: 0.85rem; }
+.pre-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.pre-actions button { font-size: 1rem; padding: 0.85rem; flex: 1 1 10rem; }
 .preview-card { background: var(--card); border-radius: 1rem; padding: 0.9rem 1rem; }
 .preview-title {
   font-size: 0.85rem; color: var(--muted); text-transform: uppercase;
@@ -691,5 +694,5 @@ body.show-alternatives .alternative.has-alt { display: block; }
   }
   .controls { grid-template-columns: 1fr 1fr; }
   .controls button:first-child { grid-column: 1 / -1; }
-  .pre-actions { grid-template-columns: 1fr; }
+  .pre-actions button { flex-basis: 100%; }
 }
