@@ -15,7 +15,7 @@
   deploy costs nothing: the next online load fetches the new files and
   refreshes the cache. Bumping it only clears out old entries sooner.
 */
-const VERSION = 'fit-v2';
+const VERSION = 'fit-v3';
 const NETWORK_TIMEOUT_MS = 4000;
 
 // The animation list comes from the dictionary itself, so it can't drift.
@@ -68,8 +68,10 @@ function withTimeout(promise, ms) {
 
 async function networkFirst(req) {
   const cache = await caches.open(VERSION);
-  // Every navigation is the one page, whatever the query string or hash.
-  const key = req.mode === 'navigate' ? '/' : req;
+  // A navigation to the app is the one page, whatever the query string or
+  // hash; other pages (the 3D viewer) are cached under their own path.
+  const path = new URL(req.url).pathname;
+  const key = req.mode === 'navigate' ? (path === '/' || path === '/index.html' ? '/' : path) : req;
   const net = fetch(req);
   try {
     const fresh = await withTimeout(net, NETWORK_TIMEOUT_MS);

@@ -149,6 +149,46 @@ try {
   await p.click('#btnStart');                                   // pause
   ok('classic opens with 4 rounds, skip works, timer recovers a 3s suspension');
 
+  step = 'tapping the animation opens the 3D view over the workout';
+  // the 3D page needs WebGL; the check here is the app's side of the tap
+  await p.route('**/move.html*', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>3D</title>' }));
+  await p.click('#btnStart');                                   // running again
+  const moveId = await p.$eval('#animA', e => e.dataset.move);
+  assert(await st(() => !!EXERCISES[document.getElementById('animA').dataset.move]), `the card knows its exercise (${moveId})`);
+  await p.click('#animA');
+  assert(await p.$eval('#moveSheet', e => !e.hidden), 'the 3D sheet opens');
+  assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === `move.html?embed=1#${moveId}`, 'on that exercise');
+  assert(await st(() => state.running), 'the timer keeps running under it');
+  await p.keyboard.press('Escape');
+  assert(await p.$eval('#moveSheet', e => e.hidden), 'Escape closes it');
+  assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === 'about:blank', 'and stops the 3D page');
+  await p.click('#btnStart');                                   // pause
+  ok(`tapping the animation opens ${moveId} in 3D over the running timer`);
+
+  step = 'a rest shows the coming block as thumbnails';
+  assert(await p.$eval('#btnNextBlock', e => e.hidden), 'no preview button while working');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'blockrest')); render(); });
+  assert(!(await p.$eval('#btnNextBlock', e => e.hidden)), 'the button shows in the block rest');
+  await p.click('#btnNextBlock');
+  const cards = await p.$$eval('.next-card', els => els.map(e => e.dataset.move));
+  const expect = await st(() => {
+    const j = state.sequence.findIndex((x, i) => i > state.currentIdx && x.kind === 'work');
+    const blk = state.sequence[j].blockIdx;
+    const ids = new Set();
+    for (const x of state.sequence) if (x.kind === 'work' && x.blockIdx === blk) for (const w of ['a', 'b']) if (x[w]) ids.add(`${w}:${x[w].id}`);
+    return ids.size;
+  });
+  assert(cards.length === expect, `one card per exercise per person in the next block (${cards.length} of ${expect})`);
+  assert(await p.evaluate(ids => ids.every(id => !!EXERCISES[id]), cards), 'cards name real exercises');
+  await p.click('.next-card >> nth=0');
+  assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === `move.html?embed=1#${cards[0]}`, 'a card opens its 3D view');
+  await p.keyboard.press('Escape');
+  assert(!(await p.$eval('#nextSheet', e => e.hidden)), 'Escape closes the 3D view first');
+  await st(() => { seekTo(state.currentIdx + 1); render(); });
+  assert(await p.$eval('#nextSheet', e => e.hidden), 'and the preview closes itself when the work starts');
+  await p.unroute('**/move.html*');
+  ok(`the block rest previews ${cards.length} upcoming exercises, each opening in 3D`);
+
   step = 'history entry of a classic reopens at the interval it was run';
   await p.click('#btnBack'); await pickInterval('Short bursts');
   await p.click('#btnSetupBack'); await p.click('#pathClassics');
