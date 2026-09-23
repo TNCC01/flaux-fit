@@ -201,6 +201,152 @@ const SKATE_LEFT = {
   },
 };
 
+// ---------------------------------------------------------- running in place
+// Left knee up (or heel up), right foot on the ball of the foot.
+const HK_LEFT = {
+  label: 'Left knee up',
+  pelvis: { pos: [0, 0.95, 0], pitch: -2 },
+  legs: {
+    L: { hip: { flex: 92, abd: 2 }, knee: 95, ankle: 5 },
+    R: { foot: [-0.1, 0.12, 0.01], heel: 20, toeOut: 5 },
+  },
+  arms: {
+    L: { shoulder: { elev: -35, plane: 0 }, elbow: 85 },
+    R: { shoulder: { elev: 55, plane: -5 }, elbow: 85 },
+  },
+};
+const HK_MID = {
+  label: 'Switch',
+  pelvis: { pos: [0, 0.94, 0] },
+  legs: { L: { foot: [0.1, 0.12, 0.01], heel: 20, toeOut: 5 }, R: 'mirror' },
+  arms: { L: { shoulder: { elev: 10, plane: 0 }, elbow: 85 }, R: 'mirror' },
+};
+const BK_LEFT = {
+  label: 'Left heel up',
+  pelvis: { pos: [0, 0.95, 0], pitch: 4 },
+  legs: {
+    L: { hip: { flex: 8, abd: 2 }, knee: 130, ankle: -30 },
+    R: { foot: [-0.1, 0.12, 0.01], heel: 20, toeOut: 5 },
+  },
+  arms: {
+    L: { shoulder: { elev: -30, plane: 0 }, elbow: 90 },
+    R: { shoulder: { elev: 40, plane: -5 }, elbow: 90 },
+  },
+};
+const SPRINT_LEFT = {
+  label: 'Left knee drive',
+  pelvis: { pos: [0, 0.96, 0.02], pitch: 8 },
+  spine: { flex: 3 },
+  legs: {
+    L: { hip: { flex: 80, abd: 2 }, knee: 105, ankle: 5 },
+    R: { foot: [-0.1, 0.13, -0.08], heel: 25, toeOut: 3 },
+  },
+  arms: {
+    L: { shoulder: { elev: -50, plane: 0 }, elbow: 80 },
+    R: { shoulder: { elev: 70, plane: -5 }, elbow: 85 },
+  },
+};
+// flight after the left drive: left foot coming down, right heel kicking up
+const SPRINT_FLY_L = {
+  label: 'Flight',
+  pelvis: { pos: [0, 1.0, 0.02], pitch: 8 },
+  spine: { flex: 3 },
+  legs: {
+    L: { foot: [0.1, 0.2, 0.06], knee: 'fwd', ankle: 0 },
+    R: { hip: { flex: 0, abd: 2 }, knee: 115, ankle: -25 },
+  },
+  arms: { L: { shoulder: { elev: 5, plane: 0 }, elbow: 85 }, R: 'mirror' },
+};
+
+// ---------------------------------------------------------- climbers
+// Straight-arm plank with the hands under the shoulders at z = 0.
+const MC_HANDS = { L: { hand: [0.2, 0.03, 0], elbow: [0.7, 0.2, -1], palm: 'floor' }, R: 'mirror' };
+const MC_BACK = { foot: [0.09, 0.122, -1.2], knee: 'down', ankle: 0 };
+const MC_LEFT = {
+  label: 'Left knee in',
+  pelvis: { pos: [0, 0.41, -0.39], pitch: 71 },
+  neck: { flex: 12 },
+  legs: {
+    L: { foot: [0.11, 0.2, -0.52], knee: [0, -1, 0.6] },
+    R: { ...MC_BACK, foot: [-0.09, 0.122, -1.2] },
+  },
+  arms: MC_HANDS,
+};
+const MCX_LEFT = {
+  label: 'Left knee across',
+  pelvis: { pos: [0, 0.42, -0.39], pitch: 71, roll: 4 },
+  spine: { twist: -4 },
+  neck: { flex: 12 },
+  legs: {
+    L: { foot: [-0.08, 0.21, -0.52], knee: [-0.7, -1, 0.6] },
+    R: { ...MC_BACK, foot: [-0.09, 0.122, -1.2] },
+  },
+  arms: MC_HANDS,
+};
+
+// ---------------------------------------------------------- lateral shuffle
+function shuffleKeys() {
+  const Y = 0.76;
+  const arms = { L: { shoulder: { elev: 30, plane: 25 }, elbow: 70 }, R: 'mirror' };
+  const pose = (label, px, py, lx, ly, rx, ry) => ({
+    label,
+    pelvis: { pos: [px, py, -0.08], pitch: 26 },
+    spine: { flex: 5 },
+    neck: { flex: -14 },
+    legs: {
+      L: { foot: [lx, ly, 0.02], toeOut: 6, knee: [0.25, 0, 1] },
+      R: { foot: [rx, ry, 0.02], toeOut: 6, knee: [-0.25, 0, 1] },
+    },
+    arms,
+  });
+  const W = 0.27, S = 0.3, LIFT = 0.11;
+  const keys = {};
+  const seq = [];
+  const stance = (c) => pose('Athletic stance', c, Y, c + W, 0.07, c - W, 0.07);
+  // moving left (+x) from c: lead left foot out, trail right foot follows
+  const left = (c, n) => {
+    keys['la' + n] = pose('Lead foot out', c + 0.08, Y + 0.01, c + W + S / 2, LIFT, c - W, 0.07);
+    keys['lb' + n] = pose('Push off', c + 0.15, Y - 0.02, c + W + S, 0.07, c - W, 0.07);
+    keys['lc' + n] = pose('Feet follow', c + 0.24, Y + 0.01, c + W + S, 0.07, c - W + S / 2, LIFT);
+    seq.push('la' + n, 'lb' + n, 'lc' + n);
+  };
+  const right = (c, n) => {
+    keys['ra' + n] = pose('Lead foot out', c - 0.08, Y + 0.01, c + W, 0.07, c - W - S / 2, LIFT);
+    keys['rb' + n] = pose('Push off', c - 0.15, Y - 0.02, c + W, 0.07, c - W - S, 0.07);
+    keys['rc' + n] = pose('Feet follow', c - 0.24, Y + 0.01, c + W - S / 2, LIFT, c - W - S, 0.07);
+    seq.push('ra' + n, 'rb' + n, 'rc' + n);
+  };
+  keys.s0 = stance(-S); seq.push('s0');
+  left(-S, 1); keys.s1 = stance(0); seq.push('s1');
+  left(0, 2); keys.s2 = stance(S); seq.push('s2');
+  right(S, 1); seq.push('s1');
+  right(0, 2);
+  return { keys, seq };
+}
+const SHUFFLE = shuffleKeys();
+
+// ---------------------------------------------------------- shuttle run
+// A running stride with the stance foot planted at z, facing +Z (face 1)
+// or -Z (face -1); the other knee drives up.
+function stride(label, z, face, stance) {
+  const sg = stance === 'L' ? 1 : -1;
+  const swing = stance === 'L' ? 'R' : 'L';
+  const legs = {
+    [stance]: { foot: [sg * face * 0.1, 0.11, z], heel: 15, toeOut: 4, knee: [0, 0, face] },
+    [swing]: { hip: { flex: 70, abd: 2 }, knee: 100, ankle: 0 },
+  };
+  const arms = {
+    [swing]: { shoulder: { elev: -45, plane: 0 }, elbow: 85 },
+    [stance]: { shoulder: { elev: 60, plane: -5 }, elbow: 85 },
+  };
+  return {
+    label,
+    pelvis: { pos: [0, 0.95, z + face * 0.08], yaw: face > 0 ? 0 : 180, pitch: 12 },
+    spine: { flex: 3 },
+    legs, arms,
+  };
+}
+
 export default {
   // ======================================================== jacks
   jumpingJacks: {
