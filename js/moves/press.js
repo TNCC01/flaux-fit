@@ -12,23 +12,33 @@ const WALL_Z = -1.35;                   // wall centre; its face is at z -1.30
 const lerpN = (a, b, t) => Math.round((a + (b - a) * t) * 1000) / 1000;
 const WALL_STAGES = [
   // label, pelvis [y, z], pitch, hands z, feet [y, z], ankle
-  { label: 'Push-up', pelvis: [0.402, -0.449], pitch: 71, hand: -0.06, foot: [0.122, -1.262], ankle: 0 },
-  { label: 'Feet up', pelvis: [0.6, -0.46], pitch: 95, hand: -0.06, foot: [0.62, -1.21], ankle: -10 },
-  { label: 'Straight line', pelvis: [0.743, -0.471], pitch: 117, hand: -0.06, foot: [1.15, -1.21], ankle: -20 },
-  { label: 'Walk in', pelvis: [0.945, -0.842], pitch: 152, hand: -0.6, foot: [1.7, -1.21], ankle: -30 },
-  { label: 'Handstand', pelvis: [1.017, -1.178], pitch: 176, hand: -1.115, foot: [1.87, -1.2], ankle: -40 },
+  { label: 'Push-up', pelvis: [0.41, -0.39], pitch: 72, hand: -0.06, foot: [0.122, -1.15], ankle: 0 },
+  { label: 'Feet on wall', pelvis: [0.575, -0.4], pitch: 94, hand: -0.06, foot: [0.6, -1.21], ankle: 20 },
+  { label: 'Straight line', pelvis: [0.729, -0.478], pitch: 115, hand: -0.06, foot: [1.095, -1.21], ankle: 30 },
+  { label: 'Step', pelvis: [0.814, -0.575], pitch: 127, hand: -0.2, foot: [1.342, -1.21], ankle: 38 },
+  { label: 'Step', pelvis: [0.869, -0.664], pitch: 136, hand: -0.33, foot: [1.488, -1.21], ankle: 42 },
+  { label: 'Step', pelvis: [0.912, -0.754], pitch: 144, hand: -0.465, foot: [1.601, -1.21], ankle: -65 },
+  { label: 'Step', pelvis: [0.945, -0.844], pitch: 151, hand: -0.6, foot: [1.686, -1.21], ankle: -60 },
+  { label: 'Step', pelvis: [0.971, -0.931], pitch: 158, hand: -0.73, foot: [1.748, -1.21], ankle: -55 },
+  { label: 'Step', pelvis: [0.990, -1.016], pitch: 164, hand: -0.86, foot: [1.793, -1.21], ankle: -50 },
+  { label: 'Step', pelvis: [1.004, -1.102], pitch: 170, hand: -0.99, foot: [1.823, -1.21], ankle: -45 },
+  { label: 'Handstand', pelvis: [1.013, -1.183], pitch: 176, hand: -1.115, foot: [1.862, -1.21], ankle: -40 },
 ];
 function wallPose(st, hands, feet, extra = {}) {
+  // kneecaps face the way the body faces; elbows point back towards the feet
+  const p = (st.pitch * Math.PI) / 180;
+  const front = [0, lerpN(0, -Math.sin(p), 1), lerpN(0, Math.cos(p), 1)];
+  const elbow = (x) => [x, lerpN(0, 0.3 - Math.cos(p), 1), lerpN(0, -Math.sin(p), 1)];
   return {
     label: st.label,
     pelvis: { pos: [0, st.pelvis[0], st.pelvis[1]], pitch: st.pitch },
     legs: {
-      L: { foot: [0.1, feet.L[0], feet.L[1]], knee: 'fwd', ankle: feet.L[2] },
-      R: { foot: [-0.1, feet.R[0], feet.R[1]], knee: 'fwd', ankle: feet.R[2] },
+      L: { foot: [0.1, feet.L[0], feet.L[1]], knee: front, ankle: feet.L[2] },
+      R: { foot: [-0.1, feet.R[0], feet.R[1]], knee: front, ankle: feet.R[2] },
     },
     arms: {
-      L: { hand: [0.25, hands.L[0], hands.L[1]], elbow: [0.4, 0.3, -1], palm: 'floor' },
-      R: { hand: [-0.25, hands.R[0], hands.R[1]], elbow: [-0.4, 0.3, -1], palm: 'floor' },
+      L: { hand: [0.25, hands.L[0], hands.L[1]], elbow: elbow(0.4), palm: 'floor' },
+      R: { hand: [-0.25, hands.R[0], hands.R[1]], elbow: elbow(-0.4), palm: 'floor' },
     },
     ...extra,
   };
@@ -39,7 +49,7 @@ function wallWalkUp() {
   const S = WALL_STAGES;
   const handAt = (st) => [0.03, st.hand];
   const footAt = (st) => [st.foot[0], st.foot[1], st.ankle];
-  const mid = (a, b, t) => ({ label: b.label, pelvis: [lerpN(a.pelvis[0], b.pelvis[0], t), lerpN(a.pelvis[1], b.pelvis[1], t)],
+  const mid = (a, b, t) => ({ label: 'Step', pelvis: [lerpN(a.pelvis[0], b.pelvis[0], t), lerpN(a.pelvis[1], b.pelvis[1], t)],
     pitch: lerpN(a.pitch, b.pitch, t) });
   for (let i = 0; i < S.length - 1; i++) {
     const a = S[i], b = S[i + 1];
@@ -50,7 +60,7 @@ function wallWalkUp() {
     const liftF = (p, q) => [lerpN(p[0], q[0], 0.5) + 0.04, lerpN(p[1], q[1], 0.5) + 0.08, lerpN(p[2], q[2], 0.5)];
     const hA = handAt(a), hB = handAt(b), fA = footAt(a), fB = footAt(b);
     out.push([`s${i}a`, wallPose(mid(a, b, 0.25), { L: hA, R: moveHands ? liftH(hA, hB) : hA }, { L: liftF(fA, fB), R: fA }, { pass: true })]);
-    out.push([`s${i}b`, wallPose(mid(a, b, 0.5), { L: hA, R: hB }, { L: fB, R: fA })]);
+    out.push([`s${i}b`, wallPose(mid(a, b, 0.6), { L: hA, R: hB }, { L: fB, R: fA })]);
     out.push([`s${i}c`, wallPose(mid(a, b, 0.75), { L: moveHands ? liftH(hA, hB) : hA, R: hB }, { L: fB, R: liftF(fA, fB) }, { pass: true })]);
     out.push([`s${i + 1}`, wallPose(b, { L: hB, R: hB }, { L: fB, R: fB })]);
   }
@@ -58,7 +68,7 @@ function wallWalkUp() {
 }
 const WALL_UP = wallWalkUp();
 const WALL_KEYS = Object.fromEntries([['s0', wallPose(WALL_STAGES[0], { L: [0.03, -0.06], R: [0.03, -0.06] },
-  { L: [0.122, -1.262, 0], R: [0.122, -1.262, 0] })], ...WALL_UP]);
+  { L: [0.122, -1.15, 0], R: [0.122, -1.15, 0] })], ...WALL_UP]);
 const WALL_SEQ_UP = ['s0', ...WALL_UP.map(([n]) => n)];
 
 export default {
@@ -107,6 +117,16 @@ export default {
     tempo: [2.0, 1.2],
     holds: { top: 0.4, bottom: 0.2 },
   },
+  wallHandstand: {
+    camera: { yaw: 90, pitch: 8 },
+    props: [{ type: 'wall', z: WALL_Z }],
+    muscles: { primary: ['shoulders', 'core'], secondary: ['triceps', 'upperBack', 'traps', 'glutes', 'forearms'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: { ...WALL_KEYS, s10: { ...WALL_KEYS.s10, label: 'Hold' } },
+    seq: [...WALL_SEQ_UP, ...WALL_SEQ_UP.slice(1, -1).reverse()],
+    tempo: 0.26,
+    holds: { s10: 5, s0: 0.8 },
+  },
   wallWalk: {
     camera: { yaw: 90, pitch: 8 },
     props: [{ type: 'wall', z: WALL_Z }],
@@ -114,8 +134,54 @@ export default {
     coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
     keys: WALL_KEYS,
     seq: [...WALL_SEQ_UP, ...WALL_SEQ_UP.slice(1, -1).reverse()],
-    tempo: 0.45,
-    holds: { s4: 0.8, s0: 0.6 },
+    tempo: 0.24,
+    holds: { s10: 0.8, s0: 0.6 },
+  },
+  benchDips: {
+    camera: { yaw: 60, pitch: 8 },
+    props: [{ type: 'bench', pos: [0, 0, -0.3], size: [1.0, 0.45, 0.35] }],
+    muscles: { primary: ['triceps'], secondary: ['chest', 'shoulders'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      top: {
+        label: 'Arms straight',
+        pelvis: { pos: [0, 0.585, -0.025] },
+        legs: { L: { foot: [0.14, 0.07, 0.45], knee: [0.1, 1, 0.4] }, R: 'mirror' },
+        arms: { L: { hand: [0.2, 0.48, -0.19], elbow: 'back', palm: 'floor' }, R: 'mirror' },
+      },
+      bottom: {
+        label: 'Elbows bent',
+        pelvis: { pos: [0, 0.408, -0.02], pitch: 4 },
+        legs: { L: { foot: [0.14, 0.07, 0.45], knee: [0.1, 1, 0.4] }, R: 'mirror' },
+        arms: { L: { hand: [0.2, 0.48, -0.19], elbow: 'back', palm: 'floor' }, R: 'mirror' },
+      },
+    },
+    seq: ['top', 'bottom'],
+    tempo: [1.8, 1.1],
+    holds: { top: 0.4, bottom: 0.2 },
+  },
+  ringDip: {
+    camera: { yaw: 60, pitch: 6 },
+    props: [{ type: 'rings' }],
+    muscles: { primary: ['triceps', 'chest'], secondary: ['shoulders', 'core', 'forearms'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      top: {
+        label: 'Support',
+        pelvis: { pos: [0, 1.2, 0] },
+        legs: { L: { hip: { flex: -8, abd: 2 }, knee: 75, ankle: -20 }, R: 'mirror' },
+        arms: { L: { hand: [0.27, 1.095, 0.02], elbow: 'back', turn: 20 }, R: 'mirror' },
+      },
+      bottom: {
+        label: 'Bottom',
+        pelvis: { pos: [0, 1.003, -0.019], pitch: 20 },
+        legs: { L: { hip: { flex: -26, abd: 2 }, knee: 75, ankle: -20 }, R: 'mirror' },
+        arms: { L: { hand: [0.27, 1.095, 0.02], elbow: 'back', turn: 20 }, R: 'mirror' },
+      },
+    },
+    seq: ['top', 'bottom'],
+    tempo: [1.8, 1.1],
+    holds: { top: 0.4, bottom: 0.2 },
   },
   barbellPress: {
     camera: { yaw: 50, pitch: 6 },
