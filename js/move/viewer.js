@@ -230,10 +230,6 @@ function showMove(r) {
   requestAnimationFrame(tick);
 
   renderCoaching(r);
-  if (EMBED) {
-    $('close').hidden = false;
-    $('close').onclick = () => parent.postMessage({ type: 'fit-move-close' }, '*');
-  }
 }
 
 function list(el, items, ordered) {
@@ -375,6 +371,7 @@ function runCheck(names) {
       rep.joints[s] = { shoulderL: w('shoulderL'), shoulderR: w('shoulderR'), hipL: w('hipL'), hipR: w('hipR'),
         elbowL: w('elbowL'), kneeL: w('kneeL'), wristL: w('wristL'), ankleL: w('ankleL'), head: w('head') };
     }
+    if (params.has('quick')) { scene.remove(fig.J.root); continue; }
     // frames: each key pose, and halfway into each move
     const frames = [];
     for (const st of fig.tl.steps) {
@@ -410,6 +407,11 @@ function runCheck(names) {
 
 // ---------------------------------------------------------- start
 function route() {
+  // inside the app's sheet, which has its own Close button
+  if (EMBED) document.body.classList.add('embed');
+  document.addEventListener('keydown', (e) => {
+    if (EMBED && e.key === 'Escape') parent.postMessage({ type: 'fit-move-close' }, location.origin);
+  });
   if (CHECK) return runCheck(CHECK.split(','));
   const key = decodeURIComponent(location.hash.slice(1));
   const r = key && resolve(key);

@@ -8,6 +8,7 @@
     node scripts/move-check.mjs --out sheet.png bwSquat
     node scripts/move-check.mjs --joints pushup     also print joint positions
     node scripts/move-check.mjs --big pushup        bigger pictures
+    node scripts/move-check.mjs --quick             numbers only, no pictures (CI)
 
   For each movement it draws every key pose, and the halfway point into
   each move, from the front, the side and three-quarters, into one PNG
@@ -36,6 +37,7 @@ if (oi >= 0) { out = args[oi + 1]; args.splice(oi, 2); }
 const requireAll = args.includes('--all-required');
 const verbose = args.includes('--joints');
 const big = args.includes('--big');
+const quick = args.includes('--quick');
 const names = args.filter(a => !a.startsWith('--'));
 
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -78,13 +80,14 @@ if (!list.length) list = known.have;
 let failed = false;
 const report = {};
 // render in batches so one sheet doesn't get huge
-const BATCH = big ? 4 : 12;
+const BATCH = quick ? 200 : big ? 4 : 12;
 const sheets = [];
 for (let i = 0; i < list.length; i += BATCH) {
   const batch = list.slice(i, i + BATCH);
-  await page.goto(`${URL}move.html?check=${batch.join(',')}${big ? '&size=360' : ''}`);
+  await page.goto(`${URL}move.html?check=${batch.join(',')}${big ? '&size=360' : ''}${quick ? '&quick=1' : ''}`);
   await page.waitForSelector('body[data-checked]', { timeout: 300000 });
   Object.assign(report, await page.evaluate(() => window.__check));
+  if (quick) continue;
   const file = list.length > BATCH ? out.replace(/\.png$/, `-${i / BATCH + 1}.png`) : out;
   await page.locator('#checkSheet').screenshot({ path: file });
   sheets.push(file);
@@ -103,7 +106,7 @@ if (missing.length) {
   else console.log(`note ${msg}`);
 }
 for (const e of consoleErrors) { console.log(`FAIL console: ${e}`); failed = true; }
-console.log(`sheet${sheets.length > 1 ? 's' : ''}: ${sheets.join(', ')}`);
+if (sheets.length) console.log(`sheet${sheets.length > 1 ? 's' : ''}: ${sheets.join(', ')}`);
 await browser.close();
 server.close();
 process.exit(failed ? 1 : 0);

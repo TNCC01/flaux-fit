@@ -28,8 +28,6 @@
   header.top { display: flex; align-items: center; gap: 12px; padding: 14px 16px 6px; max-width: 880px; margin: 0 auto; }
   header.top a { text-decoration: none; font-weight: 600; font-size: 0.95rem; }
   header.top .spacer { flex: 1; }
-  #close { background: var(--card); border: 1px solid var(--border); border-radius: 999px;
-    padding: 8px 16px; font-weight: 600; cursor: pointer; }
 
   h1 { font-size: clamp(1.7rem, 5vw, 2.4rem); margin: 4px 0 2px; letter-spacing: -0.01em; text-wrap: balance; }
   .cue { color: var(--muted); margin: 0 0 12px; font-weight: 600; }
@@ -86,6 +84,9 @@
   .checkRow img { display: inline-block; }
   .checkRow figcaption { font-size: 11px; color: var(--muted); padding: 2px 4px; }
   body.checking header.top, body.checking #detail, body.checking #library { display: none; }
+  body.embed header.top { display: none; }
+  body.embed #detail { padding-top: 14px; }
+  body.embed h1, body.embed .cue { padding-right: 96px; }
 
   @media (max-width: 560px) {
     #stage { height: 56vh; }
@@ -96,8 +97,6 @@
 <body>
 <header class="top">
   <a id="backLink" href="move.html#">&larr; All movements</a>
-  <span class="spacer"></span>
-  <button id="close" hidden>Close</button>
 </header>
 
 <main id="detail" class="wrap" hidden>

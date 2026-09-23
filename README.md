@@ -51,6 +51,11 @@ rather than hardcoded.
   more for multi-stage moves like burpees), rigged so limbs rotate at
   their joints, and baked to self-animating SVGs (CSS keyframes) in
   `img/exercises/<base>.svg`
+- **A 3D demonstration of every movement.** Tap the animation during a
+  workout and a sheet opens over the timer with a rotatable 3D figure
+  doing the movement at a coached tempo, the working muscles lit, and
+  set-up steps, cues, common mistakes and breathing. `move.html` on its
+  own is the library of all of them. See "3D movements" below
 - **16 named workouts** and **3 stretch routines**
 - Equipment picker: tap off gear you haven't got and nothing needing it
   gets picked
@@ -83,6 +88,7 @@ since a workout can be reopened later with two people selected.
 
 ```
 index.html              markup only
+move.html               the 3D movement viewer and library
 sw.js                   service worker: offline cache
 css/app.css
 js/exercises.js         the movement dictionary + regions + stretches
@@ -90,7 +96,11 @@ js/workouts.js          intervals, block helpers, the named classics
 js/generator.js         builds a workout to order
 js/app.js               views, setup flows, rendering, timer
 img/exercises/*.svg     generated, do not hand-edit
+js/move/                3D mannequin, pose engine, viewer
+js/moves/               3D movement data and coaching, by family
+vendor/three/           three.js, vendored (scripts/vendor-three.sh)
 scripts/gen-anims.py    pose source for the animations
+scripts/move-check.mjs  checks the 3D data and renders contact sheets
 scripts/selfcheck.mjs   data + generator validation
 scripts/e2e.mjs         drives the app in headless Chromium
 scripts/export-sequence.mjs   expand a workout to timed steps as JSON
@@ -105,6 +115,21 @@ timeout, so online you always get the current version and a flaky
 connection falls back to the cache rather than hanging; the animations are
 served cache-first and refreshed in the background. Bump `VERSION` in
 `sw.js` to force old caches out, though nothing depends on remembering to.
+
+## 3D movements
+
+The workout screen's SVG animations are prompts: small, cached, offline.
+The 3D viewer is the reference. Each movement is key poses on a rigged
+1.75 m mannequin with adult proportions, written as anatomical joint
+angles or as world-space hand and foot targets (two-bone IK keeps planted
+feet and hands planted), played at a coached tempo with any equipment
+riding in the hands. `js/moves/README.md` is the authoring guide.
+
+`node scripts/move-check.mjs [names]` renders every key pose from the
+front, side and three-quarters into a contact sheet and fails on a target
+a limb can't reach or a body through the floor; CI runs it with `--quick`
+and `--all-required`. The viewer needs a connection the first time; after
+that the service worker has it cached like the rest of the app.
 
 ## Local dev
 

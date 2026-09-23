@@ -914,10 +914,50 @@ function setAlt(el, alt) {
 // media actually changes, rewriting it would restart the animation.
 function updateAnim(el, ex) {
   const base = ex && ex.img ? ex.img : '';
+  // tapping the animation opens the 3D demonstration of this exercise
+  el.dataset.move = base ? (ex.id || base) : '';
+  el.setAttribute('aria-label', base ? `${ex.name}: show in 3D` : '');
   if (el.dataset.img === base) return;
   el.dataset.img = base;
-  el.innerHTML = base ? `<img src="img/exercises/${base}.svg" alt="">` : '';
+  el.innerHTML = base ? `<img src="img/exercises/${base}.svg" alt=""><span class="ex-3d" aria-hidden="true">3D</span>` : '';
 }
+
+// ------------------------------------------------------------ 3D sheet
+async function openMove(id) {
+  if (!id) return;
+  const sheet = document.getElementById('moveSheet');
+  const frame = document.getElementById('moveFrame');
+  const offline = document.getElementById('moveOffline');
+  // offline and never opened before: say so, rather than a browser error
+  let reachable = navigator.onLine;
+  if (!reachable && 'caches' in window) {
+    try { reachable = !!(await caches.match('/move.html', { ignoreSearch: true })); } catch (e) { /* no cache */ }
+  }
+  offline.hidden = reachable;
+  frame.hidden = !reachable;
+  if (reachable) frame.src = `move.html?embed=1#${encodeURIComponent(id)}`;
+  sheet.hidden = false;
+  document.getElementById('moveClose').focus();
+}
+function closeMove() {
+  const sheet = document.getElementById('moveSheet');
+  if (sheet.hidden) return;
+  sheet.hidden = true;
+  // stop the 3D page rendering in the background
+  document.getElementById('moveFrame').src = 'about:blank';
+}
+for (const id of ['animA', 'animB']) {
+  const el = document.getElementById(id);
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  el.addEventListener('click', () => openMove(el.dataset.move));
+}
+document.getElementById('moveClose').addEventListener('click', closeMove);
+document.getElementById('moveSheet').addEventListener('click', (e) => { if (e.target.id === 'moveSheet') closeMove(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMove(); });
+window.addEventListener('message', (e) => {
+  if (e.origin === location.origin && e.data && e.data.type === 'fit-move-close') closeMove();
+});
 
 function renderSegBar(current, total, kind) {
   const row = document.createElement('div');

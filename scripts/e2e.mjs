@@ -149,6 +149,23 @@ try {
   await p.click('#btnStart');                                   // pause
   ok('classic opens with 4 rounds, skip works, timer recovers a 3s suspension');
 
+  step = 'tapping the animation opens the 3D view over the workout';
+  // the 3D page needs WebGL; the check here is the app's side of the tap
+  await p.route('**/move.html*', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>3D</title>' }));
+  await p.click('#btnStart');                                   // running again
+  const moveId = await p.$eval('#animA', e => e.dataset.move);
+  assert(await st(() => !!EXERCISES[document.getElementById('animA').dataset.move]), `the card knows its exercise (${moveId})`);
+  await p.click('#animA');
+  assert(await p.$eval('#moveSheet', e => !e.hidden), 'the 3D sheet opens');
+  assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === `move.html?embed=1#${moveId}`, 'on that exercise');
+  assert(await st(() => state.running), 'the timer keeps running under it');
+  await p.keyboard.press('Escape');
+  assert(await p.$eval('#moveSheet', e => e.hidden), 'Escape closes it');
+  assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === 'about:blank', 'and stops the 3D page');
+  await p.click('#btnStart');                                   // pause
+  await p.unroute('**/move.html*');
+  ok(`tapping the animation opens ${moveId} in 3D over the running timer`);
+
   step = 'history entry of a classic reopens at the interval it was run';
   await p.click('#btnBack'); await pickInterval('Short bursts');
   await p.click('#btnSetupBack'); await p.click('#pathClassics');

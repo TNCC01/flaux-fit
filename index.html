@@ -301,6 +301,17 @@
 </div>
 </div>
 
+<!-- The 3D movement viewer (move.html), over the workout so the timer
+     keeps running underneath. -->
+<div class="move-sheet" id="moveSheet" hidden>
+  <div class="move-sheet-inner" role="dialog" aria-modal="true" aria-label="Movement in 3D">
+    <iframe id="moveFrame" title="Movement in 3D"></iframe>
+    <p class="move-offline" id="moveOffline" hidden>The 3D view needs an internet connection the first time
+      you open it. Once it has loaded, it works offline too.</p>
+    <button class="move-sheet-close" id="moveClose">Close</button>
+  </div>
+</div>
+
 <script src="js/exercises.js"></script>
 <script src="js/workouts.js"></script>
 <script src="js/generator.js"></script>

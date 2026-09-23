@@ -617,6 +617,33 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
 .ex-anim:empty { display: none; }
 body.hide-photos .ex-anim { display: none; }
 .ex-anim img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.ex-anim[role="button"] { cursor: pointer; }
+.ex-anim:focus-visible { outline: 2px solid var(--teal-bright); outline-offset: 2px; }
+/* a small tag saying the animation opens a 3D view */
+.ex-3d {
+  position: absolute; right: 8px; bottom: 8px; padding: 3px 8px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; color: var(--teal-bright);
+  background: rgba(5, 10, 10, 0.72); border: 1px solid var(--border);
+}
+
+/* the 3D movement viewer over the workout */
+.move-sheet {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.move-sheet[hidden] { display: none; }
+.move-sheet-inner {
+  position: relative; width: 100%; max-width: 960px; height: 94vh; height: 94dvh;
+  background: #050a0a; border: 1px solid var(--border); border-bottom: 0;
+  border-radius: 18px 18px 0 0; overflow: hidden;
+}
+.move-sheet iframe { width: 100%; height: 100%; border: 0; display: block; }
+.move-sheet-close {
+  position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px;
+  background: var(--card); color: var(--text); border: 1px solid var(--border);
+  border-radius: 999px; padding: 8px 16px; font-weight: 700; cursor: pointer;
+}
+.move-offline { color: var(--muted); padding: 72px 24px; max-width: 42ch; margin: 0 auto; line-height: 1.5; }
 
 .alternative {
   font-size: 0.95rem; color: var(--muted); line-height: 1.4;
