@@ -84,10 +84,10 @@ function gait(base, steps) {
 
 const CRAB = {
   label: 'Hips up',
-  pelvis: { pos: [0, 0.4, 0], pitch: -66 },
+  pelvis: { pos: [0, 0.4, 0], pitch: -61 },
   neck: { flex: 34 },
   leg: { knee: [0.2, 1, 0.6] }, foot: [0.15, 0.07, 0.42], footLift: 0.07,
-  arm: { elbow: [0, 0, -1], palm: 'floor' }, hand: [0.2, 0.03, -0.42], handLift: 0.07,
+  arm: { elbow: [0, 0, -1], palm: 'floor' }, hand: [0.2, 0.03, -0.4], handLift: 0.07,
 };
 const CRAB_STEP = 0.15;
 const crab = gait(CRAB, [
@@ -879,7 +879,7 @@ const MOVES = {
 
   kbWindmill: {
     camera: { yaw: 10, pitch: 8 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'auto' }],
     keys: {
       top: { label: 'Bell locked out', pelvis: { pos: [0, 0.92, 0], yaw: 30 }, neck: { flex: -20, twist: -10 },
         legs: WM_FEET,
@@ -899,7 +899,7 @@ const MOVES = {
 
   halfGetup: {
     camera: { yaw: 35, pitch: 14 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'auto' }],
     keys: {
       lie: { label: 'Bell pressed up', pelvis: { pos: [0, 0.125, 0], pitch: -90 }, neck: { flex: 8, twist: -15 },
         legs: TGU_LEGS, arms: { R: { hand: [-0.19, 0.64, -0.445], elbow: 'out' }, L: { ...TGU_POST, elbow: 'up' } } },
@@ -917,7 +917,3 @@ const MOVES = {
 for (const [name, t] of Object.entries(TEXT)) Object.assign(MOVES[name], t);
 
 export default MOVES;
-// DEBUG-VIEW
-const _pick = (m, ks) => ({ ...m, keys: Object.fromEntries(ks.map((k) => [k, { ...m.keys[k], label: k }])), seq: ks, tempo: 0.5, holds: {} });
-for (const n of decodeURIComponent((globalThis.location && globalThis.location.search) || '').split(/[=,&]/))
-  if (n.startsWith('_v~')) { const [, mv, ...ks] = n.split('~'); MOVES[n] = _pick(MOVES[mv], ks); }
