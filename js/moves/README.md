@@ -8,8 +8,8 @@ for the movement they share. When a variant needs its own 3D version (the kettle
 Russian twist), key a record by the exercise id itself (`russianTwistKb`): the viewer
 prefers it over the shared animation.
 
-The in-workout SVG prompts (`img/exercises/`, from `scripts/gen-anims.py`) are a
-separate, lighter system. This is the reference version: it has to be right.
+The same figures play on the workout cards (`js/move/deck.js`) and in the
+coming-up thumbnails, so this is what people train from. It has to be right.
 
 ## The bar
 

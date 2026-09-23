@@ -616,14 +616,18 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
 }
 .ex-anim:empty { display: none; }
 body.hide-photos .ex-anim { display: none; }
-.ex-anim img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+/* the 3D figure (js/move/deck.js): drag sideways to turn it, tap for the full view */
+.fig3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; }
+/* no WebGL: keep just the "How to" tag, which still opens the coaching */
+.ex-anim.no-3d { aspect-ratio: auto; height: 2.6rem; }
 .ex-anim[role="button"] { cursor: pointer; }
 .ex-anim:focus-visible { outline: 2px solid var(--teal-bright); outline-offset: 2px; }
-/* a small tag saying the animation opens a 3D view */
+/* a small tag saying a tap opens the full 3D view with coaching */
 .ex-3d {
   position: absolute; right: 8px; bottom: 8px; padding: 3px 8px; border-radius: 999px;
   font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; color: var(--teal-bright);
   background: rgba(5, 10, 10, 0.72); border: 1px solid var(--border);
+  pointer-events: none;
 }
 
 /* what's coming up: the next block's exercises as thumbnails */
@@ -652,8 +656,6 @@ body.hide-photos .ex-anim { display: none; }
 }
 .next-card:hover, .next-card:focus-visible { border-color: var(--teal-bright); outline: none; }
 .next-thumb { position: relative; aspect-ratio: 3 / 2; border-radius: 8px; overflow: hidden; background: var(--bg); }
-.next-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.next-thumb .ex-3d { right: 4px; bottom: 4px; font-size: 0.62rem; padding: 2px 6px; }
 .next-text { display: grid; gap: 3px; min-width: 0; }
 .next-text strong { font-size: 1.02rem; line-height: 1.25; }
 .next-text span { color: var(--muted); font-size: 0.86rem; line-height: 1.35; }

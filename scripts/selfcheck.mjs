@@ -4,7 +4,7 @@
   Self-check: run before committing.  node scripts/selfcheck.mjs
 
   The app ships as plain scripts with no build step, so nothing would
-  otherwise catch a typo'd exercise id, a missing animation, or a block
+  otherwise catch a typo'd exercise id, a missing 3D movement, or a block
   that hands the same single kettlebell to both people. This walks the
   data and every generator input combination and fails loudly.
 */
@@ -72,16 +72,23 @@ for (const id of ids) {
   }
 }
 
-// ------------------------------------------------------------- 2. artwork
-const artDir = path.join(ROOT, 'img/exercises');
-const onDisk = fs.readdirSync(artDir).filter(f => f.endsWith('.svg')).map(f => f.slice(0, -4));
-const referenced = [...new Set(ids.map(id => EXERCISES[id].img))];
-referenced.forEach(img => {
-  if (!onDisk.includes(img)) fail(`no animation for "${img}" (img/exercises/${img}.svg)`);
+// ------------------------------------------------------ 2. 3D movements
+// Every exercise shows as a 3D figure during the workout, so each one needs
+// movement data (its own record, or the animation it shares).
+const { MOVES } = await import('../js/moves/index.js');
+ids.forEach(id => {
+  const ex = EXERCISES[id];
+  if (!MOVES[id] && !MOVES[ex.img]) fail(`${id}: no 3D movement for "${ex.img}" (js/moves/)`);
 });
-onDisk.forEach(f => {
-  if (!referenced.includes(f)) warn(`img/exercises/${f}.svg is not used by any exercise`);
-});
+const usedMoves = new Set(ids.flatMap(id => [id, EXERCISES[id].img]));
+Object.keys(MOVES).forEach(k => { if (!usedMoves.has(k)) warn(`js/moves: "${k}" is not used by any exercise`); });
+
+// and the service worker has to cache every file the figures load, or
+// they go missing offline
+const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+const need = ['move.html', 'vendor/three/three.min.js',
+  ...['js/move', 'js/moves'].flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith('.js')).map(f => `${d}/${f}`))];
+need.forEach(f => { if (!sw.includes(`'/${f}'`)) fail(`sw.js does not precache /${f}`); });
 
 // -------------------------------------------------------- 3. stretch data
 const stretchIds = STRETCHES.map(s => s.id);
@@ -357,7 +364,7 @@ if (worstOverlap > 0.5) {
 // ------------------------------------------------------------- report
 const reused = ids.filter(id => EXERCISES[id].equipment.length === 0).length;
 console.log(`exercises          ${ids.length} (${reused} bodyweight)`);
-console.log(`animations         ${referenced.length} referenced, ${onDisk.length} on disk`);
+console.log(`3D movements       ${Object.keys(MOVES).length}, ${need.length} files precached`);
 console.log(`classics           ${CLASSICS.length} + ${STRETCH_ROUTINES.length} stretch routines`);
 console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);

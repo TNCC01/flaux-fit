@@ -46,16 +46,14 @@ rather than hardcoded.
 
 - **157 movements** across five body regions (chest & shoulders, back &
   arms, core & abs, legs & glutes, cardio) and fourteen movement patterns
-- **145 hand-authored animations**, one per movement. Poses are
-  joint coordinates in `scripts/gen-anims.py` (two key poses for most,
-  more for multi-stage moves like burpees), rigged so limbs rotate at
-  their joints, and baked to self-animating SVGs (CSS keyframes) in
-  `img/exercises/<base>.svg`
-- **A 3D demonstration of every movement.** Tap the animation during a
-  workout and a sheet opens over the timer with a rotatable 3D figure
-  doing the movement at a coached tempo, the working muscles lit, and
-  set-up steps, cues, common mistakes and breathing. `move.html` on its
-  own is the library of all of them. See "3D movements" below
+- **A 3D figure for every movement**, shown on the workout card at its
+  best angle. Drag sideways to turn it. Tap it and a sheet opens over the
+  timer with the full view: the figure at a coached tempo, the working
+  muscles lit, and set-up steps, cues, common mistakes and breathing.
+  `move.html` on its own is the library of all of them. See "3D
+  movements" below
+- **What's coming up**: during a rest, a button shows the next block's
+  exercises as small moving figures, each opening the full view
 - **16 named workouts** and **3 stretch routines**
 - Equipment picker: tap off gear you haven't got and nothing needing it
   gets picked
@@ -77,7 +75,7 @@ rather than hardcoded.
   packed into the URL, so it opens the exact same session on any phone or
   tablet, with no account and no server involved
 - Works offline after the first visit. A service worker caches the app
-  and every animation, so it opens in the gym with no wifi
+  and the 3D figures, so it opens in the gym with no wifi
 
 Two people never get handed the same single-instance item (one 15kg KB, one
 10kg KB, one barbell, one rope, one set of rings) in the same round. That
@@ -95,11 +93,9 @@ js/exercises.js         the movement dictionary + regions + stretches
 js/workouts.js          intervals, block helpers, the named classics
 js/generator.js         builds a workout to order
 js/app.js               views, setup flows, rendering, timer
-img/exercises/*.svg     generated, do not hand-edit
-js/move/                3D mannequin, pose engine, viewer
+js/move/                3D mannequin, pose engine, viewer, workout cards
 js/moves/               3D movement data and coaching, by family
 vendor/three/           three.js, vendored (scripts/vendor-three.sh)
-scripts/gen-anims.py    pose source for the animations
 scripts/move-check.mjs  checks the 3D data and renders contact sheets
 scripts/selfcheck.mjs   data + generator validation
 scripts/e2e.mjs         drives the app in headless Chromium
@@ -109,17 +105,17 @@ scripts/export-sequence.mjs   expand a workout to timed steps as JSON
 
 ## Offline
 
-`sw.js` caches the app shell and all 145 animations when it installs, on
-the first visit. The app files are served network-first with a four-second
+`sw.js` caches the app shell and the 3D figures (three.js, the mannequin
+and every movement's data, about 300 KB over the wire) when it installs,
+on the first visit. Everything is served network-first with a four-second
 timeout, so online you always get the current version and a flaky
-connection falls back to the cache rather than hanging; the animations are
-served cache-first and refreshed in the background. Bump `VERSION` in
+connection falls back to the cache rather than hanging. Bump `VERSION` in
 `sw.js` to force old caches out, though nothing depends on remembering to.
 
 ## 3D movements
 
-The workout screen's SVG animations are prompts: small, cached, offline.
-The 3D viewer is the reference. Each movement is key poses on a rigged
+The same 3D figure shows on the workout cards, in the coming-up
+thumbnails and in the full viewer. Each movement is key poses on a rigged
 1.75 m mannequin with adult proportions, written as anatomical joint
 angles or as world-space hand and foot targets (two-bone IK keeps planted
 feet and hands planted), played at a coached tempo with any equipment
@@ -128,8 +124,13 @@ riding in the hands. `js/moves/README.md` is the authoring guide.
 `node scripts/move-check.mjs [names]` renders every key pose from the
 front, side and three-quarters into a contact sheet and fails on a target
 a limb can't reach or a body through the floor; CI runs it with `--quick`
-and `--all-required`. The viewer needs a connection the first time; after
-that the service worker has it cached like the rest of the app.
+and `--all-required`.
+
+On the workout screen, `js/move/deck.js` draws every figure through one
+shared WebGL renderer (browsers allow only a few contexts per page),
+copying each into its card's own canvas. Figures draw only while on screen,
+at 30 fps on the cards and 15 on thumbnails, and hold a still pose when the
+device asks for reduced motion.
 
 ## Local dev
 
@@ -146,7 +147,7 @@ npm test                         # self-check, then the browser suite
 ```
 
 `node scripts/selfcheck.mjs` needs nothing installed. It validates every
-exercise's fields, that every movement has artwork and a bodyweight
+exercise's fields, that every movement has 3D data and a bodyweight
 fallback, that no block hands one item to two people in any round of either
 interval style, that duration labels match what the timer actually runs,
 and that all 496 generator input combinations either build a valid workout
@@ -164,14 +165,8 @@ size, a share link opened in a fresh browser context, corrupt preferences,
 a phone-width layout, and the app opening with the network switched off.
 It fails on any console error.
 
-Both run on every pull request through GitHub Actions, along with a check
-that the animations on disk still match their poses.
-
-After editing poses:
-
-```sh
-python3 scripts/gen-anims.py
-```
+Both run on every pull request through GitHub Actions, along with the 3D
+movement check.
 
 ## Deploy
 

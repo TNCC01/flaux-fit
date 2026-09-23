@@ -28,12 +28,3 @@ jobs:
 
       - name: 3D movements load, reach and stay above the floor
         run: node scripts/move-check.mjs --quick --all-required
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.x"
-
-      - name: Animations on disk match their poses
-        run: |
-          python3 scripts/gen-anims.py
-          git diff --exit-code --stat img/

@@ -910,17 +910,30 @@ function setAlt(el, alt) {
   el.classList.toggle('has-alt', !!alt);
 }
 
-// render() runs several times a second, so only touch the DOM when the
-// media actually changes, rewriting it would restart the animation.
+// The exercise shows as a turning 3D figure (js/move/deck.js). render()
+// runs several times a second, so only touch it when the exercise changes:
+// swapping it restarts the rep and resets any turn the user gave it.
 function updateAnim(el, ex) {
-  const base = ex && ex.img ? ex.img : '';
-  // tapping the animation opens the 3D demonstration of this exercise
-  el.dataset.move = base ? (ex.id || base) : '';
-  el.setAttribute('aria-label', base ? `${ex.name}: show in 3D` : '');
-  if (el.dataset.img === base) return;
-  el.dataset.img = base;
-  el.innerHTML = base ? `<img src="img/exercises/${base}.svg" alt=""><span class="ex-3d" aria-hidden="true">3D</span>` : '';
+  const key = ex && ex.img ? (ex.id || ex.img) : '';
+  // tapping the figure opens the full 3D view with coaching
+  el.dataset.move = key;
+  el.setAttribute('aria-label', key ? `${ex.name}: how to do it` : '');
+  if (el.dataset.shown === key) return;
+  el.dataset.shown = key;
+  el.innerHTML = key ? '<span class="ex-3d" aria-hidden="true">How to</span>' : '';
+  showFigure(el, key);
 }
+function showFigure(el, key, opts) {
+  const deck = window.FitDeck;
+  if (!deck) return;                 // still loading: synced on fitdeck-ready
+  if (!deck.available) { el.classList.add('no-3d'); return; }
+  if (key) deck.show(el, key, opts); else deck.clear(el);
+}
+// the 3D module loads after this script; catch up the figures asked for so far
+window.addEventListener('fitdeck-ready', () => {
+  for (const el of document.querySelectorAll('.ex-anim[data-move]')) showFigure(el, el.dataset.move);
+  for (const el of document.querySelectorAll('.next-thumb[data-move]')) showFigure(el, el.dataset.move, { thumb: true });
+});
 
 // ------------------------------------------------------ what's coming up
 // The next block's exercises, in order, once each, per person, with the
@@ -958,8 +971,8 @@ function openNextSheet() {
   const rounds = (r) => !r.length ? '' : r.length === 1 ? `Round ${r[0]}` : `Rounds ${r.join(', ')}`;
   const card = ({ ex, rounds: r }) => `
     <div class="next-card" role="button" tabindex="0" data-move="${esc(ex.id || ex.img)}"
-         aria-label="${esc(ex.display || ex.name)}: show in 3D">
-      <div class="next-thumb"><img src="img/exercises/${esc(ex.img)}.svg" alt=""><span class="ex-3d" aria-hidden="true">3D</span></div>
+         aria-label="${esc(ex.display || ex.name)}: how to do it">
+      <div class="next-thumb" data-move="${esc(ex.id || ex.img)}"></div>
       <div class="next-text">
         <strong>${esc(ex.display || ex.name)}</strong>
         ${ex.cue ? `<span>${esc(ex.cue)}</span>` : ''}
@@ -973,12 +986,14 @@ function openNextSheet() {
       ${up.lists[w].map(card).join('')}
     </section>`).join('');
   document.getElementById('nextSheet').hidden = false;
+  for (const t of document.querySelectorAll('#nextCols .next-thumb')) showFigure(t, t.dataset.move, { thumb: true });
   document.getElementById('nextClose').focus();
 }
 function closeNextSheet() {
   const sheet = document.getElementById('nextSheet');
   if (sheet.hidden) return;
   sheet.hidden = true;
+  if (window.FitDeck) for (const t of document.querySelectorAll('#nextCols .next-thumb')) window.FitDeck.clear(t);
   document.getElementById('nextCols').innerHTML = '';
 }
 document.getElementById('btnNextBlock').addEventListener('click', openNextSheet);
