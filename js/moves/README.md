@@ -93,8 +93,11 @@ hands on a bar path) and give **the same target in every pose where it stays put
 so it doesn't slide. Use angles for limbs moving freely through the air (an arm
 swing, a leg lift, a kick) so they swing in arcs.
 
-A foot whose ankle is near the floor (y under 0.1) is laid flat automatically; `heel`
-raises the heel onto the ball of the foot. Feet off the floor point their toes softly
+A foot whose ankle is near the floor (y under 0.1) is laid flat automatically. `heel`
+tips it about the ankle: **negative raises the heel** onto the ball of the foot (raise
+the ankle target too, so the ball stays on the floor), positive lifts the toes onto
+the heel. A foot resting on a box or bench top isn't flattened automatically; a tiny
+`heel: 0.01` keeps it level. Feet off the floor point their toes softly
 (`ankle` overrides). A foot resting on its toes (push-ups, planks) tips itself so the
 toes rest on the floor.
 

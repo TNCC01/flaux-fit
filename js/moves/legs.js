@@ -856,7 +856,7 @@ export default {
         spine: { flex: 2 },
         neck: { flex: -10 },
         legs: DEEP,
-        arms: barRack([0, 0.44, -0.14], 21, [0.3, -1, 0.15]),
+        arms: barRack([0, 0.44, -0.14], 21, [0.15, 0.2, 1]),
       },
       drive: {
         label: 'Drive',

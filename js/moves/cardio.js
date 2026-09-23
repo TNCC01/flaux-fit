@@ -275,9 +275,9 @@ const MC_LEFT = {
 // legs passing each other: the hips rise a touch so the knees clear the floor
 const MC_MID = {
   label: 'Switch',
-  pelvis: { pos: [0, 0.46, -0.4], pitch: 77 },
+  pelvis: { pos: [0, 0.48, -0.41], pitch: 79 },
   neck: { flex: 12 },
-  legs: { L: { foot: [0.12, 0.3, -0.95], knee: [0.15, -1, 0], ankle: -20 }, R: 'mirror' },
+  legs: { L: { foot: [0.12, 0.3, -0.95], knee: [0.6, -1, 0], ankle: -20 }, R: 'mirror' },
   arms: MC_HANDS,
 };
 const MCX_LEFT = {

@@ -29,9 +29,11 @@
     leg, by target (IK):  { foot: [x, y, z], knee: 'fwd' | 'out' | [dx,dy,dz],
                             toeOut: deg, heel: deg }
             foot is the ankle joint in world metres. A foot flat on the
-            floor has its ankle at y = 0.07. heel lifts the heel with the
-            ball of the foot planted (a calf raise), toeOut turns the foot
-            out. knee is the way the kneecap points.
+            floor has its ankle at y = 0.07. heel tips the foot about the
+            ankle: NEGATIVE raises the heel onto the ball of the foot (a
+            calf raise; raise the ankle target so the ball stays on the
+            floor), positive lifts the toes onto the heel. toeOut turns the
+            foot out. knee is the way the kneecap points.
     leg, by angles (FK):  { hip: { flex, abd, rot }, knee, ankle }
             hip flex + lifts the thigh forward; abd + moves it out to its
             own side; rot + turns the knee out. knee + bends. ankle +

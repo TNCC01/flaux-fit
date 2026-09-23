@@ -467,7 +467,7 @@ export default {
       },
       thread: {
         label: 'Thread',
-        pelvis: { pos: [0, 0.5, 0.08], roll: -60 },
+        pelvis: { pos: [0, 0.53, 0.08], roll: -60 },
         spine: { twist: -40, flex: 10 },
         legs: { L: { foot: [0.68, 0.07, 0.14], knee: 'fwd', ankle: 0 }, R: { foot: [0.7, 0.055, -0.03], knee: 'fwd', ankle: 0 } },
         arms: { L: { hand: [-0.3, 0.3, -0.15], elbow: 'up' }, R: { hand: [-0.475, 0.03, -0.03], elbow: 'back', palm: 'floor' } },
@@ -565,6 +565,13 @@ export default {
         legs: { L: { foot: [0.2, 0.07, 0], toeOut: 10, knee: [0.2, 0, 1] }, R: { foot: [-0.2, 0.07, 0], toeOut: 10, knee: [-0.2, 0, 1] } },
         arms: { L: { hand: [0.03, 1.1, 0.52], elbow: 'out' }, R: { hand: [-0.03, 1.08, 0.51], elbow: 'out' } },
       },
+      rise: {
+        label: 'Rise',
+        pelvis: { pos: [0, 0.91, -0.01], yaw: 10 },
+        spine: { twist: 15 },
+        legs: { L: { foot: [0.2, 0.07, 0], toeOut: 10 }, R: { foot: [-0.2, 0.07, 0], toeOut: 0, heel: 15, knee: [0.2, 0, 1] } },
+        arms: { L: { hand: [0.24, 1.4, 0.44], elbow: 'down' }, R: { hand: [0.18, 1.39, 0.46], elbow: 'down' } },
+      },
       high: {
         label: 'High',
         pelvis: { pos: [0, 0.92, 0], yaw: 20 },
@@ -573,9 +580,9 @@ export default {
         arms: { L: { hand: [0.4, 1.58, 0.22], elbow: 'down' }, R: { hand: [0.34, 1.57, 0.25], elbow: 'down' } },
       },
     },
-    seq: ['low', 'mid', 'high', 'mid'],
-    tempo: [0.5, 0.5, 0.8, 0.8],
-    holds: { mid: 0, high: 0.3, low: 0.3 },
+    seq: ['low', 'mid', 'rise', 'high', 'rise', 'mid'],
+    tempo: [0.45, 0.35, 0.35, 0.55, 0.5, 0.55],
+    holds: { mid: 0, rise: 0, high: 0.3, low: 0.3 },
   },
   ringTuckHold: {
     camera: { yaw: 50, pitch: 6 },
