@@ -6,6 +6,28 @@ const STANCE = { L: { foot: [0.12, 0.07, 0], toeOut: 8 }, R: 'mirror' };
 const ARM_DOWN = { shoulder: { elev: 6, plane: 90 }, elbow: 10 };
 
 export default {
+  pikePushup: {
+    camera: { yaw: 80, pitch: 10 },
+    muscles: { primary: ['shoulders', 'triceps'], secondary: ['upperBack', 'chest', 'core'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      top: {
+        label: 'Hips high',
+        pelvis: { pos: [0, 0.77, -0.666], pitch: 140 },
+        legs: { L: { foot: [0.1, 0.1, -1.16], knee: 'fwd', ankle: -30 }, R: 'mirror' },
+        arms: { L: { hand: [0.24, 0.03, 0], elbow: [0.4, 0.2, -1], palm: 'floor' }, R: 'mirror' },
+      },
+      bottom: {
+        label: 'Crown down',
+        pelvis: { pos: [0, 0.64, -0.47], pitch: 146 },
+        legs: { L: { foot: [0.1, 0.1, -1.16], knee: 'fwd', ankle: -30 }, R: 'mirror' },
+        arms: { L: { hand: [0.24, 0.03, 0], elbow: [0.4, 0.2, -1], palm: 'floor' }, R: 'mirror' },
+      },
+    },
+    seq: ['top', 'bottom'],
+    tempo: [1.8, 1.1],
+    holds: { top: 0.4, bottom: 0.2 },
+  },
   barbellPress: {
     camera: { yaw: 50, pitch: 6 },
     props: [{ type: 'barbell', length: 1.5, plate: 0.13 }],
