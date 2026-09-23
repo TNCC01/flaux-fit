@@ -72,7 +72,23 @@ def box(x, y, w, h):
 
 # Android figure: each limb chain becomes a glow edge + dark core capsule;
 # the head is a visor helmet. `roles` let ACTIVE highlight muscle groups.
-_CTX = {'active': set(), 'variant': 'a'}
+_CTX = {'active': set(), 'variant': 'a', 'view': 'side'}
+
+# Drawn facing the viewer. These get shoulders (the arms hang from a yoke,
+# not the middle of the neck), no far-side dimming, and a front-on helmet.
+# Everything else is side-on: its helmet visor faces the way the figure
+# does and the ponytail hangs behind.
+FRONT = {
+    'barbellCurl', 'barbellPress', 'barbellThruster', 'cossackSquat', 'curtsyLunge',
+    'dbArnoldPress', 'dbFarmersWalk', 'dbOverheadCarry', 'dbOverheadTricep', 'dbPress',
+    'dbPushPress', 'dbShrug', 'dbSquat', 'dbUprightRow', 'dbWoodchop',
+    'doubleUnder', 'jackSquat', 'jumpingJacks', 'kbFarmersWalk', 'kbHalo',
+    'kbPressSingle', 'kbSuitcaseHold', 'kbSumoDeadlift', 'kbWindmill', 'lateralLunge',
+    'lateralRaise', 'lateralShuffle', 'ringChinup', 'ringDip', 'ringHang',
+    'ringTuckHold', 'ropeJumping', 'sealJack', 'skaterHops', 'skiJump', 'sumoSquat',
+    'tuckJump',
+}
+SHOULDER = 17           # half shoulder width, front view
 
 def _limb(pts, role, far=False):
     """A jointed chain. The renderer rigs it, so each joint rotates."""
@@ -91,16 +107,30 @@ def figure(head, neck, hip, arms, legs, head_r=HEAD_R):
     The first chain is the far-side limb (darker, drawn behind the torso),
     the last is the near side (bright, drawn in front)."""
     far, near = [], []
-    arms = [[_lerp_pt(neck, a[0], 0.5), a[0]] if len(a) == 1 else a for a in arms]
+    front = _CTX['view'] == 'front'
+    if front:
+        # hang each arm from its own shoulder; two arms are left then right
+        def yoke(k, c):
+            side = (-1 if k == 0 else 1) if len(arms) == 2 else (-1 if c[0][0] < neck[0] else 1)
+            return [(neck[0] + side * SHOULDER, neck[1] + 6)] + list(c)
+        arms = [yoke(k, c) for k, c in enumerate(arms)]
+    # a straight one-segment arm still gets an elbow
+    arms = [a[:-1] + [_lerp_pt(a[-2] if len(a) > 1 else neck, a[-1], 0.5), a[-1]]
+            if len(a) == (2 if front else 1) else a for a in arms]
     for chains, root, role in ((legs, hip, 'legs'), (arms, neck, 'arms')):
         n = len(chains)
         for i, c in enumerate(chains):
-            is_far = n > 1 and i == 0
+            is_far = n > 1 and i == 0 and not front
             (far if is_far else near).append(_limb([root] + list(c), role, is_far))
     active = 'torso' in _CTX['active']
+    facing = 0 if front else (1 if head[0] >= neck[0] - 1 else -1)
     head_part = {'t': 'head', 'pts': [tuple(map(float, neck)), tuple(map(float, head))],
                  'r': float(head_r), 'glow': ROSE if active else TEAL,
-                 'pony': _CTX['variant'] == 'b'}
+                 'pony': _CTX['variant'] == 'b' and not front, 'face': facing}
+    if front:       # legs behind, arms in front, nothing reads as far-side
+        legs_ = [c for c in near if c['role'] == 'legs']
+        arms_ = [c for c in near if c['role'] == 'arms']
+        return legs_ + [_limb([hip, neck], 'torso'), head_part] + arms_
     return far + [_limb([hip, neck], 'torso'), head_part] + near
 
 def kb(hand, r=11):
@@ -714,11 +744,16 @@ def render_svg(keyposes, seq=(0, 1), beat=1.2, holds=None):
         end = cap(2.0, hand=True) if p.get('role') == 'arms' else cap()
         if layer == 'core' and p['t'] == 'head':
             hr = p['r']
-            pony = (_stroke(f'M-2,{_num(-hr - 2)} L{_num(-hr - 6)},2 L{_num(-hr - 2)},{_num(hr + 6)}',
-                            TEAL, 5) if p['pony'] else '')
+            fc = p['face']
+            b = -(fc or 1)                     # the back of the head
+            pony = (_stroke(f'M{_num(2 * b)},{_num(-hr - 2)} L{_num((hr + 6) * b)},2 '
+                            f'L{_num((hr + 2) * b)},{_num(hr + 6)}', TEAL, 5) if p['pony'] else '')
+            # front-on: visor across the middle; side-on: on the face side
+            vx0, vx1 = ((-hr * 0.62, hr * 0.62) if fc == 0 else
+                        sorted((fc * -hr * 0.05, fc * hr * 0.8)))
             end += (pony + f'<circle r="{_num(hr + 4)}" fill="{p["glow"]}" opacity="0.95"/>'
                     f'<circle r="{_num(hr)}" fill="url(#hd)"/>'
-                    + _stroke(f'M{_num(-hr * 0.62)},-3 H{_num(hr * 0.62)}', VISOR, 5))
+                    + _stroke(f'M{_num(vx0)},-3 H{_num(vx1)}', VISOR, 5))
         if layer == 'core' and i in attached:
             for pi, fits in attached[i]:
                 ks = prop_keys(fits, i)
@@ -789,6 +824,7 @@ def pose(base, seq=(0, 1), beat=1.2, holds=None):
     return deco
 
 def render_exercise(base):
+    _CTX['view'] = 'front' if base in FRONT else 'side'
     m = META[base]
     fn = POSES[base]
     keys = {k: flatten(fn(k)) for k in set(m['seq'])}
@@ -865,9 +901,12 @@ def _(i):
     # front view: deep squat over one leg with the other straight, pass
     # through a tall wide stance, then the other side; feet stay planted
     x = 240
+    # hands clasped in front of the chest, reaching towards the viewer
+    clasp = lambda nx, ny: [[(nx - 20, ny + 26), (nx - 3, ny + 34)],
+                            [(nx + 20, ny + 26), (nx + 3, ny + 34)]]
     if i == 1:
         return [ground(), figure(head=(x, 108), neck=(x, 136), hip=(x, 214),
-                                 arms=[[(x - 2, 166), (x + 2, 178)]],
+                                 arms=clasp(x, 136),
                                  legs=[[(x - 46, 254), (x - 94, GY)], [(x + 46, 254), (x + 94, GY)]])]
     s = 1 if i == 0 else -1
     hip = (x - 55 * s, 232)
@@ -875,8 +914,7 @@ def _(i):
     head = (x - 48 * s, 124)
     legs = [[(x - 82 * s, 250), (x - 94 * s, GY)],          # bent support leg
             [(x + 30 * s, 275), (x + 94 * s, GY - 2)]]      # straight leg
-    arms = [[(x - 10 * s, 165), (x + 20 * s, 172)]]
-    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms,
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=clasp(*neck),
                              legs=_left_first(legs))]
 
 @pose('wallSit')
