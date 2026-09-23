@@ -922,6 +922,73 @@ function updateAnim(el, ex) {
   el.innerHTML = base ? `<img src="img/exercises/${base}.svg" alt=""><span class="ex-3d" aria-hidden="true">3D</span>` : '';
 }
 
+// ------------------------------------------------------ what's coming up
+// The next block's exercises, in order, once each, per person, with the
+// rounds each one comes round in.
+function upcomingBlock() {
+  const seq = state.sequence || [];
+  let j = state.currentIdx + 1;
+  while (j < seq.length && seq[j].kind !== 'work' && seq[j].kind !== 'stretch') j++;
+  if (j >= seq.length) return null;
+  const first = seq[j];
+  const who = state.people === 2 ? ['a', 'b'] : ['a'];
+  const lists = { a: [], b: [] };
+  for (let k = j; k < seq.length; k++) {
+    const p = seq[k];
+    if (p.kind === 'blockrest' || p.kind === 'cooldown') break;
+    if (p.kind !== 'work' && p.kind !== 'stretch') continue;
+    if (first.blockIdx !== undefined && p.blockIdx !== first.blockIdx) break;
+    for (const w of who) {
+      const ex = p[w];
+      if (!ex || !ex.img) continue;
+      const key = ex.id || ex.name;
+      let e = lists[w].find(x => x.key === key);
+      if (!e) lists[w].push(e = { key, ex, rounds: [] });
+      if (p.round) e.rounds.push(p.round);
+    }
+  }
+  if (!lists.a.length && !lists.b.length) return null;
+  return { title: first.name || 'Next exercises', lists, who };
+}
+
+function openNextSheet() {
+  const up = upcomingBlock();
+  if (!up) return;
+  const label = (w) => ((w === 'a' ? state.nameA : state.nameB) || '').trim() || (w === 'a' ? 'Person A' : 'Person B');
+  const rounds = (r) => !r.length ? '' : r.length === 1 ? `Round ${r[0]}` : `Rounds ${r.join(', ')}`;
+  const card = ({ ex, rounds: r }) => `
+    <div class="next-card" role="button" tabindex="0" data-move="${esc(ex.id || ex.img)}"
+         aria-label="${esc(ex.display || ex.name)}: show in 3D">
+      <div class="next-thumb"><img src="img/exercises/${esc(ex.img)}.svg" alt=""><span class="ex-3d" aria-hidden="true">3D</span></div>
+      <div class="next-text">
+        <strong>${esc(ex.display || ex.name)}</strong>
+        ${ex.cue ? `<span>${esc(ex.cue)}</span>` : ''}
+        ${r.length ? `<span class="next-rounds">${esc(rounds(r))}</span>` : ''}
+      </div>
+    </div>`;
+  document.getElementById('nextTitle').textContent = up.title;
+  document.getElementById('nextCols').innerHTML = up.who.map(w => `
+    <section class="next-col">
+      ${up.who.length > 1 ? `<h3>${esc(label(w))}</h3>` : ''}
+      ${up.lists[w].map(card).join('')}
+    </section>`).join('');
+  document.getElementById('nextSheet').hidden = false;
+  document.getElementById('nextClose').focus();
+}
+function closeNextSheet() {
+  const sheet = document.getElementById('nextSheet');
+  if (sheet.hidden) return;
+  sheet.hidden = true;
+  document.getElementById('nextCols').innerHTML = '';
+}
+document.getElementById('btnNextBlock').addEventListener('click', openNextSheet);
+document.getElementById('nextClose').addEventListener('click', closeNextSheet);
+document.getElementById('nextSheet').addEventListener('click', (e) => {
+  if (e.target.id === 'nextSheet') return closeNextSheet();
+  const c = e.target.closest('.next-card');
+  if (c) openMove(c.dataset.move);
+});
+
 // ------------------------------------------------------------ 3D sheet
 async function openMove(id) {
   if (!id) return;
@@ -954,7 +1021,11 @@ for (const id of ['animA', 'animB']) {
 }
 document.getElementById('moveClose').addEventListener('click', closeMove);
 document.getElementById('moveSheet').addEventListener('click', (e) => { if (e.target.id === 'moveSheet') closeMove(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMove(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!document.getElementById('moveSheet').hidden) closeMove();
+  else closeNextSheet();
+});
 window.addEventListener('message', (e) => {
   if (e.origin === location.origin && e.data && e.data.type === 'fit-move-close') closeMove();
 });
@@ -1091,6 +1162,10 @@ function render() {
     if (nxt) { dispA = nxt.a; dispB = nxt.b; }
   }
   els.workoutView.classList.toggle('resting', restLike);
+  // a rest (or the warm-up) is the time to look at what's coming
+  const prep = restLike || phase.kind === 'warmup';
+  document.getElementById('btnNextBlock').hidden = !(prep && upcomingBlock());
+  if (!prep) closeNextSheet();
 
   els.exerciseA.textContent = dispA ? (dispA.display || dispA.name) : '';
   els.cueA.textContent = dispA ? (dispA.cue || '') : '';

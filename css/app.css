@@ -626,6 +626,40 @@ body.hide-photos .ex-anim { display: none; }
   background: rgba(5, 10, 10, 0.72); border: 1px solid var(--border);
 }
 
+/* what's coming up: the next block's exercises as thumbnails */
+.next-block-btn { display: block; width: 100%; margin-top: 0.8rem; font-weight: 700; }
+.next-block-btn[hidden] { display: none; }
+.next-sheet {
+  position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.next-sheet[hidden] { display: none; }
+.next-sheet-inner {
+  position: relative; width: 100%; max-width: 960px; max-height: 92vh; max-height: 92dvh;
+  overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-bottom: 0;
+  border-radius: 18px 18px 0 0; padding: 18px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+.next-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.coming-eyebrow { font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal-bright); }
+.next-head h2 { margin: 2px 0 0; font-size: 1.25rem; line-height: 1.25; }
+.next-sheet .next-close { position: static; flex-shrink: 0; }
+.next-cols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.next-col { display: grid; gap: 10px; align-content: start; }
+.next-col h3 { margin: 0; font-size: 0.9rem; color: var(--muted); font-weight: 700; }
+.next-card {
+  display: grid; grid-template-columns: 132px 1fr; gap: 12px; align-items: center;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; cursor: pointer;
+}
+.next-card:hover, .next-card:focus-visible { border-color: var(--teal-bright); outline: none; }
+.next-thumb { position: relative; aspect-ratio: 3 / 2; border-radius: 8px; overflow: hidden; background: var(--bg); }
+.next-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.next-thumb .ex-3d { right: 4px; bottom: 4px; font-size: 0.62rem; padding: 2px 6px; }
+.next-text { display: grid; gap: 3px; min-width: 0; }
+.next-text strong { font-size: 1.02rem; line-height: 1.25; }
+.next-text span { color: var(--muted); font-size: 0.86rem; line-height: 1.35; }
+.next-text .next-rounds { color: var(--teal-bright); font-weight: 700; font-size: 0.8rem; }
+.next-hint { color: var(--muted); font-size: 0.85rem; margin: 14px 0 0; }
+
 /* the 3D movement viewer over the workout */
 .move-sheet {
   position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.6);
