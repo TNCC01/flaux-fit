@@ -526,6 +526,7 @@ export default {
         legs: { L: { hip: { flex: -14, abd: 4 }, knee: 0, ankle: -45 }, R: 'mirror' },
         arms: { L: { shoulder: { elev: 112, plane: 108, twist: -60 }, elbow: 30 }, R: 'mirror' } },
     },
+    flow: ['sweep'],
     seq: ['down', 'lift', 'sweep', 'pull', 'sweep', 'lift'], tempo: [1.0, 0.7, 0.7, 0.7, 0.7, 1.0], holds: { lift: 0.4, sweep: 0, pull: 0.5, down: 0.4 },
   },
   supermanYtw: {
@@ -593,6 +594,7 @@ export default {
       tempo: 'A controlled walking pace, around 20 to 30 metres per side.',
     },
     keys: walk((ph) => ({ L: swing('L', ph), R: { shoulder: { elev: 11, plane: 90 }, elbow: 2 } })),
+    flow: ['both'],
     seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
   },
   farmersWalk: {
@@ -622,6 +624,7 @@ export default {
       tempo: 'A controlled walking pace, around 20 to 30 metres per side.',
     },
     keys: walk((ph) => ({ L: swing('L', ph), R: { shoulder: { elev: 8, plane: 90 }, elbow: 2, turn: 90 } })),
+    flow: ['both'],
     seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
   },
   dbFarmersWalk: {
@@ -651,6 +654,7 @@ export default {
       tempo: 'A controlled walking pace, around 20 to 40 metres.',
     },
     keys: walk(() => ({ L: { shoulder: { elev: 8, plane: 90 }, elbow: 2, turn: 90 }, R: 'mirror' })),
+    flow: ['both'],
     seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
   },
   dbOverheadCarry: {
@@ -680,6 +684,7 @@ export default {
       tempo: 'A controlled walking pace, around 15 to 30 metres.',
     },
     keys: walk(() => ({ L: { hand: [0.23, 1.915, -0.02], elbow: 'out' }, R: 'mirror' })),
+    flow: ['both'],
     seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
   },
   kbHighPull: {
@@ -719,6 +724,7 @@ export default {
         legs: { L: { foot: [0.17, 0.07, 0.02], toeOut: 12, knee: [0.3, 0, 1] }, R: 'mirror' },
         arms: { L: { hand: [0.09, 1.2, 0.2], elbow: [1, 0.8, -0.3] }, R: 'mirror' } },
     },
+    flow: ['drive'],
     seq: ['hinge', 'drive', 'pull', 'drive'], tempo: [0.5, 0.35, 0.55, 0.6], holds: { hinge: 0.25, drive: 0, pull: 0.2 },
   },
   ringHang: {
@@ -794,6 +800,7 @@ export default {
         legs: { L: { hip: { flex: 12 }, knee: 30, ankle: -20 }, R: 'mirror' },
         arms: { L: { hand: [0.24, 2.35, 0], elbow: [0.15, -1, 0.7] }, R: 'mirror' } },
     },
+    flow: ['half'],
     seq: ['hang', 'half', 'top', 'half'], tempo: [0.6, 0.6, 1.0, 1.0], holds: { hang: 0.4, half: 0, top: 0.35 },
   },
   ringRow: {

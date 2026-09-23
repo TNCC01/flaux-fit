@@ -7,8 +7,9 @@
   loops. tempo[i] is the seconds to move from seq[i] to the next pose (one
   number applies to every move), holds[name] the seconds to pause on
   arriving at that pose. Moves ease in and out, like a controlled rep. A
-  key pose with `pass: true` is a waypoint: the motion flows through it
-  without slowing (use it to steer a bar path or a swing).
+  key pose with `pass: true`, or named in the record's `flow` list, is a
+  waypoint: the motion flows through it without slowing (use it to steer a
+  bar path or a swing, never at a point where the motion reverses).
 */
 import * as THREE from '../../vendor/three/three.min.js';
 import { normalise, blendState, applyState, DIM } from './body.js';
@@ -36,13 +37,14 @@ export function timeline(move) {
   const total = t;
   // a key pose marked `pass` is moved through without stopping: the moves
   // either side of it share one ease, from the last stop to the next
+  const flow = new Set([...(move.flow || []), ...seq.filter(n => move.keys[n].pass)]);
   steps.forEach((s, i) => {
     let a = i, b = i;
-    while (a > 0 && move.keys[steps[a - 1].to].pass) a--;
-    while (b < steps.length - 1 && move.keys[steps[b].to].pass) b++;
+    while (a > 0 && flow.has(steps[a - 1].to)) a--;
+    while (b < steps.length - 1 && flow.has(steps[b].to)) b++;
     s.g = { a, b, t0: steps[a].t0, t1: steps[b].t1 };
   });
-  for (const s of steps) if (move.keys[s.to].pass) s.t2 = s.t1;
+  for (const s of steps) if (flow.has(s.to)) s.t2 = s.t1;
   return {
     seq, states, steps, total,
     // time (s) -> the pose to show

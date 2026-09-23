@@ -325,6 +325,7 @@ const MOVES = {
         arms: onFloor([0.26, 0.03, -0.06], [0.7, 0.3, -1]),
       },
     },
+    flow: ['drive'],
     seq: ['top', 'bottom', 'drive', 'flight', 'land'],
     tempo: [1.1, 0.28, 0.16, 0.2, 0.6],
     holds: { top: 0.5, bottom: 0.1, drive: 0, flight: 0, land: 0.1 },

@@ -90,8 +90,9 @@ The full reference is the comment at the top of `js/move/body.js`. In short:
 - Arms also take `turn` (forearm rotation: + palm up / forward, - palm down; held
   equipment turns with it, e.g. `turn: 90` for a hammer grip vs a curl grip), `shrug`
   (metres the shoulder lifts) and `reach` (metres it draws forward).
-- A key pose with `pass: true` is a waypoint: motion flows through it without
-  stopping. Use it to steer a bar or bell path (past the knees on a deadlift) or to
+- A key pose with `pass: true` (or listed in the record's `flow: [...]`) is a
+  waypoint: motion flows through it without stopping. Never at a point where the
+  motion reverses (the bottom of a squat, the top of a knee drive): those need the stop. Use it to steer a bar or bell path (past the knees on a deadlift) or to
   shape a swing, without the stop an ordinary key pose makes.
 - Knee and elbow hints are directions the kneecap / point of the elbow faces:
   `'fwd' 'back' 'up' 'down' 'out' 'in'` or a vector like `[0.3, 0, 1]`.

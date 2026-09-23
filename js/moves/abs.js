@@ -582,6 +582,7 @@ export default {
         arms: { L: { hand: [0.4, 1.58, 0.22], elbow: 'down' }, R: { hand: [0.34, 1.57, 0.25], elbow: 'down' } },
       },
     },
+    flow: ['mid', 'rise'],
     seq: ['low', 'mid', 'rise', 'high', 'rise', 'mid'],
     tempo: [0.45, 0.35, 0.35, 0.55, 0.5, 0.55],
     holds: { mid: 0, rise: 0, high: 0.3, low: 0.3 },

@@ -208,7 +208,9 @@ function inchworm(withPushup) {
     tempo.push(to === 'roll' || seq[i] === 'roll' ? 1.1 : to === 'bottom' ? 1.3 : seq[i] === 'bottom' ? 0.9 : 0.24);
     holds[to] = to === 'stand' ? 0.8 : to === 'w7' ? 0.5 : to === 'w0' ? 0.3 : to === 'bottom' ? 0.2 : 0;
   }
-  return { keys, seq, tempo, holds };
+  // the roll-down and each lifted hand flow through; hands pause as they land
+  const flow = ['roll', ...Object.keys(keys).filter(k => /^u\d/.test(k))];
+  return { keys, seq, tempo, holds, flow };
 }
 const INCH_PLAIN = inchworm(false);
 const INCH_PUSH = inchworm(true);
@@ -749,6 +751,7 @@ const MOVES = {
       out: { label: 'Feet wide', pelvis: HIGH_P, legs: { L: { foot: [0.32, 0.12, -1.22], knee: 'down', ankle: 0 }, R: 'mirror' },
         arms: { L: PALM, R: 'mirror' } },
     },
+    flow: ['air'],
     seq: ['in', 'air', 'out', 'air'],
     tempo: 0.18,
     holds: { in: 0.08, out: 0.08, air: 0 },
@@ -846,6 +849,7 @@ const MOVES = {
   crabWalk: {
     camera: { yaw: 70, pitch: 12 },
     keys: crab.keys,
+    flow: [],
     seq: crab.seq,
     tempo: 0.32,
     holds: Object.fromEntries(crab.seq.map((k) => [k, 0])),
@@ -854,6 +858,7 @@ const MOVES = {
   bearCrawl: {
     camera: { yaw: 70, pitch: 12 },
     keys: bearFwd.keys,
+    flow: [],
     seq: bearFwd.seq,
     tempo: 0.3,
     holds: Object.fromEntries(bearFwd.seq.map((k) => [k, 0])),
@@ -862,6 +867,7 @@ const MOVES = {
   bearCrawlLateral: {
     camera: { yaw: 20, pitch: 14 },
     keys: bearSide.keys,
+    flow: [],
     seq: bearSide.seq,
     tempo: 0.3,
     holds: Object.fromEntries(bearSide.seq.map((k) => [k, 0])),
@@ -891,6 +897,7 @@ const MOVES = {
         spine: { twist: -65, side: 30 }, neck: { flex: -10, twist: -70 }, legs: WM_FEET,
         arms: { R: { hand: [0.199, 1.722, 0.025], elbow: 'out' }, L: { hand: [0.16, 0.3, 0.1], elbow: 'back' } } },
     },
+    flow: ['half'],
     seq: ['top', 'half', 'bottom', 'half'],
     tempo: [1.0, 1.2, 1.0, 0.9],
     holds: { top: 0.6, bottom: 0.5, half: 0 },

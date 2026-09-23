@@ -5,6 +5,62 @@
 const STANCE = { L: { foot: [0.12, 0.07, 0], toeOut: 8 }, R: 'mirror' };
 const ARM_DOWN = { shoulder: { elev: 6, plane: 90 }, elbow: 10 };
 
+// Wall walks and the wall handstand: a chest-to-wall walk up from a push-up.
+// Each stage is a whole-body pose; between stages one hand and the opposite
+// foot step at a time (lifted on the way, then planted), so nothing slides.
+const WALL_Z = -1.35;                   // wall centre; its face is at z -1.30
+const lerpN = (a, b, t) => Math.round((a + (b - a) * t) * 1000) / 1000;
+const WALL_STAGES = [
+  // label, pelvis [y, z], pitch, hands z, feet [y, z], ankle
+  { label: 'Push-up', pelvis: [0.402, -0.449], pitch: 71, hand: -0.06, foot: [0.122, -1.262], ankle: 0 },
+  { label: 'Feet up', pelvis: [0.6, -0.46], pitch: 95, hand: -0.06, foot: [0.62, -1.21], ankle: -10 },
+  { label: 'Straight line', pelvis: [0.743, -0.471], pitch: 117, hand: -0.06, foot: [1.15, -1.21], ankle: -20 },
+  { label: 'Walk in', pelvis: [0.945, -0.842], pitch: 152, hand: -0.6, foot: [1.7, -1.21], ankle: -30 },
+  { label: 'Handstand', pelvis: [1.017, -1.178], pitch: 176, hand: -1.115, foot: [1.87, -1.2], ankle: -40 },
+];
+function wallPose(st, hands, feet, extra = {}) {
+  return {
+    label: st.label,
+    pelvis: { pos: [0, st.pelvis[0], st.pelvis[1]], pitch: st.pitch },
+    legs: {
+      L: { foot: [0.1, feet.L[0], feet.L[1]], knee: 'fwd', ankle: feet.L[2] },
+      R: { foot: [-0.1, feet.R[0], feet.R[1]], knee: 'fwd', ankle: feet.R[2] },
+    },
+    arms: {
+      L: { hand: [0.25, hands.L[0], hands.L[1]], elbow: [0.4, 0.3, -1], palm: 'floor' },
+      R: { hand: [-0.25, hands.R[0], hands.R[1]], elbow: [-0.4, 0.3, -1], palm: 'floor' },
+    },
+    ...extra,
+  };
+}
+// every key pose of the walk up: [name, pose]
+function wallWalkUp() {
+  const out = [];
+  const S = WALL_STAGES;
+  const handAt = (st) => [0.03, st.hand];
+  const footAt = (st) => [st.foot[0], st.foot[1], st.ankle];
+  const mid = (a, b, t) => ({ label: b.label, pelvis: [lerpN(a.pelvis[0], b.pelvis[0], t), lerpN(a.pelvis[1], b.pelvis[1], t)],
+    pitch: lerpN(a.pitch, b.pitch, t) });
+  for (let i = 0; i < S.length - 1; i++) {
+    const a = S[i], b = S[i + 1];
+    const moveHands = a.hand !== b.hand;
+    // lifted in the air halfway between two spots: hands up off the floor,
+    // feet off the wall (or the floor)
+    const liftH = (p, q) => [0.1, lerpN(p[1], q[1], 0.5)];
+    const liftF = (p, q) => [lerpN(p[0], q[0], 0.5) + 0.04, lerpN(p[1], q[1], 0.5) + 0.08, lerpN(p[2], q[2], 0.5)];
+    const hA = handAt(a), hB = handAt(b), fA = footAt(a), fB = footAt(b);
+    out.push([`s${i}a`, wallPose(mid(a, b, 0.25), { L: hA, R: moveHands ? liftH(hA, hB) : hA }, { L: liftF(fA, fB), R: fA }, { pass: true })]);
+    out.push([`s${i}b`, wallPose(mid(a, b, 0.5), { L: hA, R: hB }, { L: fB, R: fA })]);
+    out.push([`s${i}c`, wallPose(mid(a, b, 0.75), { L: moveHands ? liftH(hA, hB) : hA, R: hB }, { L: fB, R: liftF(fA, fB) }, { pass: true })]);
+    out.push([`s${i + 1}`, wallPose(b, { L: hB, R: hB }, { L: fB, R: fB })]);
+  }
+  return out;
+}
+const WALL_UP = wallWalkUp();
+const WALL_KEYS = Object.fromEntries([['s0', wallPose(WALL_STAGES[0], { L: [0.03, -0.06], R: [0.03, -0.06] },
+  { L: [0.122, -1.262, 0], R: [0.122, -1.262, 0] })], ...WALL_UP]);
+const WALL_SEQ_UP = ['s0', ...WALL_UP.map(([n]) => n)];
+
 export default {
   pikePushup: {
     camera: { yaw: 80, pitch: 10 },
@@ -37,19 +93,29 @@ export default {
       top: {
         label: 'Hips stacked',
         pelvis: { pos: [0, 1.0, -0.17], pitch: 166 },
-        legs: { L: { foot: [0.1, 0.55, -0.88], knee: 'fwd', ankle: 60 }, R: 'mirror' },
+        legs: { L: { foot: [0.1, 0.655, -0.92], knee: 'fwd', ankle: 0 }, R: 'mirror' },
         arms: { L: { hand: [0.24, 0.03, 0], elbow: [0.4, 0.7, -0.8], palm: 'floor' }, R: 'mirror' },
       },
       bottom: {
         label: 'Crown down',
         pelvis: { pos: [0, 0.813, -0.072], pitch: 171 },
-        legs: { L: { foot: [0.1, 0.55, -0.88], knee: 'fwd', ankle: 60 }, R: 'mirror' },
+        legs: { L: { foot: [0.1, 0.655, -0.92], knee: 'fwd', ankle: 0 }, R: 'mirror' },
         arms: { L: { hand: [0.24, 0.03, 0], elbow: [0.4, 0.7, -0.8], palm: 'floor' }, R: 'mirror' },
       },
     },
     seq: ['top', 'bottom'],
     tempo: [2.0, 1.2],
     holds: { top: 0.4, bottom: 0.2 },
+  },
+  wallWalk: {
+    camera: { yaw: 90, pitch: 8 },
+    props: [{ type: 'wall', z: WALL_Z }],
+    muscles: { primary: ['shoulders', 'triceps'], secondary: ['core', 'upperBack', 'chest', 'glutes'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: WALL_KEYS,
+    seq: [...WALL_SEQ_UP, ...WALL_SEQ_UP.slice(1, -1).reverse()],
+    tempo: 0.45,
+    holds: { s4: 0.8, s0: 0.6 },
   },
   barbellPress: {
     camera: { yaw: 50, pitch: 6 },
@@ -97,6 +163,7 @@ export default {
         arms: { L: { hand: [0.26, 1.93, 0.0], elbow: 'out' }, R: 'mirror' },
       },
     },
+    flow: ['pass'],
     seq: ['rack', 'pass', 'lockout', 'pass'],
     tempo: [0.6, 0.6, 1.0, 0.9],
     holds: { lockout: 0.5, rack: 0.4, pass: 0 },
@@ -124,6 +191,7 @@ export default {
         arms: { L: { hand: [0.21, 1.93, -0.01], elbow: [1, -0.3, 0], turn: 0 }, R: 'mirror' },
       },
     },
+    flow: ['mid'],
     seq: ['rack', 'mid', 'top', 'mid'],
     tempo: [0.6, 0.6, 1.0, 1.0],
     holds: { top: 0.4, rack: 0.3, mid: 0 },
@@ -151,6 +219,7 @@ export default {
         arms: { L: { hand: [0.21, 1.93, -0.01], elbow: [1, -0.3, 0], turn: 0 }, R: 'mirror' },
       },
     },
+    flow: ['turn'],
     seq: ['start', 'turn', 'top', 'turn'],
     tempo: [0.7, 0.8, 0.9, 1.0],
     holds: { top: 0.4, start: 0.3, turn: 0 },
@@ -198,6 +267,7 @@ export default {
         arms: { L: { hand: [0.32, 1.39, 0.07], elbow: [0.6, -1, 0.5], turn: -45 }, R: 'mirror' },
       },
     },
+    flow: ['drive', 'lower'],
     seq: ['rack', 'dip', 'drive', 'top', 'lower', 'catch'],
     tempo: [0.55, 0.3, 0.3, 0.8, 0.6, 0.5],
     holds: { dip: 0, drive: 0, top: 0.4, lower: 0, catch: 0, rack: 0.4 },
@@ -267,6 +337,7 @@ export default {
         arms: { L: { hand: [0.025, 1.517, -0.151], elbow: [-0.05, 0.29, 0.06], turn: -125 }, R: { hand: [-0.025, 1.517, -0.151], elbow: [0.05, 0.29, 0.06], turn: -125 } },
       },
     },
+    flow: ['mid'],
     seq: ['top', 'mid', 'bottom', 'mid'],
     tempo: [1.2, 0.8, 0.6, 0.6],
     holds: { top: 0.4, bottom: 0.2, mid: 0 },
@@ -294,6 +365,7 @@ export default {
         arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back' } },
       },
     },
+    flow: ['mid'],
     seq: ['rack', 'mid', 'top', 'mid'],
     tempo: [0.6, 0.6, 1.0, 0.9],
     holds: { top: 0.5, rack: 0.4, mid: 0 },
@@ -334,6 +406,7 @@ export default {
         arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back', wrist: -150 } },
       },
     },
+    flow: ['pull', 'mid'],
     seq: ['floor', 'pull', 'rack', 'mid', 'top', 'mid', 'rack', 'pull'],
     tempo: [0.5, 0.35, 0.6, 0.6, 0.9, 0.8, 0.5, 0.6],
     holds: { floor: 0.4, pull: 0, rack: 0.3, mid: 0, top: 0.5 },
@@ -357,6 +430,7 @@ h0: { label: 'In front', legs: STANCE, arms: { L: { hand: [0.05, 1.36, 0.25], el
       h300: { label: 'Round', pass: true, legs: STANCE, arms: { L: { hand: [0.248, 1.485, 0.085], elbow: [-0.005, -0.076, 0.29] }, R: { hand: [0.198, 1.485, 0.172], elbow: [0.138, 0.061, 0.259] } } },
       h330: { label: 'Round', pass: true, legs: STANCE, arms: { L: { hand: [0.17, 1.434, 0.194], elbow: [-0.084, -0.193, 0.214] }, R: { hand: [0.083, 1.434, 0.244], elbow: [0.071, -0.104, 0.272] } } },
     },
+    flow: ['h30', 'h60', 'h90', 'h120', 'h150', 'h180', 'h210', 'h240', 'h270', 'h300', 'h330'],
     seq: ['h0', 'h30', 'h60', 'h90', 'h120', 'h150', 'h180', 'h210', 'h240', 'h270', 'h300', 'h330'],
     tempo: 0.3,
     holds: { h0: 0.3, h30: 0, h60: 0, h90: 0, h120: 0, h150: 0, h180: 0, h210: 0, h240: 0, h270: 0, h300: 0, h330: 0 },
