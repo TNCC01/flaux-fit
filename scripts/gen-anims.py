@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate the animated exercise demo SVGs for FIT.
 
-Each exercise declares two poses, start and end, as joint coordinates.
-The renderer rigs the figure (limbs rotate at their joints, planted feet
+Each exercise declares key poses as joint coordinates: two for most
+(start and end), more where the move has stages, like a burpee. See
+pose() for the play order and timing. The renderer rigs the figure (limbs rotate at their joints, planted feet
 and hands stay on the floor), cropped to the full range of motion, and
 bakes pose0 -> pose1 -> pose0 into CSS transform keyframes in a single
 self-animating file at img/exercises/<base>.svg (no JS, no SMIL), which
@@ -13,7 +14,7 @@ teal-edged limbs, a lit helmet, far-side limbs darker and behind the
 torso, amber equipment, the working muscle group lit in rose (see
 ACTIVE), and a contact shadow on a floor plane.
 
-The two poses of an exercise MUST use the same number of arm chains, leg
+Every key pose of an exercise MUST use the same number of arm chains, leg
 chains and decorations, or the parts won't pair up, the build fails
 loudly with the offending exercise name if they don't.
 
@@ -90,6 +91,7 @@ def figure(head, neck, hip, arms, legs, head_r=HEAD_R):
     The first chain is the far-side limb (darker, drawn behind the torso),
     the last is the near side (bright, drawn in front)."""
     far, near = [], []
+    arms = [[_lerp_pt(neck, a[0], 0.5), a[0]] if len(a) == 1 else a for a in arms]
     for chains, root, role in ((legs, hip, 'legs'), (arms, neck, 'arms')):
         n = len(chains)
         for i, c in enumerate(chains):
@@ -129,23 +131,26 @@ def rings(hands):
     return out
 
 # --------------------------------------------------------------- render
-# Each exercise is two poses. The renderer rigs every limb chain so each
-# segment rotates about its joint, and bakes pose0 -> pose1 -> pose0 into
-# CSS transform keyframes: the browser tweens every frame, limbs keep their
-# length and swing in arcs, and CSS animation plays inside an <img> on
-# every browser. Equipment rides along with the hand (or foot) it is held
-# by. Anything that bends in a way transforms can't express (a skipping
-# rope) falls back to a small flipbook on the same clock.
+# An exercise is a few key poses played in a loop (two for most: start,
+# end, back again). The renderer rigs every limb chain so each segment
+# rotates about its joint, and bakes the loop into CSS transform keyframes:
+# the browser tweens every frame, limbs keep their length and swing in
+# arcs, and CSS animation plays inside an <img> on every browser. Held
+# equipment rides with the hand. Anything that bends in a way transforms
+# can't express (a skipping rope) falls back to a small flipbook on the
+# same clock.
 #
-# The 2.5D look: limbs are shaded tubes, the head is a lit sphere, far
-# limbs sit darker and behind the torso, and a contact shadow on a floor
-# plane shrinks when the figure leaves the ground.
+# The 2.5D look: limbs are shaded tubes with joint caps and gloved hands,
+# the head is a lit sphere, far limbs sit darker and behind the torso, and
+# a contact shadow on a floor plane shrinks when the figure leaves the
+# ground.
 import math
 
-DUR = 2.4                        # seconds per rep, out and back
 EASE = 'cubic-bezier(.45,0,.55,1)'
 PAD = 16                         # frame padding around the full motion
-FLIP_FRAMES = 24
+HOLD = 0.2                       # share of each beat spent holding the pose
+FLIP_FRAMES = 12                 # per move, for props that bend
+SAMPLES = 8                      # keyframes per move for ik / lerp chains
 
 def flatten(parts):
     out = []
@@ -178,7 +183,7 @@ def _lerp_pt(p, q, t):
     return (_lerp(p[0], q[0], t), _lerp(p[1], q[1], t))
 
 def _bezier_ease(u, x1=.45, y1=0.0, x2=.55, y2=1.0):
-    """CSS cubic-bezier timing, so flipbook frames stay on the CSS clock."""
+    """CSS cubic-bezier timing, so sampled keyframes stay on the CSS clock."""
     def bez(s, a, b):
         return 3 * a * s * (1 - s) ** 2 + 3 * b * s * s * (1 - s) + s ** 3
     lo, hi = 0.0, 1.0
@@ -190,27 +195,17 @@ def _bezier_ease(u, x1=.45, y1=0.0, x2=.55, y2=1.0):
             hi = mid
     return bez((lo + hi) / 2, y1, y2)
 
-def _pose_t(u):
-    """Cycle position 0..1 -> pose blend: move 40%, hold, back 40%, hold."""
-    if u < 0.4:
-        return _bezier_ease(u / 0.4)
-    if u < 0.5:
-        return 1.0
-    if u < 0.9:
-        return 1.0 - _bezier_ease((u - 0.5) / 0.4)
-    return 0.0
-
 # ------------------------------------------------------------ rigging
-# A chain moves one of three ways, picked per chain:
+# Within each move a chain moves one of three ways:
 #   rot   each segment rotates about its joint (arcs, lengths kept)
-#   ik    a foot or hand planted on the floor in both poses slides along
-#         it while the joint between bends (two-bone IK), so nothing
-#         swings through the floor
-#   lerp  joints move straight between the poses; for limbs swinging
-#         towards or away from the camera, where a flat rotation would
-#         flip the limb out sideways. The segment shortens, the joint
-#         caps keep it solid, so it reads as foreshortening.
-# rot needs two keyframes; ik and lerp are sampled into several.
+#   ik    a foot or hand on the floor at both ends of the move, and not
+#         moving far, stays on it while the joint between bends (two-bone
+#         IK), so nothing swings through the floor
+#   lerp  joints move straight; for limbs swinging towards or away from
+#         the camera, where a flat rotation would flip the limb out
+#         sideways. The segment shortens and the joint caps keep it solid,
+#         so it reads as foreshortening.
+# rot needs a keyframe at each end of the move; ik and lerp are sampled.
 def _split_longest(pts):
     i = max(range(len(pts) - 1), key=lambda k: math.dist(pts[k], pts[k + 1]))
     return pts[:i + 1] + [_lerp_pt(pts[i], pts[i + 1], 0.5)] + pts[i + 1:]
@@ -222,35 +217,34 @@ def _wrap(a):
     return (a + 180) % 360 - 180
 
 def _bend(p):
-    """Which way a two-segment chain bends: +1 / -1 (0 if straight)."""
+    """Which way a two-segment chain bends: +1 / -1, 0 if near straight."""
     (ax, ay), (bx, by), (cx, cy) = p
     z = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
-    return (z > 0) - (z < 0)
+    scale = math.dist(p[0], p[1]) * math.dist(p[1], p[2]) or 1.0
+    return 0 if abs(z) / scale < 0.2 else (1 if z > 0 else -1)   # ~11 degrees
 
-def rig(pts0, pts1, allow_ik=True):
-    """Two poses of a chain -> root + per-segment (L0, L1, local a0, a1)."""
-    p0, p1 = list(pts0), list(pts1)
-    while len(p0) < len(p1):
-        p0 = _split_longest(p0)
-    while len(p1) < len(p0):
-        p1 = _split_longest(p1)
-    segs, prev0, prev1 = [], 0.0, 0.0
-    for i in range(len(p0) - 1):
-        w0, w1 = _angle(p0[i], p0[i + 1]), _angle(p1[i], p1[i + 1])
+def rig(p0, p1, allow_ik=True):
+    """One move of a chain (equal point counts) -> rig for joints()."""
+    segs = [(math.dist(p0[i], p0[i + 1]), math.dist(p1[i], p1[i + 1]),
+             _angle(p0[i], p0[i + 1]), _angle(p1[i], p1[i + 1])) for i in range(len(p0) - 1)]
+    # local angles, each taking the shortest way round
+    loc, prev0, prev1 = [], 0.0, 0.0
+    for L0, L1, w0, w1 in segs:
         a0 = _wrap(w0 - prev0)
-        a1 = a0 + _wrap(_wrap(w1 - prev1) - a0)      # shortest way round
-        segs.append((math.dist(p0[i], p0[i + 1]), math.dist(p1[i], p1[i + 1]), a0, a1))
+        a1 = a0 + _wrap(_wrap(w1 - prev1) - a0)
+        loc.append((L0, L1, a0, a1))
         prev0, prev1 = w0, w1
-    mode = 'rot'
+    r = {'root': (p0[0], p1[0]), 'segs': loc, 'p': (p0, p1), 'mode': 'rot', 'parent': None}
     on_floor = lambda p: abs(p[-1][1] - GY) < 12
-    if (allow_ik and len(p0) == 3 and on_floor(p0) and on_floor(p1)
-            and p0 != p1 and _bend(p0) == _bend(p1) != 0):
-        mode = 'ik'
-    elif any(abs(a1 - a0) > 150 for _, _, a0, a1 in segs):
-        mode = 'lerp'
-    r = {'root': (p0[0], p1[0]), 'segs': segs, 'p': (p0, p1), 'mode': mode,
-         'parent': None}
-    if mode == 'rot' and allow_ik and _sink(r) > 6:
+    b0, b1 = (_bend(p0), _bend(p1)) if len(p0) == 3 else (0, 0)
+    reach = sum(L0 for L0, *_ in segs)
+    planted = math.dist(p0[-1], p1[-1]) < 0.4 * reach    # a slide, not a kick
+    if (allow_ik and len(p0) == 3 and on_floor(p0) and on_floor(p1) and p0 != p1
+            and planted and (b0 or b1) and not (b0 and b1 and b0 != b1)):
+        r['mode'], r['bend'] = 'ik', b0 or b1
+    elif any(abs(a1 - a0) > 150 for _, _, a0, a1 in loc):
+        r['mode'] = 'lerp'
+    elif allow_ik and _sink(r) > 6:
         # a limb rotating through the floor: straight lines sink less
         r['mode'] = 'lerp'
         if _sink(r) >= _sink(dict(r, mode='rot')):
@@ -262,15 +256,13 @@ def _sink(r):
     return max(max(y for _, y in joints(r, k / 10)) for k in range(11)) - max(
         max(y for _, y in r['p'][0]), max(y for _, y in r['p'][1]), GY)
 
-def _root_at(r, t):
+def joints(r, t):
+    """World joint positions of a rigged chain at blend t of its move."""
     if r['parent']:
         pr, m = r['parent']
-        return joints(pr, t)[m]
-    return _lerp_pt(r['root'][0], r['root'][1], t)
-
-def joints(r, t):
-    """World joint positions of a rigged chain at blend t."""
-    x, y = _root_at(r, t)
+        x, y = joints(pr, t)[m]
+    else:
+        x, y = _lerp_pt(r['root'][0], r['root'][1], t)
     p0, p1 = r['p']
     if r['mode'] == 'lerp':
         (ox0, oy0), (ox1, oy1) = p0[0], p1[0]
@@ -283,7 +275,7 @@ def joints(r, t):
         d = min(max(math.dist((x, y), (tx, ty)), abs(L1 - L2) + 1e-3), L1 + L2 - 1e-3)
         base = math.atan2(ty - y, tx - x)
         a = math.acos(max(-1.0, min(1.0, (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d))))
-        a1 = base - _bend(p0) * a
+        a1 = base - r['bend'] * a
         kx, ky = x + L1 * math.cos(a1), y + L1 * math.sin(a1)
         a2 = math.atan2(ty - ky, tx - kx)
         return [(x, y), (kx, ky), (kx + L2 * math.cos(a2), ky + L2 * math.sin(a2))]
@@ -295,16 +287,6 @@ def joints(r, t):
         y += L * math.sin(math.radians(ang))
         pts.append((x, y))
     return pts
-
-def end_angle(r, t):
-    """World angle of a chain's last segment."""
-    if r['mode'] == 'rot':
-        return sum(_lerp(a0, a1, t) for _, _, a0, a1 in r['segs'])
-    pts = joints(r, t)
-    return _angle(pts[-2], pts[-1])
-
-# sample points in the cycle for ik / lerp chains: 8 steps each way
-_STOPS = ([k * 0.05 for k in range(9)] + [0.5 + k * 0.05 for k in range(9)] + [1.0])
 
 # ----------------------------------------------------- rigid equipment
 def _shape_pts(p):
@@ -340,36 +322,6 @@ def rigid_fit(a, b):
     return (ca, cb, math.degrees(th), 1.0)
 
 # ------------------------------------------------------------ emitting
-class _Anim:
-    """Collects keyframes; identical motions share one CSS rule."""
-    def __init__(self):
-        self.rules, self.seen = [], {}
-
-    def _rule(self, key, body, timing):
-        if key not in self.seen:
-            k = f'm{len(self.seen)}'
-            self.seen[key] = k
-            self.rules.append(f'@keyframes {k}{{{body}}}.{k}{{animation:{k} {DUR}s {timing} infinite}}')
-        return f' class="{self.seen[key]}"'
-
-    def attr(self, f0, f1, extra0='', extra1=''):
-        """pose0 -> pose1 -> pose0; static transforms become attributes."""
-        if f0 == f1 and extra0 == extra1:
-            if not f0:
-                return extra0 and f' style="{extra0}"'
-            return f' transform="{_svg_tf(f0)}"' + (extra0 and f' style="{extra0}"')
-        s0 = f'transform:{_css_tf(f0)};{extra0}'
-        s1 = f'transform:{_css_tf(f1)};{extra1}'
-        return self._rule((f0, f1, extra0, extra1),
-                          f'0%,90%,100%{{{s0}}}40%,50%{{{s1}}}', EASE)
-
-    def stops(self, frames):
-        """Sampled motion: [(cycle 0..1, transform)], linear between."""
-        if all(f == frames[0][1] for _, f in frames):
-            return self.attr(frames[0][1], frames[0][1])
-        body = ''.join(f'{_num(100 * u)}%{{transform:{_css_tf(f)}}}' for u, f in frames)
-        return self._rule(tuple(frames), body, 'linear')
-
 def _num(v):
     s = f'{v:.2f}'.rstrip('0').rstrip('.')
     return '0' if s in ('-0', '') else s
@@ -397,6 +349,45 @@ def _css_tf(f):
             out.append(f'scale({_num(op[1])},{_num(op[2])})')
     return ' '.join(out) or 'none'
 
+def _unwrap(keys):
+    """Keep every rotation in a track within 180 degrees of the last."""
+    out, prev = [], None
+    for u, f, extra, timing in keys:
+        if prev is not None:
+            f = tuple(('r', q[1] + _wrap(op[1] - q[1])) if op[0] == 'r' else op
+                      for op, q in zip(f, prev))
+        out.append((u, f, extra, timing))
+        prev = f
+    return out
+
+class _Anim:
+    """Collects keyframes; identical tracks share one CSS rule."""
+    def __init__(self, dur):
+        self.dur, self.rules, self.seen = dur, [], {}
+
+    def track(self, keys):
+        """keys: [(u 0..1, transform, extra css, timing to the next key)]."""
+        first = keys[0]
+        if len({(_css_tf(f), e) for _, f, e, _ in keys}) == 1:
+            f, e = first[1], first[2]
+            return ((f' transform="{_svg_tf(f)}"' if f else '')
+                    + (f' style="{e}"' if e else ''))
+        key = tuple((round(u, 5), f, e, tm) for u, f, e, tm in keys)
+        if key not in self.seen:
+            k = f'm{len(self.seen)}'
+            self.seen[key] = k
+            # the easing only matters where the value changes before the
+            # next key, and ease is the default, so most keys carry none
+            decl = {}                  # identical keyframes share a rule
+            for n, (u, f, e, tm) in enumerate(keys):
+                moving = n + 1 < len(keys) and keys[n + 1][1:3] != (f, e)
+                tf = f';animation-timing-function:{tm}' if moving and tm != EASE else ''
+                decl.setdefault(f'transform:{_css_tf(f)};{e}'.rstrip(';') + tf, []).append(_num(100 * u) + '%')
+            body = ''.join(f'{",".join(at)}{{{d}}}' for d, at in decl.items())
+            self.rules.append(f'@keyframes {k}{{{body}}}'
+                              f'.{k}{{animation:{k} {_num(self.dur)}s {EASE} infinite}}')
+        return f' class="{self.seen[key]}"'
+
 def _stroke(d, color, w, op=1.0, cap='round'):
     o = '' if op == 1.0 else f' opacity="{op}"'
     return (f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{_num(w)}" '
@@ -423,6 +414,7 @@ def _is_ground(p):
 
 # --------------------------------------------------------------- scene
 JOINT_N, JOINT_F = '#0b1f1f', '#071313'
+HAND_N, HAND_F = '#2f6e6a', '#173a38'
 
 def _defs():
     tube = lambda i, edge, mid: (
@@ -441,105 +433,159 @@ def _defs():
               '</linearGradient>'
             + '</defs>')
 
-def render_svg(parts0, parts1):
-    """pose0 -> pose1 -> pose0 as one self-animating SVG (CSS keyframes)."""
-    if len(parts0) != len(parts1):
-        raise ValueError(f'part count mismatch {len(parts0)} vs {len(parts1)}')
-    for a, b in zip(parts0, parts1):
-        if a['t'] != b['t']:
-            raise ValueError(f'part type mismatch {a["t"]} vs {b["t"]}')
+def render_svg(keyposes, seq=(0, 1), beat=1.2, holds=None):
+    """Key poses {k: parts} played in `seq` order, looping back to the
+    start, as one self-animating SVG. Each move takes `beat` seconds, of
+    which HOLD (or holds[k] on arriving at pose k) is spent still."""
+    holds = holds or {}
+    seq = list(seq)
+    P = [keyposes[k] for k in seq]
+    n_parts = len(P[0])
+    for q in P[1:]:
+        if len(q) != n_parts:
+            raise ValueError(f'part count mismatch {n_parts} vs {len(q)}')
+        for a, b in zip(P[0], q):
+            if a['t'] != b['t']:
+                raise ValueError(f'part type mismatch {a["t"]} vs {b["t"]}')
+    M = len(seq)
+    dur = M * beat
 
-    rigs = {}
-    for i, (a, b) in enumerate(zip(parts0, parts1)):
-        if a['t'] in ('chain', 'head'):
-            r = rig(a['pts'], b['pts'], allow_ik=a['t'] == 'chain' and a['role'] != 'torso')
-            if a['t'] == 'head' or a.get('role') == 'torso':
+    # ---- timeline: move j runs pose j -> pose j+1 over [us, ue], then holds
+    moves = []
+    for j in range(M):
+        h = holds.get(seq[(j + 1) % M], HOLD)
+        us = j / M
+        moves.append((j, (j + 1) % M, us, us + (1 - h) / M, (j + 1) / M))
+
+    def at(u):
+        """Cycle position -> (move index, eased blend)."""
+        for j, _, us, ue, uh in moves:
+            if u <= uh + 1e-9:
+                return j, (1.0 if u >= ue else _bezier_ease((u - us) / (ue - us)))
+        return M - 1, 1.0
+
+    # ---- chains: equal joint counts across poses, then a rig per move
+    chain_ix = [i for i, p in enumerate(P[0]) if p['t'] in ('chain', 'head')]
+    pts = {}
+    for i in chain_ix:
+        ps = [list(q[i]['pts']) for q in P]
+        n = max(len(x) for x in ps)
+        for x in ps:
+            while len(x) < n:
+                x[:] = _split_longest(x)
+        pts[i] = ps
+    rigs = []
+    for j, jn, *_ in moves:
+        rj = {}
+        for i in chain_ix:
+            p = P[0][i]
+            allow = p['t'] == 'chain' and p['role'] != 'torso'
+            r = rig(pts[i][j], pts[i][jn], allow)
+            if not allow:
                 r['mode'] = 'rot'
-            rigs[i] = r
-    # one body: limbs and head hang off the torso's hip or neck joint, so
-    # they stay attached however far the torso swings
-    for ti in [i for i in rigs if parts0[i].get('role') == 'torso']:
-        tr = rigs[ti]
-        j0, j1 = joints(tr, 0.0), joints(tr, 1.0)
-        for i, r in rigs.items():
-            if i == ti or r['parent']:
-                continue
-            for m in (0, 1):
-                if math.dist(r['root'][0], j0[m]) < 1 and math.dist(r['root'][1], j1[m]) < 1:
-                    r['parent'] = (tr, m)
-                    break
+            rj[i] = r
+        # one body: limbs and head hang off the torso's hip or neck joint
+        for ti in [i for i in chain_ix if P[0][i].get('role') == 'torso']:
+            j0, j1 = joints(rj[ti], 0.0), joints(rj[ti], 1.0)
+            for i in chain_ix:
+                r = rj[i]
+                if i == ti or r['parent']:
+                    continue
+                for m in (0, 1):
+                    if math.dist(r['root'][0], j0[m]) < 1 and math.dist(r['root'][1], j1[m]) < 1:
+                        r['parent'] = (rj[ti], m)
+                        break
+        rigs.append(rj)
+    torso = [i for i in chain_ix if P[0][i].get('role') == 'torso']
+    parent_of = {}
+    for i in chain_ix:
+        ms = {rigs[j][i]['parent'][1] if rigs[j][i]['parent'] else None for j in range(M)}
+        if len(ms) == 1 and None not in ms and torso:
+            parent_of[i] = (torso[0], ms.pop())
+        else:
+            for rj in rigs:
+                rj[i]['parent'] = None
 
-    # equipment: a moving prop held at a chain end in both poses rides on
-    # it as a rigid body; else it moves rigidly on its own; else flipbook
-    ends = [i for i in rigs if parts0[i]['t'] == 'chain']
+    def world(i, u):
+        j, t = at(u)
+        return joints(rigs[j][i], t)
+
+    # ---- equipment: rigid props ride on the hand holding them in every
+    # pose; else move rigidly on their own; else flipbook
+    ends = [i for i in chain_ix if P[0][i]['t'] == 'chain']
     attached, free, flip, static = {}, {}, [], []
-    for i, (a, b) in enumerate(zip(parts0, parts1)):
-        if i in rigs or _is_ground(a):
+    for i, a in enumerate(P[0]):
+        if i in pts or _is_ground(a):
             continue
-        if a == b:
+        if all(q[i] == a for q in P):
             static.append(i)
             continue
-        fit = rigid_fit(a, b)
-        if fit is None:
+        fits = [rigid_fit(a, q[i]) for q in P]
+        if any(f is None for f in fits):
             flip.append(i)
             continue
-        def near(p, pose_parts):
+        holder = set()
+        for k, q in enumerate(P):
             best = None
             for j in ends:
-                e = pose_parts[j]['pts'][-1]
-                d = min(math.dist(e, q) for q in _shape_pts(p))
-                if p['t'] == 'circle':
-                    d = max(0.0, d - p['r'])
+                e = pts[j][k][-1]
+                d = min(math.dist(e, s) for s in _shape_pts(q[i]))
+                if q[i]['t'] == 'circle':
+                    d = max(0.0, d - q[i]['r'])
                 if best is None or d < best[0]:
                     best = (d, j)
-            return best
-        n0, n1 = near(a, parts0), near(b, parts1)
-        if n0 and n1 and n0[1] == n1[1] and n0[0] < 40 and n1[0] < 40:
-            attached.setdefault(n0[1], []).append((i, fit))
+            holder.add(best[1] if best and best[0] < 40 else None)
+        if len(holder) == 1 and None not in holder:
+            attached.setdefault(holder.pop(), []).append((i, fits))
         else:
-            free[i] = fit
+            free[i] = fits
 
-    def hand_at(j, t):
-        return joints(rigs[j], t)[-1]
-
-    def prop_pts(i, fit, t, j=None):
-        """World points of a rigid prop at blend t (for framing)."""
-        ca, cb, th, sc = fit
-        p = parts0[i]
-        if j is None:
-            c = _lerp_pt(ca, cb, t)
-        else:
-            h0, h1, h = hand_at(j, 0.0), hand_at(j, 1.0), hand_at(j, t)
-            off = _lerp_pt((ca[0] - h0[0], ca[1] - h0[1]), (cb[0] - h1[0], cb[1] - h1[1]), t)
-            c = (h[0] + off[0], h[1] + off[1])
-        r = math.radians(th * t)
-        k = _lerp(1.0, sc, t)
+    def prop_keys(fits, hand=None):
+        """Per-pose (offset, angle, scale) of a rigid prop."""
         out = []
-        for x, y in _shape_pts(p):
-            x, y = (x - ca[0]) * k, (y - ca[1]) * k
-            out.append((c[0] + x * math.cos(r) - y * math.sin(r),
-                        c[1] + x * math.sin(r) + y * math.cos(r)))
-        return out, p.get('r', 0) * max(1.0, sc) + p.get('w', 0) / 2
-
-    # ---- framing: sample the whole motion, not just the end poses
-    xs, ys = [], []
-    def grow(pts, rad):
-        for x, y in pts:
-            xs.extend((x - rad, x + rad)); ys.extend((y - rad, y + rad))
-    for t in [k / 8 for k in range(9)]:
-        for i, r in rigs.items():
-            pts, p = joints(r, t), parts0[i]
-            if p['t'] == 'head':
-                grow(pts[-1:], p['r'] + (8 if p['pony'] else 4))
+        for k, (ca, ck, th, sc) in enumerate(fits):
+            if hand is not None:
+                h = pts[hand][k][-1]
+                out.append((ck[0] - h[0], ck[1] - h[1], th, sc))
             else:
-                grow(pts, (p['w'] + GLOW_W) / 2)
-        for j, items in attached.items():
-            for i, fit in items:
-                grow(*prop_pts(i, fit, t, j))
-        for i, fit in free.items():
-            grow(*prop_pts(i, fit, t))
-    for i in static + flip:
-        for p in (parts0[i], parts1[i]):
+                out.append((ck[0], ck[1], th, sc))
+        return out
+
+    def pose_keys(values, extra=None):
+        """A track that eases between per-pose values at each move."""
+        keys = []
+        for j, jn, us, ue, uh in moves:
+            keys.append((us, values[j], extra[j] if extra else '', EASE))
+            keys.append((ue, values[jn], extra[jn] if extra else '', 'linear'))
+        keys.append((1.0, values[0], extra[0] if extra else '', 'linear'))
+        return _unwrap(keys)
+
+    # ---- framing: sample the whole loop, not just the key poses
+    xs, ys = [], []
+    def grow(q, rad):
+        for x, y in q:
+            xs.extend((x - rad, x + rad)); ys.extend((y - rad, y + rad))
+    samples = sorted({us + (ue - us) * k / 8 for _, _, us, ue, _ in moves for k in range(9)})
+    for u in samples:
+        j, t = at(u)
+        for i in chain_ix:
+            q, p = joints(rigs[j][i], t), P[0][i]
+            if p['t'] == 'head':
+                grow(q[-1:], p['r'] + (8 if p['pony'] else 4))
+            else:
+                grow(q, (p['w'] + GLOW_W) / 2 + 2)
+            if i in attached:
+                for pi, fits in attached[i]:
+                    ks = prop_keys(fits, i)
+                    jn = moves[j][1]
+                    off = _lerp_pt(ks[j][:2], ks[jn][:2], t)
+                    c0 = fits[0][0]
+                    grow([(q[-1][0] + off[0] + x - c0[0], q[-1][1] + off[1] + y - c0[1])
+                          for x, y in _shape_pts(P[0][pi])],
+                         P[0][pi].get('r', 0) + P[0][pi].get('w', 0) / 2 + 4)
+    for i in list(free) + static + flip:
+        for q in P:
+            p = q[i]
             grow(_shape_pts(p), p.get('r', 0) + (p.get('w', 0) if p['t'] != 'rect' else 0) / 2)
     x0, x1, y0 = min(xs) - PAD, max(xs) + PAD, min(ys) - PAD
     y1 = max(min(max(ys), GY + 12), GY) + PAD      # a limb dipping low mustn't grow the floor
@@ -552,131 +598,120 @@ def render_svg(parts0, parts1):
         y0 = y1 - h
     bx, by, bw, bh = x0, y0, w, h
 
-    A = _Anim()
+    A = _Anim(dur)
     body = []
 
     # ---- floor plane and a contact shadow that follows the hips
     body.append(f'<rect x="{_num(bx)}" y="{GY}" width="{_num(bw)}" height="{_num(by + bh - GY)}" fill="url(#fl)"/>')
     body.append(_stroke(f'M{_num(bx)},{GY} H{_num(bx + bw)}', '#26403f', 3))
-    torso = [i for i in rigs if parts0[i].get('role') == 'torso']
     if torso:
-        chains = [i for i in rigs if parts0[i]['t'] == 'chain']
-        def shadow(t):
-            hip = joints(rigs[torso[0]], t)[0]
-            pts = [q for i in chains for q in joints(rigs[i], t)]
-            spread = max(x for x, _ in pts) - min(x for x, _ in pts)
-            lift = max(0.0, GY - max(y for _, y in pts) - 8)
-            k = max(0.45, 1 - lift / 140)
-            return hip[0], max(40.0, spread / 2 + 18) * k, k
-        (sx0, rx0, k0), (sx1, rx1, k1) = shadow(0.0), shadow(1.0)
-        cls = A.attr((('t', sx0, GY), ('s', 1, 1)), (('t', sx1, GY), ('s', rx1 / rx0, 1)),
-                     f'opacity:{_num(0.9 * k0)}', f'opacity:{_num(0.9 * k1)}')
+        limbs = [i for i in chain_ix if P[0][i]['t'] == 'chain']
+        def shadow(k):
+            hip = pts[torso[0]][k][0]
+            q = [s for i in limbs for s in pts[i][k]]
+            spread = max(x for x, _ in q) - min(x for x, _ in q)
+            lift = max(0.0, GY - max(y for _, y in q) - 8)
+            f = max(0.45, 1 - lift / 140)
+            return hip[0], max(40.0, spread / 2 + 18) * f, f
+        sh = [shadow(k) for k in range(M)]
+        rx0 = sh[0][1]
+        cls = A.track(pose_keys([(('t', x, GY), ('s', rx / rx0, 1)) for x, rx, _ in sh],
+                                [f'opacity:{_num(0.9 * f)};' for _, _, f in sh]))
         body.append(f'<g{cls}><ellipse rx="{_num(rx0)}" ry="8" fill="url(#sh)"/></g>')
 
     for i in static:
-        body.append(_emit_local(parts0[i], (0, 0)))
+        body.append(_emit_local(P[0][i], (0, 0)))
 
-    def motions(r):
-        """Per-group motions for a chain: [root/joint groups..., end frame],
-        each ('2', f0, f1) or ('n', [(u, f)...])."""
-        segs = r['segs']
-        root_local = r['parent'] is not None
-        if r['mode'] == 'rot':
-            out = []
-            (r0, r1) = ((0.0, 0.0), (0.0, 0.0)) if root_local else r['root']
-            for k, (L0, L1, a0, a1) in enumerate(segs):
-                if k == 0:
-                    out.append(('2', (('t', *r0), ('r', a0)), (('t', *r1), ('r', a1))))
-                else:
-                    out.append(('2', (('t', segs[k - 1][0], 0), ('r', a0)),
-                                (('t', segs[k - 1][1], 0), ('r', a1))))
-            tot0 = sum(s_[2] for s_ in segs); tot1 = sum(s_[3] for s_ in segs)
-            out.append(('2', (('t', segs[-1][0], 0), ('r', -tot0)),
-                        (('t', segs[-1][1], 0), ('r', -tot1))))
-            lens = [('2', L0, L1) for L0, L1, _, _ in segs]
-            return out, lens
-        # sampled: world angles unwrapped along the cycle
-        frames = []
+    # ---- chain tracks: one keyframe list per joint group
+    track_cache = {}
+    def chain_tracks(i):
+        """Tracks for chain i: joint groups, segment scales, end frame.
+        Keys land on every move boundary; ik / lerp moves add samples."""
+        if i in track_cache:
+            return track_cache[i]
+        local = i in parent_of
+        rows = []                      # (u, root, locals, lengths, timing)
+        def row(u, j, t, timing):
+            q = joints(rigs[j][i], t)
+            angs = [_angle(q[k], q[k + 1]) for k in range(len(q) - 1)]
+            locs = [angs[0]] + [angs[k] - angs[k - 1] for k in range(1, len(angs))]
+            Ls = [math.dist(q[k], q[k + 1]) for k in range(len(q) - 1)]
+            rows.append((u, (0.0, 0.0) if local else q[0], locs, Ls, timing))
+        for j, jn, us, ue, uh in moves:
+            if rigs[j][i]['mode'] == 'rot':
+                row(us, j, 0.0, EASE)
+            else:
+                for k in range(SAMPLES):
+                    row(us + (ue - us) * k / SAMPLES, j, _bezier_ease(k / SAMPLES), 'linear')
+            row(ue, j, 1.0, 'linear')
+        row(1.0, M - 1, 1.0, 'linear')
+        # unwrap each local angle along the loop, then derive the end frame
+        n = len(rows[0][2])
         prev = None
-        for u in _STOPS:
-            t = _pose_t(u)
-            pts = joints(r, t)
-            angs = [_angle(pts[k], pts[k + 1]) for k in range(len(pts) - 1)]
+        fixed = []
+        for u, root, locs, Ls, tm in rows:
             if prev is not None:
-                angs = [p_ + _wrap(a - p_) for a, p_ in zip(angs, prev)]
-            prev = angs
-            Ls = [math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1)]
-            root = (0.0, 0.0) if root_local else pts[0]
-            frames.append((u, root, angs, Ls))
-        n = len(segs)
-        out = []
+                locs = [p_ + _wrap(a - p_) for a, p_ in zip(locs, prev)]
+            prev = locs
+            fixed.append((u, root, locs, Ls, tm))
+        groups = []
         for k in range(n):
-            out.append(('n', [(u, (('t', *root), ('r', ag[0]))) if k == 0 else
-                              (u, (('t', Ls[k - 1], 0), ('r', ag[k] - ag[k - 1])))
-                              for u, root, ag, Ls in frames]))
-        out.append(('n', [(u, (('t', Ls[-1], 0), ('r', -ag[-1]))) for u, root, ag, Ls in frames]))
-        lens = [('n', [(u, Ls[k]) for u, _, _, Ls in frames]) for k in range(n)]
-        return out, lens
+            groups.append([(u, ((('r', locs[0]),) if local else (('t', *root), ('r', locs[0])))
+                               if k == 0 else
+                               (('t', Ls[k - 1], 0), ('r', locs[k])), '', tm)
+                           for u, root, locs, Ls, tm in fixed])
+        endf = [(u, (('t', Ls[-1], 0), ('r', -sum(locs))), '', tm) for u, root, locs, Ls, tm in fixed]
+        Lb = [max(r_[3][k] for r_ in fixed) or 1.0 for k in range(n)]
+        scales = [[(u, (('s', Ls[k] / Lb[k], 1),), '', tm) for u, root, locs, Ls, tm in fixed]
+                  for k in range(n)]
+        track_cache[i] = (groups, scales, Lb, endf, fixed)
+        return track_cache[i]
 
-    def cls_of(m):
-        return A.attr(m[1], m[2]) if m[0] == '2' else A.stops(m[1])
-
-    def prefix(r):
-        """Replay the parent's transforms up to the shared joint, then undo
+    def prefix(i):
+        """Replay the torso's transforms up to the shared joint, then undo
         its rotation so this chain's angles stay world angles."""
-        if not r['parent']:
+        if i not in parent_of:
             return []
-        pr, m = r['parent']
-        ps = pr['segs']
+        ti, m = parent_of[i]
+        groups, _, _, _, fixed = chain_tracks(ti)
         if m == 0:
-            return prefix(pr) + [('2', (('t', *pr['root'][0]),), (('t', *pr['root'][1]),))]
-        g = [('2', (('t', *pr['root'][0]), ('r', ps[0][2])), (('t', *pr['root'][1]), ('r', ps[0][3])))]
-        for k in range(1, m):
-            g.append(('2', (('t', ps[k - 1][0], 0), ('r', ps[k][2])),
-                      (('t', ps[k - 1][1], 0), ('r', ps[k][3]))))
-        tot0 = sum(s_[2] for s_ in ps[:m]); tot1 = sum(s_[3] for s_ in ps[:m])
-        g.append(('2', (('t', ps[m - 1][0], 0), ('r', -tot0)), (('t', ps[m - 1][1], 0), ('r', -tot1))))
-        return prefix(pr) + g
+            return [[(u, (('t', *root),), '', tm) for u, root, locs, Ls, tm in fixed]]
+        out = groups[:m]
+        out.append([(u, (('t', Ls[m - 1], 0), ('r', -sum(locs[:m]))), '', tm)
+                    for u, root, locs, Ls, tm in fixed])
+        return out
 
     def chain_svg(i, layer):
         """Nested joint groups; 'glow' draws the outline, 'core' the tube."""
-        p, r = parts0[i], rigs[i]
-        groups, lens = motions(r)
+        p = P[0][i]
+        groups, scales, Lb, endf, _ = chain_tracks(i)
         out, depth = [], 0
-        for m in prefix(r):
-            out.append(f'<g{cls_of(m)}>'); depth += 1
+        for tr in prefix(i):
+            out.append(f'<g{A.track(tr)}>'); depth += 1
         is_chain = p['t'] == 'chain'
         w = p.get('w', 0)
         gw = w + GLOW_W
-        def cap():
+        def cap(r_extra=0.0, hand=False):
             if not is_chain:
                 return ''
             if layer == 'glow':
-                return f'<circle r="{_num(gw / 2)}" fill="{p["glow"]}"/>'
-            return f'<circle r="{_num(w / 2)}" fill="{JOINT_F if p["far"] else JOINT_N}"/>'
-        for k, m in enumerate(groups[:-1]):
-            out.append(f'<g{cls_of(m)}>'); depth += 1
+                return f'<circle r="{_num(gw / 2 + r_extra)}" fill="{p["glow"]}"/>'
+            fill = ((HAND_F if p['far'] else HAND_N) if hand else
+                    (JOINT_F if p['far'] else JOINT_N))
+            return f'<circle r="{_num(w / 2 + r_extra)}" fill="{fill}"/>'
+        for k, tr in enumerate(groups):
+            out.append(f'<g{A.track(tr)}>'); depth += 1
             if not is_chain:
                 continue
-            ln = lens[k]
-            Lb = ((ln[1] + ln[2]) / 2 if ln[0] == '2' else
-                  max(v for _, v in ln[1])) or 1.0
             if layer == 'glow':
-                seg = _stroke(f'M0,0 H{_num(Lb)}', p['glow'], gw, cap='butt')
+                seg = _stroke(f'M0,0 H{_num(Lb[k])}', p['glow'], gw, cap='butt')
             else:
-                seg = (f'<rect y="{_num(-w / 2)}" width="{_num(Lb)}" height="{_num(w)}" '
+                seg = (f'<rect y="{_num(-w / 2)}" width="{_num(Lb[k])}" height="{_num(w)}" '
                        f'fill="url(#{"tf" if p["far"] else "tn"})"/>')
             out.append(cap())
-            if ln[0] == '2':
-                s0, s1 = ln[1] / Lb, ln[2] / Lb
-                if abs(s0 - s1) < 0.01 and abs(s0 - 1) < 0.01:
-                    out.append(seg)
-                else:
-                    out.append(f'<g{A.attr((("s", s0, 1),), (("s", s1, 1),))}>{seg}</g>')
-            else:
-                out.append(f'<g{A.stops([(u, (("s", v / Lb, 1),)) for u, v in ln[1]])}>{seg}</g>')
-        # upright frame at the chain end: end cap, head, held equipment
-        end = cap()
+            out.append(f'<g{A.track(scales[k])}>{seg}</g>')
+        # upright frame at the chain end: hand or end cap, head, equipment
+        end = cap(2.0, hand=True) if p.get('role') == 'arms' else cap()
         if layer == 'core' and p['t'] == 'head':
             hr = p['r']
             pony = (_stroke(f'M-2,{_num(-hr - 2)} L{_num(-hr - 6)},2 L{_num(-hr - 2)},{_num(hr + 6)}',
@@ -685,45 +720,52 @@ def render_svg(parts0, parts1):
                     f'<circle r="{_num(hr)}" fill="url(#hd)"/>'
                     + _stroke(f'M{_num(-hr * 0.62)},-3 H{_num(hr * 0.62)}', VISOR, 5))
         if layer == 'core' and i in attached:
-            h0, h1 = hand_at(i, 0.0), hand_at(i, 1.0)
-            for j, (ca, cb, th, sc) in attached[i]:
-                g0 = (('t', ca[0] - h0[0], ca[1] - h0[1]), ('r', 0), ('s', 1, 1))
-                g1 = (('t', cb[0] - h1[0], cb[1] - h1[1]), ('r', th), ('s', sc, sc))
-                end += f'<g{A.attr(g0, g1)}>{_emit_local(parts0[j], ca)}</g>'
+            for pi, fits in attached[i]:
+                ks = prop_keys(fits, i)
+                c0 = fits[0][0]
+                cls = A.track(pose_keys([(('t', ox, oy), ('r', th), ('s', sc, sc))
+                                         for ox, oy, th, sc in ks]))
+                end += f'<g{cls}>{_emit_local(P[0][pi], c0)}</g>'
         if end:
-            out.append(f'<g{cls_of(groups[-1])}>{end}</g>')
+            out.append(f'<g{A.track(endf)}>{end}</g>')
         out.append('</g>' * depth)
         return ''.join(out)
 
-    for i, p in enumerate(parts0):
-        if i in rigs:
+    for i, p in enumerate(P[0]):
+        if i in pts:
             if p['t'] == 'chain':
                 body.append(chain_svg(i, 'glow'))
             body.append(chain_svg(i, 'core'))
         elif i in free:
-            ca, cb, th, sc = free[i]
-            cls = A.attr((('t', *ca), ('r', 0), ('s', 1, 1)), (('t', *cb), ('r', th), ('s', sc, sc)))
-            body.append(f'<g{cls}>{_emit_local(p, ca)}</g>')
+            fits = free[i]
+            c0 = fits[0][0]
+            cls = A.track(pose_keys([(('t', ox, oy), ('r', th), ('s', sc, sc))
+                                     for ox, oy, th, sc in prop_keys(fits)]))
+            body.append(f'<g{cls}>{_emit_local(p, c0)}</g>')
         elif i in flip:
-            # frames of the straight blend, each shown for 1/FLIP_FRAMES of the rep
-            n = FLIP_FRAMES
-            a, b = parts0[i], parts1[i]
-            for k in range(n):
-                t = _pose_t((k + 0.5) / n)
+            # frames of the straight blend, each held for its slice of the loop
+            frames = []
+            for j, jn, us, ue, uh in moves:
+                for k in range(FLIP_FRAMES):
+                    lo = us + (ue - us) * k / FLIP_FRAMES
+                    hi = us + (ue - us) * (k + 1) / FLIP_FRAMES if k < FLIP_FRAMES - 1 else uh
+                    frames.append((lo, hi, j, jn, _bezier_ease((k + 0.5) / FLIP_FRAMES)))
+            for n_, (lo, hi, j, jn, t) in enumerate(frames):
+                a, b = P[j][i], P[jn][i]
                 if a['t'] == 'path':
                     pa, pb = resample(a['pts']), resample(b['pts'])
-                    q = dict(a, pts=[_lerp_pt(u, v, t) for u, v in zip(pa, pb)])
+                    q = dict(a, pts=[_lerp_pt(s, v, t) for s, v in zip(pa, pb)])
                 elif a['t'] == 'circle':
                     q = dict(a, c=_lerp_pt(a['c'], b['c'], t), r=_lerp(a['r'], b['r'], t))
                 else:
                     q = dict(a, **{c: _lerp(a[c], b[c], t) for c in 'xywh'})
-                lo, hi = 100 * k / n, 100 * (k + 1) / n
-                kf = f'f{i}_{k}'
-                A.rules.append(f'@keyframes {kf}{{0%{{opacity:{1 if k == 0 else 0}}}'
-                               + (f'{_num(lo)}%{{opacity:1}}' if k else '')
-                               + (f'{_num(hi)}%{{opacity:0}}' if hi < 100 else '')
-                               + f'100%{{opacity:{1 if hi >= 100 else 0}}}}}'
-                               f'.{kf}{{opacity:0;animation:{kf} {DUR}s step-end infinite}}')
+                kf = f'f{i}_{n_}'
+                first, last = n_ == 0, hi >= 1 - 1e-9
+                A.rules.append(f'@keyframes {kf}{{0%{{opacity:{1 if first else 0}}}'
+                               + ('' if first else f'{_num(100 * lo)}%{{opacity:1}}')
+                               + ('' if last else f'{_num(100 * hi)}%{{opacity:0}}')
+                               + f'100%{{opacity:{1 if last else 0}}}}}'
+                               f'.{kf}{{opacity:0;animation:{kf} {_num(dur)}s step-end infinite}}')
                 body.append(f'<g class="{kf}">{_emit_local(q, (0, 0))}</g>')
 
     css = ('g{transform-box:view-box;transform-origin:0 0}'
@@ -734,12 +776,35 @@ def render_svg(parts0, parts1):
             f'<g transform="translate({_num(-bx)},{_num(-by)})">{"".join(body)}</g></svg>\n')
 
 # ---------------------------------------------------------------- poses
-POSES = {}
-def pose(base):
+POSES, META = {}, {}
+def pose(base, seq=(0, 1), beat=1.2, holds=None):
+    """Register an exercise. fn(k) returns key pose k; seq is the order the
+    key poses play in (looping back to the first), beat the seconds per
+    move, holds {k: share of the beat} to override the pause on reaching k
+    (0 for a jump's peak, which shouldn't hang in the air)."""
     def deco(fn):
         POSES[base] = fn
+        META[base] = dict(seq=tuple(seq), beat=beat, holds=holds or {})
         return fn
     return deco
+
+def render_exercise(base):
+    m = META[base]
+    fn = POSES[base]
+    keys = {k: flatten(fn(k)) for k in set(m['seq'])}
+    return render_svg(keys, m['seq'], m['beat'], m['holds'])
+
+def _left_first(chains):
+    """Front-view limbs in a fixed left-to-right order, so a mirrored pose
+    moves each leg to its own new spot instead of swapping legs."""
+    return sorted(chains, key=lambda c: c[-1][0])
+
+def _lift(f, dy, dx=0):
+    """Shift a whole figure dict (airborne poses)."""
+    mv = lambda p: (p[0] + dx, p[1] - dy)
+    return dict(head=mv(f['head']), neck=mv(f['neck']), hip=mv(f['hip']),
+                arms=[[mv(p) for p in c] for c in f['arms']],
+                legs=[[mv(p) for p in c] for c in f['legs']])
 
 # ---- squat family ----------------------------------------------------
 def _stand(x=240, arm='down', kb_hand=False, head_dx=2):
@@ -795,18 +860,24 @@ def _(i):
     hand = f['arms'][0][-1]
     return [ground(), figure(**f), kb((hand[0], hand[1] - 4), 10)]
 
-@pose('cossackSquat')
+@pose('cossackSquat', seq=(0, 1, 2, 1), beat=1.0)
 def _(i):
-    # front view: deep squat over one leg, other leg straight out
+    # front view: deep squat over one leg with the other straight, pass
+    # through a tall wide stance, then the other side; feet stay planted
     x = 240
+    if i == 1:
+        return [ground(), figure(head=(x, 108), neck=(x, 136), hip=(x, 214),
+                                 arms=[[(x - 2, 166), (x + 2, 178)]],
+                                 legs=[[(x - 46, 254), (x - 94, GY)], [(x + 46, 254), (x + 94, GY)]])]
     s = 1 if i == 0 else -1
     hip = (x - 55 * s, 232)
     neck = (x - 48 * s, 152)
     head = (x - 48 * s, 124)
-    legs = [[(x - 82 * s, 250), (x - 88 * s, GY)],          # bent support leg
-            [(x + 30 * s, 275), (x + 105 * s, GY - 2)]]     # straight leg
+    legs = [[(x - 82 * s, 250), (x - 94 * s, GY)],          # bent support leg
+            [(x + 30 * s, 275), (x + 94 * s, GY - 2)]]      # straight leg
     arms = [[(x - 10 * s, 165), (x + 20 * s, 172)]]
-    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms,
+                             legs=_left_first(legs))]
 
 @pose('wallSit')
 def _(i):
@@ -987,17 +1058,27 @@ def _(i):
         legs = [[(x - 52, 244), (x - 56, GY)], [(x - 92, 186), (x - 148, 176)]]
     return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
 
-@pose('inchworm')
+@pose('inchworm', seq=(0, 1, 2, 3, 2, 1), beat=0.9, holds={3: 0.25})
 def _(i):
-    x = 240
+    # stand, fold with the hands down by the feet, walk the hands out
+    # to a plank and back; the feet stay put the whole time
+    x = 200
     if i == 0:
-        neck = (x - 20, 210)
-        head = (x - 26, 236)
-        hip = (x + 26, 168)
-        arms = [[(x - 52, GY)]]
-        legs = [[(x + 28, 232), (x + 30, GY)]]
-        return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
-    return [ground(), figure(**_plank())]
+        return [ground(), figure(**_stand(x, arm='down'))]
+    if i == 1:
+        hip, neck = (x - 2, 182), (x + 37, 244)
+        return [ground(), figure(head=(x + 48, 266), neck=neck, hip=hip,
+                                 arms=[[(x + 52, 268), (x + 58, GY)]],
+                                 legs=[[(x - 4, 237), (x - 8, GY)], [(x + 6, 237), (x + 6, GY)]])]
+    if i == 2:
+        hip, neck = (x + 4, 196), (x + 70, 228)
+        return [ground(), figure(head=(x + 94, 240), neck=neck, hip=hip,
+                                 arms=[[(x + 84, 260), (x + 98, GY)]],
+                                 legs=[[(x - 2, 244), (x - 8, GY)], [(x + 8, 244), (x + 6, GY)]])]
+    px = x + 120
+    f = _pushup_d(px, 0.0)
+    f['legs'] = [[(px - 64, 246), (px - 128, GY - 4)], [(px - 60, 244), (px - 114, GY - 4)]]
+    return [ground(), figure(**f)]
 
 @pose('pikePushup')
 def _(i):
@@ -1182,18 +1263,23 @@ def _(i):
     arms = [[(x + 30, 140), (x + 52, 122)]] if s else [[(x - 22, 148), (x - 44, 132)]]
     return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
 
-@pose('skaterHops')
+@pose('skaterHops', seq=(0, 1, 2, 1), beat=0.7, holds={1: 0})
 def _(i):
-    # front view leaping side to side
+    # front view leaping side to side, airborne through the middle
     x = 240
+    if i == 1:
+        return [ground(), figure(head=(x, 80), neck=(x, 108), hip=(x, 180),
+                                 arms=[[(x - 4, 140), (x + 2, 170)]],
+                                 legs=[[(x - 14, 226), (x - 22, 262)], [(x + 14, 226), (x + 22, 262)]])]
     s = 1 if i == 0 else -1
     neck = (x + 30 * s, 128)
     head = (x + 34 * s, 100)
     hip = (x + 44 * s, 198)
-    legs = [[(x + 4 * s, 244), (x - 34 * s, 224)],          # trailing leg crossed behind
+    legs = [[(x + 4 * s, 244), (x - 34 * s, 224)],          # trailing leg swept out
             [(x + 62 * s, 244), (x + 66 * s, GY)]]
     arms = [[(x - 8 * s, 150), (x - 40 * s, 138)]]
-    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms,
+                             legs=_left_first(legs))]
 
 @pose('sprint')
 def _(i):
@@ -1212,15 +1298,25 @@ def _(i):
                 [(x + lean - 30, 150), (x + lean - 44, 180)]]
     return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
 
-@pose('burpee')
+@pose('burpee', seq=(0, 1, 2, 3, 2, 1, 4), beat=0.6, holds={4: 0, 3: 0.1})
 def _(i):
+    # stand, squat with hands down, jump back to plank, chest to the floor,
+    # plank, feet back in, jump with the arms up
+    legs_plank = lambda x: [[(x - 62, 246), (x - 118, GY - 8)], [(x - 66, 244), (x - 122, GY - 6)]]
     if i == 0:
-        f = _stand(arm='up')
-        f['legs'] = [[(240 - 6, 240), (240 - 8, GY)], [(240 + 8, 240), (240 + 6, GY)]]
+        return [ground(), figure(**_stand(arm='down'))]
+    if i == 1:
+        f = _squat_d(222, 1.0, arm='down')
+        f['arms'] = [[(240, 212), (258, GY)]]
         return [ground(), figure(**f)]
-    x = 225
-    f = _plank()
-    f['legs'] = [[(x - 62, 246), (x - 118, GY - 8)], [(x - 66, 244), (x - 122, GY - 6)]]
+    if i in (2, 3):
+        f = _pushup_d(180, 0.0 if i == 2 else 1.0)
+        f['legs'] = legs_plank(180)
+        return [ground(), figure(**f)]
+    x = 240
+    f = dict(head=(x + 2, 40), neck=(x, 68), hip=(x, 142),
+             arms=[[(x + 10, 34), (x + 14, 0)]],
+             legs=[[(x - 4, 195), (x - 8, 245)], [(x + 8, 195), (x + 6, 245)]])
     return [ground(), figure(**f)]
 
 @pose('ropeJumping')
@@ -1814,16 +1910,18 @@ def _(i):
 
 @pose('hipThrust')
 def _(i):
+    # shoulders on the bench edge, arms resting back along its top, chin
+    # tucked so the head sits clear of the arms
     x = 236
     bench = box(x + 62, GY - 62, 104, 62)
     if i == 0:
         hip = (x - 16, 262)
-        neck, head = (x + 58, 236), (x + 84, 230)
+        neck, head = (x + 58, 236), (x + 66, 208)
     else:
         hip = (x - 16, 214)
-        neck, head = (x + 58, 232), (x + 84, 228)
+        neck, head = (x + 58, 232), (x + 72, 208)
     legs = [[(x - 60, 240), (x - 66, GY)], [(x - 48, 244), (x - 54, GY)]]
-    arms = [[(x + 78, 232), (x + 108, GY - 62)]]
+    arms = [[(x + 88, 222), (x + 118, 222)]]
     return [ground(), bench,
             figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
 
@@ -2194,16 +2292,23 @@ def _(i):
     f['legs'] = [[(x - 62, 246), (x - 118, GY - 8)], [(x - 68, 242), (x - 124, GY - 4)]]
     return [ground(), figure(**f)]
 
-@pose('burpeeBroadJump')
+@pose('burpeeBroadJump', seq=(0, 1, 2, 1, 3), beat=0.65, holds={3: 0})
 def _(i):
+    # land, squat with the hands down, jump back to plank, feet in, then
+    # a long jump forward with the arms driving
+    legs_plank = lambda x: [[(x - 62, 246), (x - 118, GY - 8)], [(x - 68, 242), (x - 124, GY - 4)]]
     if i == 0:
-        x = 205
-        f = _plank(x)
-        f['arms'] = [[(x + 96, 214), (x + 80, GY)]]
-        f['legs'] = [[(x - 62, 246), (x - 118, GY - 8)], [(x - 68, 242), (x - 124, GY - 4)]]
+        f = _squat_d(240, 0.5, arm='down')
         return [ground(), figure(**f)]
-    x = 288
-    lift = 46
+    if i == 1:
+        f = _squat_d(222, 1.0, arm='down')
+        f['arms'] = [[(240, 212), (258, GY)]]
+        return [ground(), figure(**f)]
+    if i == 2:
+        f = _pushup_d(180, 0.0)
+        f['legs'] = legs_plank(180)
+        return [ground(), figure(**f)]
+    x, lift = 262, 46
     hip = (x, 186 - lift)
     neck, head = (x + 12, 114 - lift), (x + 20, 88 - lift)
     legs = [[(x - 14, 226 - lift), (x - 44, 250 - lift)],
@@ -2224,17 +2329,17 @@ def _(i):
         f['legs'] = [[(x - 38, 238), (x - 58, GY)], [(x + 38, 238), (x + 58, GY)]]
     return [ground(), figure(**f)]
 
-@pose('jackSquat')
+@pose('jackSquat', seq=(0, 1, 2, 1), beat=0.7, holds={1: 0})
 def _(i):
+    # feet together, jump the feet out wide, land in a squat, jump back in
     x = 240
     if i == 0:
-        arms = [[(x - 44, 82), (x - 58, 46)], [(x + 44, 82), (x + 58, 46)]]
-        f = _front_stand(x, 0.0, arms=arms)
-        f['legs'] = [[(x - 38, 238), (x - 58, GY)], [(x + 38, 238), (x + 58, GY)]]
-        return [ground(), figure(**f)]
+        return [ground(), figure(**_front_stand(x, 0.0))]
+    if i == 1:
+        arms = [[(x - 26, 88), (x - 40, 54)], [(x + 26, 88), (x + 40, 54)]]
+        return [ground(), figure(**_lift(_front_stand(x, 0.0, arms=arms, wide=18), 34))]
     arms = [[(x - 24, 178), (x - 6, 200)], [(x + 24, 178), (x + 6, 200)]]
-    f = _front_stand(x, 1.0, arms=arms, wide=30)
-    return [ground(), figure(**f)]
+    return [ground(), figure(**_front_stand(x, 1.0, arms=arms, wide=30))]
 
 @pose('buttKicks')
 def _(i):
@@ -2247,16 +2352,22 @@ def _(i):
     arms = [[(x + 28, 142), (x + 50, 124)]] if i == 0 else [[(x - 20, 148), (x - 42, 132)]]
     return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
 
-@pose('skiJump')
+@pose('skiJump', seq=(0, 1, 2, 1), beat=0.6, holds={1: 0})
 def _(i):
+    # front view, feet together, hopping side to side over a line
     x = 240
+    if i == 1:
+        return [ground(), figure(head=(x, 70), neck=(x, 98), hip=(x, 170),
+                                 arms=_left_first([[(x - 20, 128), (x - 30, 152)], [(x + 20, 128), (x + 30, 152)]]),
+                                 legs=[[(x - 6, 216), (x - 8, 256)], [(x + 6, 216), (x + 8, 256)]])]
     s = 1 if i == 0 else -1
     hip = (x + 26 * s, 196)
     neck, head = (x + 18 * s, 122), (x + 20 * s, 94)
     legs = [[(x + 34 * s, 240), (x + 44 * s, GY - 10)],
             [(x + 42 * s, 242), (x + 54 * s, GY - 8)]]
     arms = [[(x - 6 * s, 152), (x - 32 * s, 168)], [(x + 4 * s, 150), (x - 22 * s, 172)]]
-    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=_left_first(arms),
+                             legs=_left_first(legs))]
 
 @pose('tuckJump')
 def _(i):
@@ -2289,10 +2400,14 @@ def _(i):
     arms = [[(x + 34, 122 - lift), (x + 68, 104 - lift)]]
     return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
 
-@pose('lateralShuffle')
+@pose('lateralShuffle', seq=(0, 1, 2, 1), beat=0.6, holds={1: 0})
 def _(i):
-    # front view, low athletic stance skating side to side
+    # front view, low athletic stance; the feet snap together mid-shuffle
     x = 240
+    if i == 1:
+        return [ground(), figure(head=(x, 122), neck=(x, 150), hip=(x, 220),
+                                 arms=_left_first([[(x - 30, 184), (x - 50, 204)], [(x + 30, 184), (x + 50, 204)]]),
+                                 legs=[[(x - 16, 256), (x - 18, GY - 6)], [(x + 16, 256), (x + 18, GY - 6)]])]
     s = 1 if i == 0 else -1
     hip = (x + 18 * s, 224)
     neck, head = (x + 10 * s, 154), (x + 12 * s, 126)
@@ -2300,7 +2415,8 @@ def _(i):
             [(x + 62 * s, 256), (x + 96 * s, GY)]]
     arms = [[(x - 20 * s, 184), (x - 52 * s, 196)],
             [(x + 34 * s, 182), (x + 62 * s, 168)]]
-    return [ground(), figure(head=head, neck=neck, hip=hip, arms=arms, legs=legs)]
+    return [ground(), figure(head=head, neck=neck, hip=hip, arms=_left_first(arms),
+                             legs=_left_first(legs))]
 
 @pose('shuttleRun')
 def _(i):
@@ -2648,9 +2764,8 @@ def preview(out_dir, bases):
     for base in bases:
         _CTX['active'] = {ROLE_OF.get(base)}
         _CTX['variant'] = 'a' if order.index(base) % 2 == 0 else 'b'
-        fn = POSES[base]
         with open(os.path.join(out_dir, f'{base}.svg'), 'w') as f:
-            f.write(render_svg(flatten(fn(0)), flatten(fn(1))))
+            f.write(render_exercise(base))
     print(f'wrote {len(bases)} preview SVGs to {out_dir}')
 
 if __name__ == '__main__':
@@ -2666,11 +2781,10 @@ if __name__ == '__main__':
     for idx, (base, fn) in enumerate(sorted(POSES.items())):
         _CTX['active'] = {ROLE_OF.get(base)}
         _CTX['variant'] = 'a' if idx % 2 == 0 else 'b'   # mix of body types
-        p0, p1 = flatten(fn(0)), flatten(fn(1))
         try:
-            out = render_svg(p0, p1)
+            out = render_exercise(base)
         except ValueError as e:
-            raise SystemExit(f'{base}: {e}, the two poses must use the same '
+            raise SystemExit(f'{base}: {e}, every key pose must use the same '
                              f'number of arm/leg chains and decorations')
         path = os.path.join(OUT, f'{base}.svg')
         with open(path, 'w') as f:

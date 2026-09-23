@@ -47,7 +47,8 @@ rather than hardcoded.
 - **157 movements** across five body regions (chest & shoulders, back &
   arms, core & abs, legs & glutes, cardio) and fourteen movement patterns
 - **145 hand-authored animations**, one per movement. Poses are
-  joint coordinates in `scripts/gen-anims.py`, rigged so limbs rotate at
+  joint coordinates in `scripts/gen-anims.py` (two key poses for most,
+  more for multi-stage moves like burpees), rigged so limbs rotate at
   their joints, and baked to self-animating SVGs (CSS keyframes) in
   `img/exercises/<base>.svg`
 - **16 named workouts** and **3 stretch routines**
