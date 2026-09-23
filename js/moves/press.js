@@ -3,6 +3,15 @@
   3D movement data, overhead pressing and arms: see js/moves/README.md.
 */
 export default {
+  zzTest: {
+    props: [{ type: 'dumbbell', hand: 'L' }, { type: 'kettlebell', hand: 'R' }],
+    keys: {
+      a: { label: 'A', arms: { L: { hand: [0.26, 1.42, 0.03], elbow: 'down' }, R: { hand: [-0.24, 1.40, 0.08], elbow: [-0.2,-1,0.4], wrist: -60 } } },
+      b: { label: 'B', arms: { L: { hand: [0.18, 1.92, 0.0], elbow: 'out' }, R: { hand: [-0.17, 1.92, 0.0], elbow: 'out', wrist: -90 } } },
+      c: { label: 'C', arms: { L: { hand: [0.18, 1.92, 0.0], elbow: 'out', wrist: 60 }, R: { hand: [-0.17, 1.92, 0.0], elbow: 'out', wrist: 90 } } },
+    },
+    seq: ['a','b','c'],
+  },
   barbellPress: {
     camera: { yaw: 50, pitch: 6 },
     props: [{ type: 'barbell', length: 1.5, plate: 0.13 }],
