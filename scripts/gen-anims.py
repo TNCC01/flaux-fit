@@ -216,6 +216,92 @@ def animated_svg(parts0, parts1, dur=2.4):
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}">'
             f'<style>{"".join(css)}</style>{static_body}{"".join(groups)}</svg>\n')
 
+# ------------------------------------------- smooth, auto-framed renderer
+# Preview of the v2 style: the frame is cropped to the figure's full range
+# of motion (so it fills the card), and the motion is SMIL-animated between
+# the two poses, so the browser tweens every frame instead of flicking
+# through 17 baked ones. SMIL runs inside an <img>, unlike script.
+PAD = 16
+
+def _is_ground(p):
+    return (p['t'] == 'path' and p['color'] == BORDER
+            and all(y == GY for _, y in p['pts']))
+
+def _bounds(parts):
+    xs, ys = [], []
+    for p in parts:
+        if _is_ground(p):
+            continue
+        if p['t'] == 'path':
+            h = p['w'] / 2
+            for x, y in p['pts']:
+                xs += [x - h, x + h]; ys += [y - h, y + h]
+        elif p['t'] == 'circle':
+            r = p['r'] + (0 if p['fill'] else p['w'] / 2)
+            xs += [p['c'][0] - r, p['c'][0] + r]; ys += [p['c'][1] - r, p['c'][1] + r]
+        elif p['t'] == 'rect':
+            xs += [p['x'] - 3, p['x'] + p['w'] + 3]; ys += [p['y'] - 3, p['y'] + p['h'] + 3]
+    return min(xs), min(ys), max(xs), max(ys)
+
+def frame_box(parts0, parts1):
+    """3:2 viewBox around both poses, ground line pinned to the bottom."""
+    x0, y0, x1, y1 = _bounds(parts0 + parts1)
+    x0, x1, y0 = x0 - PAD, x1 + PAD, y0 - PAD
+    y1 = max(y1, GY) + PAD
+    w, h = x1 - x0, y1 - y0
+    if w / h < W / H:                 # too tall: widen about the centre
+        cx, w = (x0 + x1) / 2, h * W / H
+        x0 = cx - w / 2
+    else:                             # too wide: grow upwards, keep the floor
+        h = w * H / W
+        y0 = y1 - h
+    return x0, y0, w, h
+
+def _d(pts):
+    return 'M' + ' L'.join(f'{x:.1f},{y:.1f}' for x, y in pts)
+
+def smooth_svg(parts0, parts1, dur=2.4):
+    """pose0 -> pose1 -> pose0, tweened by the browser, with end holds."""
+    if len(parts0) != len(parts1):
+        raise ValueError(f'part count mismatch {len(parts0)} vs {len(parts1)}')
+    bx, by, bw, bh = frame_box(parts0, parts1)
+    # out, hold, back, hold: eased moves, the holds let each end pose read
+    kt = '0;0.4;0.5;0.9;1'
+    ease = '0.45 0 0.55 1'
+    anim = (f'dur="{dur}s" repeatCount="indefinite" calcMode="spline" '
+            f'keyTimes="{kt}" keySplines="{ease};0 0 1 1;{ease};0 0 1 1"')
+
+    def seq(a, b):
+        return ';'.join([a, b, b, a, a])
+
+    out = []
+    for a, b in zip(parts0, parts1):
+        if _is_ground(a):
+            a = b = line([(bx, GY), (bx + bw, GY)], BORDER, 6)
+        if a == b:
+            out.append(emit(a))
+            continue
+        if a['t'] == 'path':
+            da, db = _d(resample(a['pts'])), _d(resample(b['pts']))
+            out.append(f'<path d="{da}" fill="none" stroke="{a["color"]}" '
+                       f'stroke-width="{a["w"]}" stroke-linecap="round" '
+                       f'stroke-linejoin="round" opacity="{a["op"]}">'
+                       f'<animate attributeName="d" values="{seq(da, db)}" {anim}/></path>')
+        elif a['t'] == 'circle':
+            f = a['color'] if a['fill'] else 'none'
+            s = 'none' if a['fill'] else a['color']
+            kids = ''.join(
+                f'<animate attributeName="{k}" values="{seq(f"{va:.1f}", f"{vb:.1f}")}" {anim}/>'
+                for k, va, vb in (('cx', a['c'][0], b['c'][0]), ('cy', a['c'][1], b['c'][1]),
+                                  ('r', a['r'], b['r'])) if va != vb)
+            out.append(f'<circle cx="{a["c"][0]:.1f}" cy="{a["c"][1]:.1f}" r="{a["r"]:.1f}" '
+                       f'fill="{f}" stroke="{s}" stroke-width="{a["w"]}" '
+                       f'opacity="{a["op"]}">{kids}</circle>')
+        else:
+            out.append(emit(lerp_part(a, b, 0)))   # boxes don't move in practice
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" '
+            f'viewBox="{bx:.1f} {by:.1f} {bw:.1f} {bh:.1f}">{"".join(out)}</svg>\n')
+
 # ---------------------------------------------------------------- poses
 POSES = {}
 def pose(base):
@@ -2124,7 +2210,24 @@ ROLE_OF = {b: role for role, bases in ACTIVE.items() for b in bases}
 _UNTAGGED = sorted(set(POSES) - set(ROLE_OF))
 
 # ---------------------------------------------------------------- main
+def preview(out_dir, bases):
+    """Write v2-style SVGs for a few exercises without touching img/."""
+    os.makedirs(out_dir, exist_ok=True)
+    order = sorted(POSES)
+    for base in bases:
+        _CTX['active'] = {ROLE_OF.get(base)}
+        _CTX['variant'] = 'a' if order.index(base) % 2 == 0 else 'b'
+        fn = POSES[base]
+        with open(os.path.join(out_dir, f'{base}.svg'), 'w') as f:
+            f.write(smooth_svg(flatten(fn(0)), flatten(fn(1))))
+    print(f'wrote {len(bases)} preview SVGs to {out_dir}')
+
 if __name__ == '__main__':
+    import sys
+    if len(sys.argv) > 2 and sys.argv[1] == '--preview':
+        # python3 scripts/gen-anims.py --preview <dir> pushup kbSwing ...
+        preview(sys.argv[2], sys.argv[3:])
+        raise SystemExit
     os.makedirs(OUT, exist_ok=True)
     for stale in os.listdir(OUT):
         os.remove(os.path.join(OUT, stale))
