@@ -75,7 +75,28 @@ export default {
   pikePushup: {
     camera: { yaw: 80, pitch: 10 },
     muscles: { primary: ['shoulders', 'triceps'], secondary: ['upperBack', 'chest', 'core'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Start in a push-up, then walk the feet in and lift the hips high so the body makes an upside-down V.',
+        'Hands a little wider than the shoulders, fingers spread and pointing forward.',
+        'Legs as straight as your hamstrings allow, weight on the balls of the feet.',
+      ],
+      steps: [
+        'Keep the hips high and bend the elbows, lowering the top of the head towards the floor just in front of the hands.',
+        'Let the elbows travel back at about 45 degrees, not straight out to the sides.',
+        'Stop when the head is a few centimetres off the floor.',
+        'Push the floor away until the arms are straight, pressing the chest back towards the thighs.',
+      ],
+      cues: ['Hips high', 'Crown to the floor', 'Elbows back, not out'],
+      mistakes: [
+        'Letting the hips drop so it turns into a normal push-up and the shoulders do less of the work.',
+        'Flaring the elbows straight out, which crowds the front of the shoulder.',
+        'Lowering the face or chin instead of the top of the head, which cranks the neck.',
+        'Bouncing the head off the floor: stop just short and press.',
+      ],
+      breathing: 'Breathe in on the way down, breathe out as you press up.',
+      tempo: 'About 2 seconds down, a brief pause, 1 second up.',
+    },
     keys: {
       top: {
         label: 'Hips high',
@@ -98,7 +119,28 @@ export default {
     camera: { yaw: 80, pitch: 10 },
     props: [{ type: 'bench', pos: [0, 0, -0.9], size: [1.0, 0.45, 0.35] }],
     muscles: { primary: ['shoulders', 'triceps'], secondary: ['upperBack', 'chest', 'core'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Put the feet on a bench or sturdy chair behind you and walk the hands in until the hips are stacked over the shoulders.',
+        "Hands a little wider than the shoulders, about a forearm's length from the bench.",
+        'Trunk close to vertical, legs straight or softly bent, weight on the balls of the feet.',
+      ],
+      steps: [
+        'Brace the trunk and keep the hips high over the shoulders.',
+        'Bend the elbows and lower the top of the head towards the floor just in front of the hands.',
+        'Elbows track back at about 45 degrees, forearms close to vertical.',
+        'Press the floor away until the arms are straight and the shoulders are pushed up towards the ears.',
+      ],
+      cues: ['Feet on the bench', 'Stack the shoulders', 'Crown to the floor'],
+      mistakes: [
+        'Hands too far from the bench, so the body slopes and the chest does the work.',
+        'Arching the lower back and letting the ribs flare.',
+        'Elbows flaring straight out to the sides.',
+        'Dropping the head fast and bouncing: lower under control.',
+      ],
+      breathing: 'Breathe in on the way down, breathe out as you press up.',
+      tempo: 'About 2 seconds down, a brief pause, 1 second up.',
+    },
     keys: {
       top: {
         label: 'Hips stacked',
@@ -121,7 +163,29 @@ export default {
     camera: { yaw: 90, pitch: 8 },
     props: [{ type: 'wall', z: WALL_Z }],
     muscles: { primary: ['shoulders', 'core'], secondary: ['triceps', 'upperBack', 'traps', 'glutes', 'forearms'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Start in a push-up with the soles of your feet against the base of a wall.',
+        'Clear the space around you and use a mat or soft floor under the hands.',
+        'Hands shoulder-width apart, fingers spread and gripping the floor.',
+      ],
+      steps: [
+        'Walk the feet up the wall a step at a time until the body makes a straight line.',
+        'Walk the hands in towards the wall, one small step at a time, as the feet climb higher.',
+        'Stop with the hands about a hand-length from the wall, chest facing it and toes touching it.',
+        'Hold: arms locked, shoulders pushed up to the ears, ribs down, glutes and legs squeezed.',
+        'To come down, walk the hands out and the feet down the same way, slowly.',
+      ],
+      cues: ['Walk the feet up', 'Push the floor away', 'Squeeze everything'],
+      mistakes: [
+        'Arching the lower back into a banana shape instead of keeping the ribs down.',
+        'Letting the shoulders sink towards the floor instead of pushing tall through the arms.',
+        'Taking big lunging steps: small steps keep you in control.',
+        'Holding the breath the whole time. Short, steady breaths through the nose.',
+      ],
+      breathing: 'Breathe steadily through the nose during the hold, bracing the trunk on each breath out.',
+      tempo: 'Take 5 to 10 seconds to walk up, hold for your target time, then walk down just as slowly.',
+    },
     keys: { ...WALL_KEYS, s10: { ...WALL_KEYS.s10, label: 'Hold' } },
     seq: [...WALL_SEQ_UP, ...WALL_SEQ_UP.slice(1, -1).reverse()],
     tempo: 0.26,
@@ -131,7 +195,28 @@ export default {
     camera: { yaw: 90, pitch: 8 },
     props: [{ type: 'wall', z: WALL_Z }],
     muscles: { primary: ['shoulders', 'triceps'], secondary: ['core', 'upperBack', 'chest', 'glutes'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Start in a push-up with the soles of your feet against the base of a wall.',
+        'Clear the space around you and use a mat or soft floor under the hands.',
+        'Hands shoulder-width apart, glutes and abs switched on.',
+      ],
+      steps: [
+        'Walk the feet up the wall until the body makes a straight line from hands to feet.',
+        'Walk the hands in towards the wall in small steps as the feet climb higher.',
+        'Go as close to the wall as you can control, aiming for the chest to almost touch it.',
+        'Pause, then walk the hands back out and the feet back down to the push-up.',
+      ],
+      cues: ['Walk the hands in, then back out', 'Small steps', 'Ribs down, arms long'],
+      mistakes: [
+        'Letting the hips sag or the lower back arch as the body gets steeper.',
+        'Taking big steps with the hands, which makes it easy to lose balance.',
+        'Bending the elbows as you step: keep the arms long and push the floor away.',
+        'Rushing the way down instead of walking out with control.',
+      ],
+      breathing: "Keep breathing in short breaths with each step, don't hold your breath.",
+      tempo: 'Steady, controlled steps: about 5 seconds up, a short pause, 5 seconds down.',
+    },
     keys: WALL_KEYS,
     seq: [...WALL_SEQ_UP, ...WALL_SEQ_UP.slice(1, -1).reverse()],
     tempo: 0.24,
@@ -141,7 +226,28 @@ export default {
     camera: { yaw: 60, pitch: 8 },
     props: [{ type: 'bench', pos: [0, 0, -0.3], size: [1.0, 0.45, 0.35] }],
     muscles: { primary: ['triceps'], secondary: ['chest', 'shoulders'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Sit on the edge of a sturdy bench with your hands next to your hips, fingers over the front edge.',
+        'Walk the feet out and slide the hips just off the bench, arms straight.',
+        'Knees bent with feet flat is easier, legs straight is harder.',
+      ],
+      steps: [
+        'Bend the elbows straight back and lower the hips towards the floor, keeping the back close to the bench.',
+        'Keep the shoulders down away from the ears and the chest open.',
+        'Lower until the upper arms are about level with the floor, or as far as the shoulders are comfortable.',
+        'Press through the heels of the hands to straighten the arms.',
+      ],
+      cues: ['Elbows straight back', 'Back close to the bench', 'Shoulders down'],
+      mistakes: [
+        'Elbows flaring out to the sides, which moves the load off the triceps.',
+        'Letting the hips drift away from the bench so the shoulders roll forward.',
+        'Dropping too deep, which strains the front of the shoulder.',
+        'Pushing up with the legs instead of the arms.',
+      ],
+      breathing: 'Breathe in on the way down, breathe out as you press up.',
+      tempo: 'About 2 seconds down, 1 second up.',
+    },
     keys: {
       top: {
         label: 'Arms straight',
@@ -164,18 +270,38 @@ export default {
     camera: { yaw: 60, pitch: 6 },
     props: [{ type: 'rings' }],
     muscles: { primary: ['triceps', 'chest'], secondary: ['shoulders', 'core', 'forearms'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Set the rings about hip height or higher, and jump or press up to straight arms.',
+        'Hands beside the hips, rings turned out slightly, shoulders pushed down away from the ears.',
+        'Knees bent and feet off the floor, body still. Use bench dips instead if the rings are too high.',
+      ],
+      steps: [
+        'Lean slightly forward and bend the elbows, letting them travel straight back.',
+        'Lower until the shoulders are about level with the elbows, keeping the rings close to the body.',
+        'Press back up to straight arms, finishing with the rings by the hips.',
+      ],
+      cues: ['Rings close to the body', 'Elbows back', 'Shoulders down'],
+      mistakes: [
+        'Letting the rings drift away from the body, which strains the shoulders.',
+        'Shrugging up towards the ears at the bottom.',
+        'Swinging the legs to get up.',
+        'Going deeper than the shoulders can control.',
+      ],
+      breathing: 'Breathe in on the way down, breathe out as you press up.',
+      tempo: 'About 2 seconds down, 1 second up.',
+    },
     keys: {
       top: {
         label: 'Support',
         pelvis: { pos: [0, 1.2, 0] },
-        legs: { L: { hip: { flex: -8, abd: 2 }, knee: 75, ankle: -20 }, R: 'mirror' },
+        legs: { L: { hip: { flex: 5, abd: 2 }, knee: 70, ankle: -20 }, R: 'mirror' },
         arms: { L: { hand: [0.27, 1.095, 0.02], elbow: 'back', turn: 20 }, R: 'mirror' },
       },
       bottom: {
         label: 'Bottom',
-        pelvis: { pos: [0, 1.003, -0.019], pitch: 20 },
-        legs: { L: { hip: { flex: -26, abd: 2 }, knee: 75, ankle: -20 }, R: 'mirror' },
+        pelvis: { pos: [0, 0.981, 0.002], pitch: 28 },
+        legs: { L: { hip: { flex: 26, abd: 2 }, knee: 70, ankle: -20 }, R: 'mirror' },
         arms: { L: { hand: [0.27, 1.095, 0.02], elbow: 'back', turn: 20 }, R: 'mirror' },
       },
     },
@@ -183,6 +309,57 @@ export default {
     tempo: [1.8, 1.1],
     holds: { top: 0.4, bottom: 0.2 },
   },
+  dbSkullcrusher: {
+    camera: { yaw: 70, pitch: 14 },
+    props: [{ type: 'bench', pos: [0, 0, -0.26], size: [0.32, 0.42, 1.0] }, { type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
+    muscles: { primary: ['triceps'], secondary: ['shoulders', 'forearms', 'core'] },
+    coaching: {
+      setup: [
+        'Lie on your back on a bench or the floor, feet flat.',
+        'Hold the dumbbells above the shoulders with straight arms, palms facing each other.',
+        'Tip the arms back slightly towards your head so the triceps stay loaded.',
+      ],
+      steps: [
+        'Keep the upper arms still and bend the elbows to lower the dumbbells towards the forehead.',
+        'Let the weights come down beside the head, just above the forehead.',
+        'Straighten the elbows to press the weights back to the start.',
+      ],
+      cues: ['Elbows still', 'Lower to the forehead', 'Squeeze to straight arms'],
+      mistakes: [
+        'Letting the elbows flare out to the sides.',
+        'Moving the upper arms so it turns into a press or a pullover.',
+        'Lowering too fast and losing control near the face.',
+        'Arching the lower back off the bench.',
+      ],
+      breathing: 'Breathe in as you lower, breathe out as you straighten the arms.',
+      tempo: 'About 2 to 3 seconds down, 1 second up.',
+    },
+    keys: {
+      top: {
+        label: 'Arms straight',
+        pelvis: { pos: [0, 0.56, 0.1], pitch: -90 },
+        legs: { L: { foot: [0.24, 0.07, 0.56], knee: [0.3, 1, 0.3], toeOut: 10 }, R: 'mirror' },
+        arms: { L: { hand: [0.168, 1.067, -0.483], elbow: [-0.012, 0.293, -0.062] }, R: 'mirror' },
+      },
+      mid: {
+        label: 'Lower',
+        pass: true,
+        pelvis: { pos: [0, 0.56, 0.1], pitch: -90 },
+        legs: { L: { foot: [0.24, 0.07, 0.56], knee: [0.3, 1, 0.3], toeOut: 10 }, R: 'mirror' },
+        arms: { L: { hand: [0.173, 0.898, -0.655], elbow: [-0.012, 0.293, -0.062] }, R: 'mirror' },
+      },
+      bottom: {
+        label: 'By the forehead',
+        pelvis: { pos: [0, 0.56, 0.1], pitch: -90 },
+        legs: { L: { foot: [0.24, 0.07, 0.56], knee: [0.3, 1, 0.3], toeOut: 10 }, R: 'mirror' },
+        arms: { L: { hand: [0.182, 0.673, -0.623], elbow: [-0.012, 0.293, -0.062] }, R: 'mirror' },
+      },
+    },
+    seq: ['top', 'mid', 'bottom', 'mid'],
+    tempo: [1.2, 0.9, 0.6, 0.5],
+    holds: { top: 0.4, bottom: 0.2, mid: 0 },
+  },
+
   barbellPress: {
     camera: { yaw: 50, pitch: 6 },
     props: [{ type: 'barbell', length: 1.5, plate: 0.13 }],
@@ -238,7 +415,28 @@ export default {
     camera: { yaw: 40, pitch: 6 },
     props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
     muscles: { primary: ['shoulders', 'triceps'], secondary: ['upperBack', 'core', 'chest'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Stand with feet hip-width and a dumbbell in each hand at shoulder height, palms facing forward.',
+        'Elbows under the wrists, slightly in front of the body.',
+        'Glutes squeezed and ribs pulled down.',
+      ],
+      steps: [
+        'Brace the trunk.',
+        'Press both dumbbells straight up, keeping the forearms vertical.',
+        'Finish with the arms locked out beside the ears and the weights over the middle of the foot.',
+        'Lower under control back to the shoulders.',
+      ],
+      cues: ['Press tall, ribs down', 'Forearms vertical', 'Arms by the ears'],
+      mistakes: [
+        'Leaning back and arching the lower back to finish the press.',
+        'Letting the elbows drift behind the body at the bottom.',
+        'Pressing the weights out wide instead of up.',
+        'Stopping short of a full lockout.',
+      ],
+      breathing: 'Breathe in and brace at the bottom, breathe out as you press.',
+      tempo: 'About 1 to 2 seconds up, a moment at the top, 2 seconds down.',
+    },
     keys: {
       rack: {
         label: 'Shoulders',
@@ -266,7 +464,28 @@ export default {
     camera: { yaw: 40, pitch: 6 },
     props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
     muscles: { primary: ['shoulders', 'triceps'], secondary: ['upperBack', 'core', 'chest'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Stand or sit tall with the dumbbells in front of the shoulders at chin height, palms facing you.',
+        'Elbows in front of the body and close together.',
+        'Glutes and abs switched on, ribs down.',
+      ],
+      steps: [
+        'As you start to press, open the elbows out to the sides.',
+        'Rotate the palms as the dumbbells rise, so they face forward by the time the arms pass the forehead.',
+        'Lock the arms out beside the ears.',
+        'Lower back down along the same path, turning the palms back towards you.',
+      ],
+      cues: ['Rotate the palms as you press', 'Open the elbows', 'Ribs down'],
+      mistakes: [
+        'Rotating the palms before pressing, then doing a normal press.',
+        'Leaning back to get the weights up.',
+        'Using weights so heavy the rotation turns into a swing.',
+        'Rushing the lowering.',
+      ],
+      breathing: 'Breathe in at the bottom, breathe out as you press and turn.',
+      tempo: 'About 2 seconds up, a moment at the top, 2 seconds down.',
+    },
     keys: {
       start: {
         label: 'Palms to you',
@@ -294,7 +513,28 @@ export default {
     camera: { yaw: 40, pitch: 6 },
     props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
     muscles: { primary: ['shoulders', 'triceps', 'quads'], secondary: ['glutes', 'core', 'upperBack', 'calves'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Stand with feet hip-width, dumbbells at the shoulders with palms facing forward.',
+        'Elbows under the wrists, weight across the whole foot.',
+        'Trunk braced, ribs down.',
+      ],
+      steps: [
+        'Dip by bending the knees a little, keeping the chest tall and the heels down.',
+        'Drive straight back up through the legs, rising onto the toes as the legs straighten.',
+        'Use that drive to press the dumbbells overhead to a full lockout beside the ears.',
+        'Lower the weights to the shoulders, softening the knees to take the load.',
+      ],
+      cues: ['Dip the knees, drive overhead', 'Chest tall in the dip', 'Finish with straight arms'],
+      mistakes: [
+        'Dipping too deep, like a squat, which kills the drive.',
+        'Tipping forward onto the toes during the dip.',
+        'Pressing before the legs have finished driving.',
+        'Arching the lower back at the top.',
+      ],
+      breathing: 'Breathe in and brace before the dip, breathe out as you drive up.',
+      tempo: 'Quick dip and drive, a moment at the top, 1 to 2 seconds to lower.',
+    },
     keys: {
       rack: {
         label: 'Shoulders',
@@ -342,7 +582,27 @@ export default {
     camera: { yaw: 60, pitch: 6 },
     props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
     muscles: { primary: ['shoulders'], secondary: ['upperBack', 'core', 'chest'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Stand tall with a dumbbell in each hand in front of the thighs, palms facing you.',
+        'Elbows softly bent, shoulders down away from the ears.',
+        'Feet hip-width, knees soft, abs switched on.',
+      ],
+      steps: [
+        'Raise the dumbbells forward and up with straight arms (soft elbows).',
+        'Stop when the hands are at about eye height.',
+        'Pause briefly, then lower slowly back to the thighs.',
+      ],
+      cues: ['To eye height', 'No swinging', 'Shoulders down'],
+      mistakes: [
+        'Swinging the body or leaning back to get the weight up.',
+        'Shrugging the shoulders up towards the ears.',
+        'Going too heavy, which turns the lift into a heave.',
+        'Dropping the weights on the way down.',
+      ],
+      breathing: 'Breathe out as you raise, breathe in as you lower.',
+      tempo: 'About 1 to 2 seconds up, a brief pause, 2 to 3 seconds down.',
+    },
     keys: {
       down: {
         label: 'Arms down',
@@ -363,7 +623,28 @@ export default {
     camera: { yaw: 20, pitch: 6 },
     props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
     muscles: { primary: ['shoulders'], secondary: ['traps', 'upperBack'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Stand tall with a dumbbell in each hand by your sides, palms facing in.',
+        'Elbows softly bent, shoulders down away from the ears.',
+        'Feet hip-width and a slight lean forward from the hips is fine.',
+      ],
+      steps: [
+        'Raise the arms out to the sides, leading with the elbows.',
+        'Keep the hands slightly lower than the elbows, palms facing the floor at the top.',
+        'Stop at shoulder height.',
+        'Lower slowly back to your sides.',
+      ],
+      cues: ['Elbows lead', 'Stop at shoulder height', 'Shoulders down'],
+      mistakes: [
+        'Shrugging the weight up with the upper traps.',
+        'Swinging the body to get the dumbbells moving.',
+        'Lifting the hands higher than the elbows.',
+        'Going above shoulder height, which pinches the shoulder.',
+      ],
+      breathing: 'Breathe out as you raise, breathe in as you lower.',
+      tempo: 'About 1 to 2 seconds up, a brief pause, 2 to 3 seconds down.',
+    },
     keys: {
       down: {
         label: 'Arms down',
@@ -384,7 +665,27 @@ export default {
     camera: { yaw: 60, pitch: 6 },
     props: [{ type: 'dumbbell', hand: 'L' }],
     muscles: { primary: ['triceps'], secondary: ['shoulders', 'core'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Stand tall and hold one dumbbell overhead with both hands, arms straight.',
+        'Elbows close to the ears, pointing up and slightly forward.',
+        "Glutes and abs switched on so the lower back doesn't arch.",
+      ],
+      steps: [
+        'Keep the upper arms still and bend the elbows to lower the dumbbell behind the head.',
+        'Lower until the elbows are bent to about 90 degrees or a little more.',
+        'Straighten the arms to press the dumbbell back overhead.',
+      ],
+      cues: ['One dumbbell, elbows by the ears', 'Upper arms still', 'Ribs down'],
+      mistakes: [
+        'Elbows flaring wide, which takes the load off the triceps.',
+        'Arching the lower back as the weight goes behind the head.',
+        'Moving the upper arms forward and back instead of hinging at the elbow.',
+        'Lowering fast and hitting the head or neck.',
+      ],
+      breathing: 'Breathe in as you lower, breathe out as you straighten the arms.',
+      tempo: 'About 2 to 3 seconds down, 1 second up.',
+    },
     keys: {
       top: {
         label: 'Arms straight',
@@ -412,7 +713,28 @@ export default {
     camera: { yaw: 40, pitch: 6 },
     props: [{ type: 'kettlebell', hand: 'R', grip: 'rack' }],
     muscles: { primary: ['shoulders', 'triceps'], secondary: ['core', 'obliques', 'upperBack', 'glutes'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Clean the bell to the rack: handle in the palm, bell on the back of the forearm, fist near the collarbone.',
+        'Elbow tucked in against the ribs, wrist straight.',
+        'Feet hip-width, glutes squeezed and ribs pulled down.',
+      ],
+      steps: [
+        'Brace the trunk and squeeze the free hand into a fist.',
+        'Press the bell up, letting the elbow move slightly out to the side as the forearm stays vertical.',
+        'Finish with the arm locked out beside the ear and the bell resting on the back of the forearm.',
+        'Lower slowly back to the rack, pulling the elbow down into place.',
+      ],
+      cues: ['Ribs down, press tall', 'Forearm vertical', 'Squeeze the glutes'],
+      mistakes: [
+        'Leaning back or to the side to finish the rep.',
+        'Pressing the bell out in front of the face instead of straight up.',
+        'Bending the wrist back so the bell drags on the joint.',
+        'Letting the shoulder shrug up at the start instead of setting it first.',
+      ],
+      breathing: 'Breathe in and brace in the rack, breathe out as you press.',
+      tempo: 'About 1 to 2 seconds up, a moment at the top, 2 seconds down.',
+    },
     keys: {
       rack: {
         label: 'Rack',
@@ -423,12 +745,12 @@ export default {
         label: 'Press',
         pass: true,
         legs: STANCE,
-        arms: { L: ARM_DOWN, R: { hand: [-0.27, 1.64, 0.04], elbow: [-0.6, -1, 0.2] } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.36, 1.6, 0.05], elbow: [-0.4, -1, 0.3] } },
       },
       top: {
         label: 'Lockout',
         legs: STANCE,
-        arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back' } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.2, 1.925, -0.01], elbow: [-1, -0.3, 0] } },
       },
     },
     flow: ['mid'],
@@ -438,9 +760,30 @@ export default {
   },
   kbCleanPress: {
     camera: { yaw: 50, pitch: 6 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'auto' }],
     muscles: { primary: ['shoulders', 'glutes', 'hamstrings'], secondary: ['triceps', 'core', 'upperBack', 'forearms'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Kettlebell on the floor between the feet, feet about hip-width or a little wider.',
+        'Hinge at the hips with a flat back and grip the handle with one hand.',
+        'Shoulders over the bell, free arm relaxed by your side.',
+      ],
+      steps: [
+        'Drive the floor away and snap the hips forward, keeping the bell close to the body.',
+        'Let the elbow bend and guide the bell round the hand into the rack: bell on the back of the forearm, fist by the collarbone, elbow tucked in.',
+        'Brace, squeeze the glutes and press the bell straight up until the arm is locked out by the ear.',
+        'Lower under control to the rack, then let the bell swing down and hinge to put it back on the floor.',
+      ],
+      cues: ['One motion, floor to overhead', 'Keep the bell close', 'Ribs down at the top'],
+      mistakes: [
+        'Swinging the bell out in a wide arc so it crashes onto the forearm.',
+        'Rounding the back to pick the bell up instead of hinging at the hips.',
+        'Leaning back to finish the press instead of keeping the ribs down.',
+        'Letting the wrist bend back under the bell: keep it straight.',
+      ],
+      breathing: 'Breathe in at the bottom, breathe out as the hips snap, breathe in again in the rack, out as you press.',
+      tempo: 'Clean in about 1 second, a pause in the rack, 1 to 2 seconds to press, 2 seconds to lower.',
+    },
     keys: {
       floor: {
         label: 'Grip',
@@ -453,23 +796,23 @@ export default {
         label: 'Hips snap',
         pelvis: { pos: [0, 0.91, -0.03], pitch: 6 },
         legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12, knee: [0.3, 0, 1] }, R: 'mirror' },
-        arms: { L: ARM_DOWN, R: { hand: [-0.14, 1.05, 0.14], elbow: [-0.7, 0.3, -0.5], wrist: -40 } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.14, 1.05, 0.14], elbow: [-0.7, 0.3, -0.5] } },
       },
       rack: {
         label: 'Rack',
         legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12 }, R: 'mirror' },
-        arms: { L: ARM_DOWN, R: { hand: [-0.11, 1.37, 0.13], elbow: [-0.4, -1, 0.3], wrist: -150 } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.11, 1.37, 0.13], elbow: [-0.4, -1, 0.3] } },
       },
       mid: {
         label: 'Press',
         pass: true,
         legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12 }, R: 'mirror' },
-        arms: { L: ARM_DOWN, R: { hand: [-0.27, 1.64, 0.04], elbow: [-0.6, -1, 0.2], wrist: -150 } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.36, 1.6, 0.05], elbow: [-0.4, -1, 0.3] } },
       },
       top: {
         label: 'Lockout',
         legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12 }, R: 'mirror' },
-        arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back', wrist: -150 } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back' } },
       },
     },
     flow: ['pull', 'mid'],
@@ -481,7 +824,28 @@ export default {
     camera: { yaw: 30, pitch: 8 },
     props: [{ type: 'kettlebell', hand: 'both' }],
     muscles: { primary: ['shoulders'], secondary: ['core', 'obliques', 'upperBack', 'triceps'] },
-    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    coaching: {
+      setup: [
+        'Hold the kettlebell upside down by the horns, bell above the hands, at chest height.',
+        'Feet hip-width, knees soft, glutes and abs switched on.',
+        'Ribs pulled down so the lower back stays neutral.',
+      ],
+      steps: [
+        'Move the bell round one side of the head, close to the ear.',
+        'Carry it behind the head with the elbows pointing up and forward, bell behind the neck.',
+        'Bring it round the other side and back to the front at chest height.',
+        'Change direction each rep or each set.',
+      ],
+      cues: ['Circle the head', 'Ribs locked', 'Keep it close'],
+      mistakes: [
+        'Arching the lower back or leaning the body instead of moving the arms.',
+        'Making the circle so wide that the bell pulls you off balance.',
+        'Dropping the head forward to make room instead of keeping it tall.',
+        'Rushing: slow circles make the shoulders work harder.',
+      ],
+      breathing: 'Breathe steadily, a breath in as the bell goes round, out as it comes back to the front.',
+      tempo: 'About 3 to 4 seconds per circle.',
+    },
     keys: {
 h0: { label: 'In front', legs: STANCE, arms: { L: { hand: [0.05, 1.36, 0.25], elbow: [-0.081, -0.238, 0.164] }, R: { hand: [-0.05, 1.36, 0.25], elbow: [-0.095, -0.123, 0.257] } } },
       h30: { label: 'Round', pass: true, legs: STANCE, arms: { L: { hand: [-0.083, 1.434, 0.244], elbow: [-0.071, -0.104, 0.272] }, R: { hand: [-0.17, 1.434, 0.194], elbow: [-0.199, -0.08, 0.21] } } },

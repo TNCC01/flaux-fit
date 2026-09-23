@@ -18,7 +18,7 @@ import { MOVES } from '../moves/index.js';
 const PALETTE = {
   bg: 0x0a1514, floor: 0x10201f, skin: 0xb9c9c5, accent: 0x2dd4bf,
   primary: 0xf43f5e, secondary: 0xfb923c, iron: 0x8a9696, gear: 0xfbbf24,
-  wood: 0x6b5a45, wall: 0x1a2c2b,
+  wood: 0x6b5a45, wall: 0x35504d,
 };
 const params = new URLSearchParams(location.search);
 const EMBED = params.has('embed');
