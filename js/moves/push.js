@@ -11,9 +11,10 @@ const cosd = (d) => Math.cos((d * Math.PI) / 180);
 const sind = (d) => Math.sin((d * Math.PI) / 180);
 const r3 = (v) => Math.round(v * 1000) / 1000;
 // feet: ankle [x, y, z] of the left foot (the right mirrors it)
-const plank = (feet, pitch) => ({
+// ankle: the toes are tucked under, heels up, sole facing back
+const plank = (feet, pitch, ankle = -30) => ({
   pelvis: { pos: [0, r3(feet[1] + LEG * cosd(pitch)), r3(feet[2] + LEG * sind(pitch))], pitch },
-  legs: { L: { foot: feet, knee: 'down', ankle: 0 }, R: 'mirror' },
+  legs: { L: { foot: feet, knee: 'down', ankle }, R: 'mirror' },
 });
 const onFloor = (hand, elbow) => ({ L: { hand, elbow, palm: 'floor' }, R: 'mirror' });
 
@@ -23,7 +24,7 @@ const TOES = [0.08, 0.122, -1.262];
 // lying on the back, knees bent and feet flat (floor presses)
 const SUPINE = {
   pelvis: { pos: [0, 0.13, 0], pitch: -90 },
-  legs: { L: { foot: [0.15, 0.07, 0.44], knee: [0.15, 1, 0], toeOut: 6 }, R: 'mirror' },
+  legs: { L: { foot: [0.15, 0.07, 0.54], knee: [0.15, 1, 0], toeOut: 6 }, R: 'mirror' },
 };
 
 const FLOOR_PRESS_TEXT = {
@@ -67,14 +68,14 @@ const MOVES = {
         label: 'Arms straight',
         pelvis: { pos: [0, 0.402, -0.449], pitch: 71 },
         neck: { flex: 10 },
-        legs: { L: { foot: [0.08, 0.122, -1.262], knee: 'down', ankle: 0 }, R: 'mirror' },
+        legs: { L: { foot: [0.08, 0.122, -1.262], knee: 'down', ankle: -30 }, R: 'mirror' },
         arms: { L: { hand: [0.26, 0.03, -0.06], elbow: [0.7, 0.2, -1], palm: 'floor' }, R: 'mirror' },
       },
       bottom: {
         label: 'Chest low',
         pelvis: { pos: [0, 0.197, -0.405], pitch: 85 },
         neck: { flex: 4 },
-        legs: { L: { foot: [0.08, 0.122, -1.262], knee: 'down', ankle: 0 }, R: 'mirror' },
+        legs: { L: { foot: [0.08, 0.122, -1.262], knee: 'down', ankle: -30 }, R: 'mirror' },
         arms: { L: { hand: [0.26, 0.03, -0.06], elbow: [0.7, 0.4, -1], palm: 'floor' }, R: 'mirror' },
       },
     },
@@ -112,15 +113,15 @@ const MOVES = {
     keys: {
       top: {
         label: 'Arms straight',
-        ...plank(TOES, 72.5),
+        ...plank(TOES, 73),
         neck: { flex: 10 },
-        arms: onFloor([0.37, 0.03, -0.06], [1, 0.3, -0.5]),
+        arms: onFloor([0.4, 0.03, -0.06], [1, 0.3, -0.4]),
       },
       bottom: {
         label: 'Chest low',
         ...plank(TOES, 85.5),
         neck: { flex: 4 },
-        arms: onFloor([0.37, 0.03, -0.06], [1, 0.5, -0.45]),
+        arms: onFloor([0.4, 0.03, -0.06], [1, 0.6, -0.3]),
       },
     },
     seq: ['top', 'bottom'],
@@ -158,13 +159,13 @@ const MOVES = {
         label: 'Arms straight',
         ...plank([0.1, 0.122, -1.262], 71.5),
         neck: { flex: 10 },
-        arms: onFloor([0.07, 0.03, -0.13], [0.3, 0.3, -1]),
+        arms: onFloor([0.07, 0.03, -0.13], [0.5, 0.3, -1]),
       },
       bottom: {
         label: 'Chest low',
         ...plank([0.1, 0.122, -1.262], 84),
         neck: { flex: 4 },
-        arms: onFloor([0.07, 0.03, -0.13], [0.3, 0.45, -1]),
+        arms: onFloor([0.07, 0.03, -0.13], [0.6, 0.45, -1]),
       },
     },
     seq: ['top', 'bottom'],
@@ -201,15 +202,15 @@ const MOVES = {
     keys: {
       top: {
         label: 'Arms straight',
-        ...plank([0.08, 0.6, -1.3], 92.5),
+        ...plank([0.08, 0.6, -1.3], 92.5, -25),
         neck: { flex: 0 },
         arms: onFloor([0.26, 0.03, -0.01], [0.7, 0.2, -1]),
       },
       bottom: {
         label: 'Chest low',
-        ...plank([0.08, 0.6, -1.3], 106),
+        ...plank([0.08, 0.6, -1.3], 106, -12),
         neck: { flex: -6 },
-        arms: onFloor([0.26, 0.03, -0.01], [0.7, 0.4, -1]),
+        arms: onFloor([0.26, 0.03, -0.01], [0.5, 0.4, -1]),
       },
     },
     seq: ['top', 'bottom'],
@@ -313,9 +314,9 @@ const MOVES = {
       },
       flight: {
         label: 'Hands off',
-        ...plank(TOES, 68),
+        ...plank(TOES, 66.5),
         neck: { flex: 10 },
-        arms: onFloor([0.26, 0.1, -0.06], [0.7, 0.2, -1]),
+        arms: onFloor([0.26, 0.12, -0.07], [0.7, 0.2, -1]),
       },
       land: {
         label: 'Soft landing',
@@ -353,7 +354,7 @@ const MOVES = {
       top: {
         label: 'Lockout',
         ...SUPINE,
-        arms: { L: { hand: [0.3, 0.635, -0.42], elbow: [0.8, 0, 0.6] }, R: 'mirror' },
+        arms: { L: { hand: [0.33, 0.636, -0.42], elbow: [0.8, 0, 0.6] }, R: 'mirror' },
       },
       bottom: {
         label: 'Elbows down',
@@ -373,6 +374,7 @@ const MOVES = {
     coaching: {
       setup: [
         'Lie on your back on the floor, knees bent and feet flat, a dumbbell in each hand.',
+        'Palms facing your feet or turned slightly in, whichever feels better on the shoulders.',
         'Press the dumbbells up over the shoulders, arms straight.',
         'Shoulder blades squeezed together and down, upper back tight on the floor.',
       ],
@@ -390,7 +392,7 @@ const MOVES = {
       top: {
         label: 'Lockout',
         ...SUPINE,
-        arms: { L: { hand: [0.24, 0.64, -0.43], elbow: [0.8, 0, 0.6] }, R: 'mirror' },
+        arms: { L: { hand: [0.24, 0.652, -0.43], elbow: [0.8, 0, 0.6] }, R: 'mirror' },
       },
       bottom: {
         label: 'Elbows down',
@@ -438,7 +440,7 @@ const MOVES = {
       },
       bottom: {
         label: 'Rings by chest',
-        ...plank([0.08, 0.122, -1.1], 84.5),
+        ...plank([0.08, 0.122, -1.1], 81),
         neck: { flex: 4 },
         arms: { L: { hand: [0.27, 0.2, 0.0], elbow: [0.6, 0.4, -1] }, R: 'mirror' },
       },
@@ -471,9 +473,10 @@ MOVES.tempoPushup = {
     breathing: 'Breathe in slowly on the way down, out as you push up.',
     tempo: '3 seconds down, a short pause, 1 second up.',
   },
+  // the push-up's positions, with the toes tucked under
   keys: {
-    top: { ...MOVES.pushup.keys.top },
-    bottom: { ...MOVES.pushup.keys.bottom, label: 'Pause' },
+    top: { ...MOVES.pushup.keys.top, ...plank(TOES, 71) },
+    bottom: { ...MOVES.pushup.keys.bottom, ...plank(TOES, 85), label: 'Pause' },
   },
   tempo: [3.0, 1.0],
   holds: { bottom: 0.5, top: 0.4 },

@@ -2,16 +2,10 @@
   © 2026 Wayne Cavanagh / Flaux. All rights reserved.
   3D movement data, overhead pressing and arms: see js/moves/README.md.
 */
+const STANCE = { L: { foot: [0.12, 0.07, 0], toeOut: 8 }, R: 'mirror' };
+const ARM_DOWN = { shoulder: { elev: 6, plane: 90 }, elbow: 10 };
+
 export default {
-  zzTest: {
-    props: [{ type: 'dumbbell', hand: 'L' }, { type: 'kettlebell', hand: 'R' }],
-    keys: {
-      a: { label: 'A', arms: { L: { hand: [0.26, 1.42, 0.03], elbow: 'down' }, R: { hand: [-0.24, 1.40, 0.08], elbow: [-0.2,-1,0.4], wrist: -60 } } },
-      b: { label: 'B', arms: { L: { hand: [0.18, 1.92, 0.0], elbow: 'out' }, R: { hand: [-0.17, 1.92, 0.0], elbow: 'out', wrist: -90 } } },
-      c: { label: 'C', arms: { L: { hand: [0.18, 1.92, 0.0], elbow: 'out', wrist: 60 }, R: { hand: [-0.17, 1.92, 0.0], elbow: 'out', wrist: 90 } } },
-    },
-    seq: ['a','b','c'],
-  },
   barbellPress: {
     camera: { yaw: 50, pitch: 6 },
     props: [{ type: 'barbell', length: 1.5, plate: 0.13 }],
@@ -61,5 +55,249 @@ export default {
     seq: ['rack', 'pass', 'lockout', 'pass'],
     tempo: [0.6, 0.6, 1.0, 0.9],
     holds: { lockout: 0.5, rack: 0.4, pass: 0 },
+  },
+  dbPress: {
+    camera: { yaw: 40, pitch: 6 },
+    props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
+    muscles: { primary: ['shoulders', 'triceps'], secondary: ['upperBack', 'core', 'chest'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      rack: {
+        label: 'Shoulders',
+        legs: STANCE,
+        arms: { L: { hand: [0.33, 1.42, 0.08], elbow: [0.6, -1, 0.5] }, R: 'mirror' },
+      },
+      mid: {
+        label: 'Press',
+        legs: STANCE,
+        arms: { L: { hand: [0.3, 1.66, 0.05], elbow: [0.8, -1, 0.3] }, R: 'mirror' },
+      },
+      top: {
+        label: 'Lockout',
+        legs: STANCE,
+        arms: { L: { hand: [0.17, 1.92, 0.0], elbow: 'back' }, R: 'mirror' },
+      },
+    },
+    seq: ['rack', 'mid', 'top', 'mid'],
+    tempo: [0.6, 0.6, 0.9, 0.9],
+    holds: { top: 0.4, rack: 0.3, mid: 0 },
+  },
+  dbArnoldPress: {
+    camera: { yaw: 40, pitch: 6 },
+    props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
+    muscles: { primary: ['shoulders', 'triceps'], secondary: ['upperBack', 'core', 'chest'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      start: {
+        label: 'Palms to you',
+        legs: STANCE,
+        arms: { L: { hand: [0.19, 1.4, 0.15], elbow: [0.2, -1, 0.3] }, R: 'mirror' },
+      },
+      turn: {
+        label: 'Open and turn',
+        legs: STANCE,
+        arms: { L: { hand: [0.32, 1.52, 0.06], elbow: [1, -0.6, 0.2] }, R: 'mirror' },
+      },
+      top: {
+        label: 'Lockout',
+        legs: STANCE,
+        arms: { L: { hand: [0.17, 1.92, 0.0], elbow: 'back' }, R: 'mirror' },
+      },
+    },
+    seq: ['start', 'turn', 'top', 'turn'],
+    tempo: [0.7, 0.8, 0.9, 1.0],
+    holds: { top: 0.4, start: 0.3, turn: 0 },
+  },
+  dbPushPress: {
+    camera: { yaw: 40, pitch: 6 },
+    props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
+    muscles: { primary: ['shoulders', 'triceps', 'quads'], secondary: ['glutes', 'core', 'upperBack', 'calves'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      rack: {
+        label: 'Shoulders',
+        legs: STANCE,
+        arms: { L: { hand: [0.3, 1.42, 0.1], elbow: [0.5, -1, 0.7] }, R: 'mirror' },
+      },
+      dip: {
+        label: 'Dip',
+        pelvis: { pos: [0, 0.83, -0.03] },
+        legs: { L: { foot: [0.12, 0.07, 0], toeOut: 8, knee: [0.15, 0, 1] }, R: 'mirror' },
+        arms: { L: { hand: [0.3, 1.32, 0.07], elbow: [0.5, -1, 0.7] }, R: 'mirror' },
+      },
+      drive: {
+        label: 'Drive',
+        pelvis: { pos: [0, 0.97, 0.01] },
+        legs: { L: { foot: [0.12, 0.11, 0.01], toeOut: 8, heel: 18 }, R: 'mirror' },
+        arms: { L: { hand: [0.27, 1.62, 0.06], elbow: [0.8, -1, 0.3] }, R: 'mirror' },
+      },
+      top: {
+        label: 'Lockout',
+        legs: STANCE,
+        arms: { L: { hand: [0.17, 1.92, 0.0], elbow: 'back' }, R: 'mirror' },
+      },
+    },
+    seq: ['rack', 'dip', 'drive', 'top', 'rack'],
+    tempo: [0.6, 0.25, 0.35, 1.3, 0.1],
+    holds: { dip: 0, drive: 0, top: 0.4, rack: 0.4 },
+  },
+  dbFrontRaise: {
+    camera: { yaw: 60, pitch: 6 },
+    props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
+    muscles: { primary: ['shoulders'], secondary: ['upperBack', 'core', 'chest'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      down: {
+        label: 'Arms down',
+        legs: STANCE,
+        arms: { L: { shoulder: { elev: 8, plane: 10 }, elbow: 10 }, R: 'mirror' },
+      },
+      top: {
+        label: 'Eye height',
+        legs: STANCE,
+        arms: { L: { shoulder: { elev: 102, plane: 10 }, elbow: 8 }, R: 'mirror' },
+      },
+    },
+    seq: ['down', 'top'],
+    tempo: [1.3, 2.0],
+    holds: { top: 0.4, down: 0.3 },
+  },
+  lateralRaise: {
+    camera: { yaw: 20, pitch: 6 },
+    props: [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }],
+    muscles: { primary: ['shoulders'], secondary: ['traps', 'upperBack'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      down: {
+        label: 'Arms down',
+        legs: STANCE,
+        arms: { L: { shoulder: { elev: 10, plane: 75, twist: 180 }, elbow: 15 }, R: 'mirror' },
+      },
+      top: {
+        label: 'Shoulder height',
+        legs: STANCE,
+        arms: { L: { shoulder: { elev: 88, plane: 75, twist: 180 }, elbow: 15 }, R: 'mirror' },
+      },
+    },
+    seq: ['down', 'top'],
+    tempo: [1.2, 2.0],
+    holds: { top: 0.4, down: 0.3 },
+  },
+  dbOverheadTricep: {
+    camera: { yaw: 60, pitch: 6 },
+    props: [{ type: 'dumbbell', hand: 'L' }],
+    muscles: { primary: ['triceps'], secondary: ['shoulders', 'core'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      top: {
+        label: 'Arms straight',
+        legs: STANCE,
+        arms: { L: { hand: [0.025, 1.894, 0.058], elbow: [-0.05, 0.29, 0.06] }, R: { hand: [-0.025, 1.894, 0.058], elbow: [0.05, 0.29, 0.06] } },
+      },
+      mid: {
+        label: 'Lower',
+        legs: STANCE,
+        arms: { L: { hand: [0.025, 1.685, -0.204], elbow: [-0.05, 0.29, 0.06] }, R: { hand: [-0.025, 1.685, -0.204], elbow: [0.05, 0.29, 0.06] } },
+      },
+      bottom: {
+        label: 'Behind the head',
+        legs: STANCE,
+        arms: { L: { hand: [0.025, 1.517, -0.151], elbow: [-0.05, 0.29, 0.06] }, R: { hand: [-0.025, 1.517, -0.151], elbow: [0.05, 0.29, 0.06] } },
+      },
+    },
+    seq: ['top', 'mid', 'bottom', 'mid'],
+    tempo: [1.2, 0.8, 0.6, 0.6],
+    holds: { top: 0.4, bottom: 0.2, mid: 0 },
+  },
+  kbPressSingle: {
+    camera: { yaw: 40, pitch: 6 },
+    props: [{ type: 'kettlebell', hand: 'R' }],
+    muscles: { primary: ['shoulders', 'triceps'], secondary: ['core', 'obliques', 'upperBack', 'glutes'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      rack: {
+        label: 'Rack',
+        legs: STANCE,
+        arms: { L: ARM_DOWN, R: { hand: [-0.1, 1.33, 0.14], elbow: [-0.4, -1, 0.3], wrist: -150 } },
+      },
+      mid: {
+        label: 'Press',
+        legs: STANCE,
+        arms: { L: ARM_DOWN, R: { hand: [-0.2, 1.62, 0.05], elbow: [-1, -1, 0.2], wrist: -150 } },
+      },
+      top: {
+        label: 'Lockout',
+        legs: STANCE,
+        arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back', wrist: -150 } },
+      },
+    },
+    seq: ['rack', 'mid', 'top', 'mid'],
+    tempo: [0.6, 0.6, 1.0, 0.9],
+    holds: { top: 0.5, rack: 0.4, mid: 0 },
+  },
+  kbCleanPress: {
+    camera: { yaw: 50, pitch: 6 },
+    props: [{ type: 'kettlebell', hand: 'R' }],
+    muscles: { primary: ['shoulders', 'glutes', 'hamstrings'], secondary: ['triceps', 'core', 'upperBack', 'forearms'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      floor: {
+        label: 'Grip',
+        pelvis: { pos: [0, 0.64, -0.24], pitch: 48 },
+        spine: { flex: 4 }, neck: { flex: -14 },
+        legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12, knee: [0.3, 0, 1] }, R: 'mirror' },
+        arms: { L: { shoulder: { elev: 40, plane: 60 }, elbow: 10 }, R: { hand: [-0.03, 0.31, 0.12], elbow: 'back' } },
+      },
+      pull: {
+        label: 'Hips snap',
+        pelvis: { pos: [0, 0.91, -0.03], pitch: 6 },
+        legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12, knee: [0.3, 0, 1] }, R: 'mirror' },
+        arms: { L: ARM_DOWN, R: { hand: [-0.14, 1.05, 0.14], elbow: [-0.7, 0.3, -0.5], wrist: -40 } },
+      },
+      rack: {
+        label: 'Rack',
+        legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12 }, R: 'mirror' },
+        arms: { L: ARM_DOWN, R: { hand: [-0.1, 1.33, 0.14], elbow: [-0.3, -1, 0.4], wrist: -130 } },
+      },
+      top: {
+        label: 'Lockout',
+        legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12 }, R: 'mirror' },
+        arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back', wrist: -130 } },
+      },
+    },
+    seq: ['floor', 'pull', 'rack', 'top', 'rack'],
+    tempo: [0.5, 0.35, 1.1, 1.4, 1.2],
+    holds: { floor: 0.4, pull: 0, rack: 0.3, top: 0.5 },
+  },
+  kbHalo: {
+    camera: { yaw: 30, pitch: 8 },
+    props: [{ type: 'kettlebell', hand: 'both' }],
+    muscles: { primary: ['shoulders'], secondary: ['core', 'obliques', 'upperBack', 'triceps'] },
+    coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
+    keys: {
+      front: {
+        label: 'In front',
+        legs: STANCE,
+        arms: { L: { hand: [0.04, 1.3, 0.24], elbow: [0.5, -1, 0] }, R: 'mirror' },
+      },
+      right: {
+        label: 'Right side',
+        legs: STANCE,
+        arms: { L: { hand: [-0.16, 1.55, 0.06], elbow: [0.6, 0.2, 1] }, R: { hand: [-0.22, 1.55, -0.02], elbow: [-1, -0.3, 0] } },
+      },
+      back: {
+        label: 'Behind',
+        legs: STANCE,
+        arms: { L: { hand: [0.04, 1.5, -0.2], elbow: [0.5, 0.3, 1] }, R: 'mirror' },
+      },
+      left: {
+        label: 'Left side',
+        legs: STANCE,
+        arms: { L: { hand: [0.22, 1.55, -0.02], elbow: [1, -0.3, 0] }, R: { hand: [0.16, 1.55, 0.06], elbow: [-0.6, 0.2, 1] } },
+      },
+    },
+    seq: ['front', 'right', 'back', 'left'],
+    tempo: [0.8, 0.8, 0.8, 0.8],
+    holds: { front: 0.2, right: 0, back: 0, left: 0 },
   },
 };
