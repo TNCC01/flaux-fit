@@ -31,13 +31,14 @@ const swing = (side, phase) => {
   return fwd ? { shoulder: { elev: 22, plane: 8 }, elbow: 22 } : { shoulder: { elev: 16, plane: 172 }, elbow: 8 };
 };
 
-// dumbbell curls: upper arms still, the forearms swing up in an arc
-const CURL_KEYS = {
+// dumbbell curls: upper arms still, the forearms swing up in an arc.
+// turn sets the grip: 90 palms up (a curl), 0 palms in (a hammer curl)
+const curlKeys = (turn) => ({
   down: { label: 'Arms long', legs: FEET,
-    arms: { L: { shoulder: { elev: 4, plane: 0 }, elbow: 8 }, R: 'mirror' } },
+    arms: { L: { shoulder: { elev: 4, plane: 0 }, elbow: 8, turn }, R: 'mirror' } },
   up: { label: 'Squeeze', legs: FEET,
-    arms: { L: { shoulder: { elev: 10, plane: 0 }, elbow: 138 }, R: 'mirror' } },
-};
+    arms: { L: { shoulder: { elev: 10, plane: 0 }, elbow: 138, turn }, R: 'mirror' } },
+});
 
 export default {
   dbCurl: {
@@ -66,7 +67,7 @@ export default {
       breathing: 'Breathe out as you curl up, breathe in as you lower.',
       tempo: 'About 1 second up, a short squeeze, 2 seconds down.',
     },
-    keys: CURL_KEYS,
+    keys: curlKeys(90),
     seq: ['down', 'up'], tempo: [1.0, 2.0], holds: { up: 0.35, down: 0.3 },
   },
   dbHammerCurl: {
@@ -95,7 +96,7 @@ export default {
       breathing: 'Breathe out as you curl up, breathe in as you lower.',
       tempo: 'About 1 second up, a short squeeze, 2 seconds down.',
     },
-    keys: CURL_KEYS,
+    keys: curlKeys(0),
     seq: ['down', 'up'], tempo: [1.0, 2.0], holds: { up: 0.35, down: 0.3 },
   },
   barbellCurl: {
@@ -160,9 +161,9 @@ export default {
     },
     keys: {
       down: { label: 'Arms long', legs: FEET,
-        arms: { L: { shoulder: { elev: 7, plane: 90 }, elbow: 4 }, R: 'mirror' } },
+        arms: { L: { shoulder: { elev: 7, plane: 90 }, elbow: 4, turn: 90 }, R: 'mirror' } },
       up: { label: 'Shoulders up', legs: FEET, neck: { flex: 8 },
-        arms: { L: { shoulder: { elev: 7, plane: 90 }, elbow: 2 }, R: 'mirror' } },
+        arms: { L: { shoulder: { elev: 7, plane: 90 }, elbow: 2, turn: 90, shrug: 0.045 }, R: 'mirror' } },
     },
     seq: ['down', 'up'], tempo: [0.8, 1.4], holds: { up: 0.8, down: 0.3 },
   },
@@ -200,7 +201,7 @@ export default {
   },
   kbRackHold: {
     camera: { yaw: 30 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'auto' }],
     muscles: { primary: ['core'], secondary: ['shoulders', 'upperBack', 'forearms'] },
     coaching: {
       setup: [
@@ -226,15 +227,15 @@ export default {
     },
     keys: {
       a: { label: 'Breathe in', legs: FEET, spine: { flex: -1.5 },
-        arms: { L: { shoulder: { elev: 6, plane: 90 }, elbow: 10 }, R: { hand: [-0.1, 1.18, 0.15], elbow: [-0.05, -1, 0.35], wrist: 65 } } },
+        arms: { L: { shoulder: { elev: 6, plane: 90 }, elbow: 10 }, R: { hand: [-0.1, 1.18, 0.15], elbow: [-0.05, -1, 0.35] } } },
       b: { label: 'Breathe out', legs: FEET, spine: { flex: 0.5 },
-        arms: { L: { shoulder: { elev: 5, plane: 90 }, elbow: 10 }, R: { hand: [-0.1, 1.175, 0.15], elbow: [-0.05, -1, 0.35], wrist: 65 } } },
+        arms: { L: { shoulder: { elev: 5, plane: 90 }, elbow: 10 }, R: { hand: [-0.1, 1.175, 0.15], elbow: [-0.05, -1, 0.35] } } },
     },
     seq: ['a', 'b'], tempo: [1.8, 2.2], holds: { a: 0.3, b: 0.4 },
   },
   kbSuitcaseHold: {
     camera: { yaw: 20 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'hang' }],
     muscles: { primary: ['core', 'obliques'], secondary: ['forearms', 'traps'] },
     coaching: {
       setup: [
@@ -567,7 +568,7 @@ export default {
   },
   kbFarmersWalk: {
     camera: { yaw: 30 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'hang' }],
     muscles: { primary: ['core', 'obliques', 'forearms'], secondary: ['traps', 'glutes', 'upperBack'] },
     coaching: {
       setup: [
@@ -620,7 +621,7 @@ export default {
       breathing: 'Breathe steadily, keeping a light brace.',
       tempo: 'A controlled walking pace, around 20 to 30 metres per side.',
     },
-    keys: walk((ph) => ({ L: swing('L', ph), R: { shoulder: { elev: 8, plane: 90 }, elbow: 2 } })),
+    keys: walk((ph) => ({ L: swing('L', ph), R: { shoulder: { elev: 8, plane: 90 }, elbow: 2, turn: 90 } })),
     seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
   },
   dbFarmersWalk: {
@@ -649,7 +650,7 @@ export default {
       breathing: 'Breathe steadily, keeping a light brace.',
       tempo: 'A controlled walking pace, around 20 to 40 metres.',
     },
-    keys: walk(() => ({ L: { shoulder: { elev: 8, plane: 90 }, elbow: 2 }, R: 'mirror' })),
+    keys: walk(() => ({ L: { shoulder: { elev: 8, plane: 90 }, elbow: 2, turn: 90 }, R: 'mirror' })),
     seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
   },
   dbOverheadCarry: {

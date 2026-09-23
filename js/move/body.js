@@ -44,6 +44,10 @@
             hand is the wrist joint in world metres. elbow is the way the
             point of the elbow faces. palm: 'floor' lays the hand flat on
             the floor, fingers forward.
+    either kind of arm also takes: turn (forearm rotation, + turns the palm
+            up / forward, - down; held equipment turns with it), shrug
+            (metres the shoulder lifts, shoulder blades up), reach (metres
+            it draws forward).
     arm, by angles (FK):  { shoulder: { elev, plane, twist }, elbow, wrist }
             elev is how far the arm is raised from hanging (0) through
             level (90) to overhead (180). plane is the direction it is
@@ -98,6 +102,7 @@ export function buildSkeleton() {
   for (const s of ['L', 'R']) {
     const x = s === 'L' ? 1 : -1;
     J['shoulder' + s] = joint('shoulder' + s, thorax, x * DIM.shoulderHalf, 0.215, -0.02);
+    J['shoulder' + s].userData.rest = J['shoulder' + s].position.clone();
     J['elbow' + s] = joint('elbow' + s, J['shoulder' + s], 0, -DIM.upperArm, 0);
     J['wrist' + s] = joint('wrist' + s, J['elbow' + s], 0, -DIM.forearm, 0);
     J['hip' + s] = joint('hip' + s, pelvis, x * DIM.hipHalf, 0, 0);
@@ -212,11 +217,12 @@ export function normalise(k) {
       : { ik: false, hip: { flex: 0, abd: 0, rot: 0, ...(lg.hip || {}) },
           knee: lg.knee || 0, ankle: lg.ankle || 0 };
     const am = sidePart(k.arms, s) || { shoulder: { elev: 4, plane: 90 }, elbow: 8 };
+    const girdle = { turn: am.turn || 0, shrug: am.shrug || 0, reach: am.reach || 0 };
     st.arms[s] = am.hand
       ? { ik: true, hand: am.hand.slice(), elbow: am.elbow || 'back', palm: am.palm || null,
-          wrist: am.wrist || 0 }
+          wrist: am.wrist || 0, ...girdle }
       : { ik: false, shoulder: { elev: 0, plane: 0, twist: 0, ...(am.shoulder || {}) },
-          elbow: am.elbow || 0, wrist: am.wrist || 0, palm: am.palm || null };
+          elbow: am.elbow || 0, wrist: am.wrist || 0, palm: am.palm || null, ...girdle };
   }
   return st;
 }
@@ -263,6 +269,9 @@ export function applyState(J, st, limbQ) {
     }
     const sh = J['shoulder' + s], el = J['elbow' + s], wr = J['wrist' + s];
     const am = st.arms[s];
+    // shoulder blades: shrug lifts the shoulder, reach draws it forward
+    sh.position.copy(sh.userData.rest).add(V(0, am.shrug || 0, am.reach || 0));
+    sh.updateMatrixWorld(true);
     if (limbQ && limbQ['arm' + s]) {
       const q = limbQ['arm' + s];
       sh.quaternion.copy(q[0]); el.quaternion.copy(q[1]); wr.quaternion.copy(q[2]);
@@ -273,12 +282,14 @@ export function applyState(J, st, limbQ) {
       const miss = solveTwoBone(sh, el, wr, root, V(...am.hand), pole, DIM.upperArm, DIM.forearm, false);
       if (miss > 0.02) misses.push(`${s} hand out of reach by ${(miss * 100).toFixed(0)} cm`);
       handOrient(J, s, am);
+      turnForearm(wr, am, side);
     } else {
       sh.quaternion.copy(shoulderQ(am.shoulder, side));
       el.quaternion.copy(qx(-am.elbow));
       wr.quaternion.copy(qx(-am.wrist));
       J.root.updateMatrixWorld(true);
       if (am.palm) handOrient(J, s, am);
+      turnForearm(wr, am, side);
     }
   }
   if (P.pos[1] === 'auto') dropToFloor(J);
@@ -344,6 +355,15 @@ function handOrient(J, s, am) {
   } else {
     wr.quaternion.copy(qx(-(am.wrist || 0)));
   }
+  wr.updateMatrixWorld(true);
+}
+
+// Forearm rotation, about the forearm's own length: + turns the palm up
+// (supination: palm forward when the arm hangs), - turns it down. Whatever
+// is in the hand turns with it.
+function turnForearm(wr, am, side) {
+  if (!am.turn || am.palm === 'floor') return;
+  wr.quaternion.multiply(qy(am.turn * side));
   wr.updateMatrixWorld(true);
 }
 
@@ -415,7 +435,7 @@ export function blendState(J, a, b, t) {
           if (la.ankle !== undefined || lb.ankle !== undefined)
             out.ankle = lerp(la.ankle ?? 0, lb.ankle ?? 0, t);
         } else {
-          out.wrist = lerp(la.wrist || 0, lb.wrist || 0, t);
+          for (const f of ['wrist', 'turn', 'shrug', 'reach']) out[f] = lerp(la[f] || 0, lb[f] || 0, t);
         }
         if (la.palm !== lb.palm) out.palm = t < 0.5 ? la.palm : lb.palm;
         st[grp][s] = out;
@@ -423,7 +443,8 @@ export function blendState(J, a, b, t) {
         limbQ = limbQ || {};
         const qa = solvedQuats(J, a)[key + s], qb = solvedQuats(J, b)[key + s];
         limbQ[key + s] = qa.map((q, i) => q.clone().slerp(qb[i], t));
-        st[grp][s] = la.ik ? lb : la;
+        st[grp][s] = { ...(la.ik ? lb : la) };
+        if (grp === 'arms') for (const f of ['shrug', 'reach']) st[grp][s][f] = lerp(la[f] || 0, lb[f] || 0, t);
       }
     }
   }

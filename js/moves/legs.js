@@ -37,9 +37,10 @@ const goblet = (pos, pitch) =>
   ({ L: { hand: onTrunk(pos, pitch, [0.07, 0.37, 0.2]), elbow: [0.3, -1, 0.2], wrist: -160 }, R: 'mirror' });
 
 // one kettlebell racked on the right: hand at the collarbone, elbow tucked
-// down in front of the ribs, bell resting against the outside of the forearm
+// down in front of the ribs, wrist straight; the prop's 'auto' grip rests
+// the bell on the back of the forearm
 const kbRack = (pos, pitch) =>
-  ({ hand: onTrunk(pos, pitch, [-0.075, 0.4, 0.16]), elbow: [-0.3, -1, 0.4], wrist: -170 });
+  ({ hand: onTrunk(pos, pitch, [-0.075, 0.4, 0.16]), elbow: [-0.3, -1, 0.4] });
 
 // a barbell in the thruster rack: bar on the front of the shoulders, elbows
 // a little in front of the bar, ready to press
@@ -710,7 +711,7 @@ export default {
   // ------------------------------------------------------------ KB front squat
   kbFrontSquat: {
     camera: { yaw: -40 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'auto' }],
     muscles: { primary: ['quads', 'glutes'], secondary: ['core', 'obliques', 'upperBack'] },
     coaching: {
       setup: [
@@ -758,7 +759,7 @@ export default {
   // ------------------------------------------------------------ KB thruster
   kbThruster: {
     camera: { yaw: -45, pitch: 4 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'auto' }],
     muscles: { primary: ['quads', 'glutes', 'shoulders'], secondary: ['triceps', 'core', 'obliques', 'upperBack'] },
     coaching: {
       setup: [
@@ -801,13 +802,13 @@ export default {
         neck: { flex: -10 },
         legs: STAND,
         arms: { L: { shoulder: { elev: 32, plane: 85 }, elbow: 14 },
-          R: { hand: [-0.15, 1.6, 0.08], elbow: [-0.7, -1, 0.3], wrist: -170 } },
+          R: { hand: [-0.15, 1.6, 0.08], elbow: [-0.7, -1, 0.3] } },
       },
       lockout: {
         label: 'Lockout',
         legs: STAND,
         arms: { L: { shoulder: { elev: 32, plane: 85 }, elbow: 14 },
-          R: { hand: [-0.2, 1.92, 0.0], elbow: 'out', wrist: -170 } },
+          R: { hand: [-0.2, 1.92, 0.0], elbow: 'out' } },
       },
     },
     seq: ['rack', 'bottom', 'drive', 'lockout'],

@@ -6,7 +6,9 @@
   A movement record (see js/moves/) plays its key poses in `seq` order and
   loops. tempo[i] is the seconds to move from seq[i] to the next pose (one
   number applies to every move), holds[name] the seconds to pause on
-  arriving at that pose. Moves ease in and out, like a controlled rep.
+  arriving at that pose. Moves ease in and out, like a controlled rep. A
+  key pose with `pass: true` is a waypoint: the motion flows through it
+  without slowing (use it to steer a bar path or a swing).
 */
 import * as THREE from '../../vendor/three/three.min.js';
 import { normalise, blendState, applyState, DIM } from './body.js';
@@ -32,13 +34,27 @@ export function timeline(move) {
     t += dur + hold;
   });
   const total = t;
+  // a key pose marked `pass` is moved through without stopping: the moves
+  // either side of it share one ease, from the last stop to the next
+  steps.forEach((s, i) => {
+    let a = i, b = i;
+    while (a > 0 && move.keys[steps[a - 1].to].pass) a--;
+    while (b < steps.length - 1 && move.keys[steps[b].to].pass) b++;
+    s.g = { a, b, t0: steps[a].t0, t1: steps[b].t1 };
+  });
+  for (const s of steps) if (move.keys[s.to].pass) s.t2 = s.t1;
   return {
     seq, states, steps, total,
     // time (s) -> the pose to show
     at(time) {
       const u = ((time % total) + total) % total;
-      const s = steps.find(x => u < x.t2) || steps[steps.length - 1];
-      const f = u >= s.t1 ? 1 : ease((u - s.t0) / (s.t1 - s.t0));
+      let s = steps.find(x => u < x.t2) || steps[steps.length - 1];
+      if (u >= s.t1) return { a: states[s.from], b: states[s.to], f: 1, step: s };
+      if (s.g.a === s.g.b) return { a: states[s.from], b: states[s.to], f: ease((u - s.t0) / (s.t1 - s.t0)), step: s };
+      // eased along the whole run, then linear within the move it lands in
+      const gt = s.g.t0 + ease((u - s.g.t0) / (s.g.t1 - s.g.t0)) * (s.g.t1 - s.g.t0);
+      for (let i = s.g.a; i <= s.g.b; i++) if (gt <= steps[i].t1 || i === s.g.b) { s = steps[i]; break; }
+      const f = Math.min(1, Math.max(0, (gt - s.t0) / (s.t1 - s.t0)));
       return { a: states[s.from], b: states[s.to], f, step: s };
     },
     // when each key pose is reached, for the phase buttons
@@ -57,7 +73,12 @@ export function poseAt(J, tl, time) {
 
 // ---------------------------------------------------------- equipment
 // Props follow the hands every frame. Types:
-//   dumbbell { hand: 'L' | 'R' }         kettlebell { hand: 'L' | 'R' | 'both' }
+//   dumbbell { hand: 'L' | 'R' }         kettlebell { hand: 'L' | 'R' | 'both',
+//                                          grip: 'hand' (default, in line with
+//                                          the hand) | 'hang' (straight down) |
+//                                          'rack' (on the back of the forearm) |
+//                                          'auto' (rack while the hand is above
+//                                          the elbow, in line below it) }
 //   barbell {}  (between the hands)      rings {}  straps to both hands
 //   rope {}     skipping rope            box { pos, size }  bench { pos, size }
 //   wall { z }  a wall behind (-) or in front (+)
@@ -71,13 +92,15 @@ export function buildProps(scene, J, list, palette) {
 
   for (const p of list || []) {
     if (p.type === 'dumbbell') {
+      // the handle runs across the palm (the hand's local Z), so the grip is
+      // set by the forearm: turn 0 palms in (hammer), + palms up, - palms down
       const g = new THREE.Group();
       const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.16, 16), metal);
-      bar.rotation.z = Math.PI / 2;
+      bar.rotation.x = Math.PI / 2;
       g.add(bar);
-      for (const x of [-0.1, 0.1]) {
+      for (const z of [-0.1, 0.1]) {
         const w = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.07, 24), accent);
-        w.rotation.z = Math.PI / 2; w.position.x = x; g.add(w);
+        w.rotation.x = Math.PI / 2; w.position.z = z; g.add(w);
       }
       scene.add(shadow(g));
       updates.push(() => {
@@ -90,10 +113,35 @@ export function buildProps(scene, J, list, palette) {
       const bell = new THREE.Mesh(new THREE.SphereGeometry(0.1, 28, 20), accent);
       bell.scale.y = 0.95; bell.position.y = -0.14;
       const handle = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.013, 10, 24, Math.PI * 1.25), metal);
-      handle.rotation.z = -Math.PI * 0.125; handle.position.y = -0.03;
+      // the handle's crossbar runs across the palm, like a dumbbell's
+      handle.rotation.set(0, Math.PI / 2, -Math.PI * 0.125); handle.position.y = -0.03;
       g.add(bell, handle);
       scene.add(shadow(g));
       updates.push(() => {
+        if (p.grip === 'hang' || p.grip === 'rack' || p.grip === 'auto') {
+          // hang: straight down from the grip, whatever the hand does.
+          // rack: resting on the back of the forearm, handle in the hand.
+          // auto: what a real bell does, resting on the forearm while the
+          // hand is above the elbow, in line with the arm while it is below
+          const s = p.hand === 'both' ? 'L' : p.hand;
+          const at = p.hand === 'both' ? grip('L').add(grip('R')).multiplyScalar(0.5) : grip(s);
+          g.position.copy(at);
+          const side = s === 'L' ? 1 : -1;
+          const w = J['wrist' + s], e = J['elbow' + s];
+          const wp = w.getWorldPosition(new THREE.Vector3()), ep = e.getWorldPosition(new THREE.Vector3());
+          const back = new THREE.Vector3(side, 0, 0).transformDirection(w.matrixWorld);
+          const rack = back.multiplyScalar(0.55).add(ep.clone().sub(wp).normalize().multiplyScalar(0.85)).normalize();
+          let d = new THREE.Vector3(0, -1, 0);
+          if (p.grip === 'rack') d = rack;
+          else if (p.grip === 'auto') {
+            const inLine = new THREE.Vector3(0, -1, 0).transformDirection(w.matrixWorld);
+            const up = wp.clone().sub(ep).normalize().y;           // forearm pointing up: + 
+            const k = Math.min(1, Math.max(0, (up + 0.15) / 0.5));
+            d = inLine.multiplyScalar(1 - k).add(rack.multiplyScalar(k)).normalize();
+          }
+          g.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), d);
+          return;
+        }
         if (p.hand === 'both') {
           const a = grip('L'), b = grip('R');
           g.position.copy(a.add(b).multiplyScalar(0.5));

@@ -87,6 +87,12 @@ The full reference is the comment at the top of `js/move/body.js`. In short:
   - `arms: { L: { hand: [x,y,z], elbow: 'back', palm: 'floor', wrist: 0 }, R: 'mirror' }`
   - `arms: { L: { shoulder: { elev, plane, twist }, elbow, wrist }, R: ... }`
   - `'mirror'` copies the other side across the midline (targets flip x).
+- Arms also take `turn` (forearm rotation: + palm up / forward, - palm down; held
+  equipment turns with it, e.g. `turn: 90` for a hammer grip vs a curl grip), `shrug`
+  (metres the shoulder lifts) and `reach` (metres it draws forward).
+- A key pose with `pass: true` is a waypoint: motion flows through it without
+  stopping. Use it to steer a bar or bell path (past the knees on a deadlift) or to
+  shape a swing, without the stop an ordinary key pose makes.
 - Knee and elbow hints are directions the kneecap / point of the elbow faces:
   `'fwd' 'back' 'up' 'down' 'out' 'in'` or a vector like `[0.3, 0, 1]`.
 
@@ -108,7 +114,13 @@ toes rest on the floor.
 `props` follow the hands every frame:
 
 - `{ type: 'dumbbell', hand: 'L' }` (one per hand)
-- `{ type: 'kettlebell', hand: 'R' }` or `hand: 'both'` (held between the hands)
+- `{ type: 'kettlebell', hand: 'R' }` or `hand: 'both'` (held between the hands).
+  `grip: 'hang'` hangs it straight down from the grip (carries, suitcase holds, the
+  bottom of a deadlift); `grip: 'rack'` rests it on the back of the forearm (front
+  rack, snatch and press lockout); `grip: 'auto'` does what a real bell does,
+  resting on the forearm while the hand is above the elbow and in line with the arm
+  below it (cleans, snatches, presses: anything that goes through both). With rack
+  or auto keep the wrist straight. The default lines it up with the hand.
 - `{ type: 'barbell', length: 1.5, plate: 0.13 }` (between the hands; 10 kg bar)
 - `{ type: 'rings' }` straps to both hands (hands must be up in the air)
 - `{ type: 'rope', period: 0.5 }` skipping rope turning around the body

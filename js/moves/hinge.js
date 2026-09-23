@@ -206,20 +206,20 @@ export default {
       tempo: 'About 2 to 3 seconds down, a brief pause, 1 to 2 seconds up.',
     },
     keys: {
-      top: { label: 'Stand tall', legs: HIP_FEET, arms: { L: { hand: [0.17, 0.845, 0.12] }, R: 'mirror' } },
+      top: { label: 'Stand tall', legs: HIP_FEET, arms: { L: { hand: [0.17, 0.845, 0.12], turn: -90 }, R: 'mirror' } },
       knee: {
         label: 'Past the knees',
         pelvis: { pos: [0, 0.9, -0.1], pitch: 40 },
         neck: { flex: -6 },
         legs: HIP_FEET,
-        arms: { L: { hand: [0.17, 0.715, 0.12] }, R: 'mirror' },
+        arms: { L: { hand: [0.17, 0.715, 0.12], turn: -90 }, R: 'mirror' },
       },
       bottom: {
         label: 'Mid-shin',
         pelvis: { pos: [0, 0.87, -0.21], pitch: 88 },
         neck: { flex: -15 },
         legs: HIP_FEET,
-        arms: { L: { hand: [0.17, 0.385, 0.11] }, R: 'mirror' },
+        arms: { L: { hand: [0.17, 0.385, 0.11], turn: -90 }, R: 'mirror' },
       },
     },
     seq: ['top', 'knee', 'bottom', 'knee'],
@@ -439,7 +439,7 @@ export default {
 
   kbSnatch: {
     camera: { yaw: 50, pitch: 6 },
-    props: [{ type: 'kettlebell', hand: 'R' }],
+    props: [{ type: 'kettlebell', hand: 'R', grip: 'auto' }],
     muscles: { primary: ['glutes', 'hamstrings', 'shoulders'], secondary: ['upperBack', 'traps', 'core', 'forearms'] },
     coaching: {
       setup: [
@@ -491,7 +491,7 @@ export default {
         label: 'Lockout',
         legs: SWING_FEET,
         arms: {
-          R: { shoulder: { elev: 172, plane: 20, twist: 20 }, elbow: 0, wrist: 60 },
+          R: { shoulder: { elev: 172, plane: 20, twist: 20 }, elbow: 0 },
           L: { shoulder: { elev: 25, plane: 70 }, elbow: 15 },
         },
       },
