@@ -47,7 +47,11 @@ const note = (msg) => console.log('     ' + msg);
 const assert = (c, msg) => { if (!c) throw new Error(`FAILED at "${step}": ${msg}`); };
 const GEAR = ['15kg kettlebell', '10kg kettlebell', '10kg barbell', 'Dumbbells', 'Skipping rope', 'Rings'];
 
-const browser = await chromium.launch();
+// software WebGL, so the 3D figures draw on machines without a GPU (CI)
+const launch = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
+if (process.env.CHROMIUM) launch.executablePath = process.env.CHROMIUM;
+else if (fs.existsSync('/opt/pw-browsers/chromium')) launch.executablePath = '/opt/pw-browsers/chromium';
+const browser = await chromium.launch(launch);
 const context = await browser.newContext({ viewport: { width: 1180, height: 820 } });
 await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 const p = await context.newPage();
@@ -55,6 +59,16 @@ p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 p.on('pageerror', e => errors.push(String(e)));
 
 const st = (fn) => p.evaluate(fn);
+// a 3D figure has drawn into this element's canvas: enough light body pixels
+// against the dark stage
+const figureDrawn = (sel) => p.waitForFunction((s) => {
+  const c = document.querySelector(`${s} canvas.fig3d`);
+  if (!c || !c.width || !c.height) return false;
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let lit = 0;
+  for (let i = 0; i < d.length; i += 16) if (d[i] > 110 && d[i + 1] > 110) lit++;
+  return lit > 40;
+}, sel, { timeout: 20000 });
 const activeView = () => st(() => document.querySelector('.view.active').id);
 const previewText = () => p.$$eval('#previewList li', els => els.map(e => e.textContent.trim()).join('|'));
 // Rounds in the first block of the built sequence: 8 for short bursts, 4 for long efforts.
@@ -149,12 +163,20 @@ try {
   await p.click('#btnStart');                                   // pause
   ok('classic opens with 4 rounds, skip works, timer recovers a 3s suspension');
 
-  step = 'tapping the animation opens the 3D view over the workout';
-  // the 3D page needs WebGL; the check here is the app's side of the tap
+  step = 'the card shows the exercise as a 3D figure; drag turns it, a tap opens the full view';
+  // the full viewer is checked by move-check; here it's the app's side of the tap
   await p.route('**/move.html*', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>3D</title>' }));
   await p.click('#btnStart');                                   // running again
   const moveId = await p.$eval('#animA', e => e.dataset.move);
   assert(await st(() => !!EXERCISES[document.getElementById('animA').dataset.move]), `the card knows its exercise (${moveId})`);
+  await figureDrawn('#animA');
+  const figs = await st(() => [...document.querySelectorAll('.ex-anim')].map(e => `${e.id}:${e.dataset.move}:${e.querySelectorAll('canvas.fig3d').length}`));
+  assert(figs.every(f => /:[1]$/.test(f) || /::0$/.test(f)), `one figure per card that has an exercise (${figs})`);
+  const box = await p.$eval('#animA', e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await p.mouse.move(box.x, box.y); await p.mouse.down();
+  for (let i = 1; i <= 8; i++) await p.mouse.move(box.x + i * 12, box.y);
+  await p.mouse.up();
+  assert(await p.$eval('#moveSheet', e => e.hidden), 'dragging turns the figure without opening the full view');
   await p.click('#animA');
   assert(await p.$eval('#moveSheet', e => !e.hidden), 'the 3D sheet opens');
   assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === `move.html?embed=1#${moveId}`, 'on that exercise');
@@ -163,7 +185,7 @@ try {
   assert(await p.$eval('#moveSheet', e => e.hidden), 'Escape closes it');
   assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === 'about:blank', 'and stops the 3D page');
   await p.click('#btnStart');                                   // pause
-  ok(`tapping the animation opens ${moveId} in 3D over the running timer`);
+  ok(`${moveId} plays as a 3D figure; a drag turns it and a tap opens it over the running timer`);
 
   step = 'a rest shows the coming block as thumbnails';
   assert(await p.$eval('#btnNextBlock', e => e.hidden), 'no preview button while working');
@@ -180,12 +202,15 @@ try {
   });
   assert(cards.length === expect, `one card per exercise per person in the next block (${cards.length} of ${expect})`);
   assert(await p.evaluate(ids => ids.every(id => !!EXERCISES[id]), cards), 'cards name real exercises');
+  await figureDrawn('.next-card .next-thumb');
+  assert(await p.$$eval('.next-thumb', ts => ts.every(t => t.querySelector('canvas.fig3d'))), 'every card has its moving figure');
   await p.click('.next-card >> nth=0');
   assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === `move.html?embed=1#${cards[0]}`, 'a card opens its 3D view');
   await p.keyboard.press('Escape');
   assert(!(await p.$eval('#nextSheet', e => e.hidden)), 'Escape closes the 3D view first');
   await st(() => { seekTo(state.currentIdx + 1); render(); });
   assert(await p.$eval('#nextSheet', e => e.hidden), 'and the preview closes itself when the work starts');
+  assert((await p.$$('.next-thumb canvas')).length === 0, 'its figures are let go');
   await p.unroute('**/move.html*');
   ok(`the block rest previews ${cards.length} upcoming exercises, each opening in 3D`);
 
@@ -294,8 +319,8 @@ try {
   step = 'opens offline after the first visit';
   await p.goto(URL);
   await st(() => navigator.serviceWorker.ready);
-  // The worker precaches the shell and every animation; wait for it to fill.
-  const expected = await st(() => 12 + new Set(Object.values(EXERCISES).map(e => e.img)).size);
+  // The worker precaches the shell and the 3D files; wait for it to fill.
+  const expected = 12 + 17;
   await p.waitForFunction(async (n) => {
     const keys = await caches.keys();
     if (!keys.length) return false;
@@ -309,9 +334,10 @@ try {
   assert((await p.$$('.path-card')).length === 4, 'welcome renders with no network');
   await p.click('#pathQuick'); await p.click('#btnBuild');
   assert(await activeView() === 'workoutView', 'a workout builds with no network');
-  assert(await st(() => fetch('img/exercises/pushup.svg').then(r => r.ok)), 'an animation comes from the cache with no network');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
+  await figureDrawn('#animA');
   await context.setOffline(false);
-  ok(`opens, builds and animates offline from a ${expected}-file cache`);
+  ok(`opens, builds and shows the 3D figures offline from a ${expected}-file cache`);
 
   if (errors.length) {
     console.log('\nCONSOLE ERRORS:'); errors.forEach(e => console.log('  ' + e));

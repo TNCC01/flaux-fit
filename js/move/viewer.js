@@ -11,15 +11,11 @@
                                scripts/move-check.mjs
 */
 import * as THREE from '../../vendor/three/three.min.js';
-import { buildSkeleton, buildBody, bodyPoints, applyState, DIM, MUSCLE_REGIONS } from './body.js';
-import { timeline, poseAt, buildProps } from './motion.js';
+import { bodyPoints, applyState, DIM } from './body.js';
+import { poseAt } from './motion.js';
 import { MOVES } from '../moves/index.js';
+import { PALETTE, resolveMove, makeRenderer, buildScene, makeFigure, motionBounds, placeCamera } from './scene.js';
 
-const PALETTE = {
-  bg: 0x0a1514, floor: 0x10201f, skin: 0xb9c9c5, accent: 0x2dd4bf,
-  primary: 0xf43f5e, secondary: 0xfb923c, iron: 0x8a9696, gear: 0xfbbf24,
-  wood: 0x6b5a45, wall: 0x35504d,
-};
 const params = new URLSearchParams(location.search);
 const EMBED = params.has('embed');
 const CHECK = params.get('check');
@@ -27,113 +23,12 @@ const $ = (id) => document.getElementById(id);
 // js/exercises.js is a classic script: its const is a global binding, not a window property
 const EX = typeof EXERCISES !== 'undefined' ? EXERCISES : {};  // eslint-disable-line no-undef
 
-// exercise id or animation name -> { id, ex, base, move }
-function resolve(key) {
-  const ex = EX[key];
-  // an exercise can have its own 3D record (a loaded variant) even when it
-  // shares its workout animation with another
-  const base = ex && MOVES[key] ? key : ex ? ex.img : key;
-  const move = MOVES[base];
-  if (!move) return null;
-  return { id: ex ? key : null, ex, base, move };
-}
+const resolve = (key) => resolveMove(key, EX);
 
-// ---------------------------------------------------------- the scene
+// the full viewer's renderer and scene
 function makeStage(canvas, { shadows = true } = {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: !!CHECK });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
-  renderer.shadowMap.enabled = shadows;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(PALETTE.bg);
-  scene.fog = new THREE.Fog(PALETTE.bg, 6, 14);
-
-  scene.add(new THREE.HemisphereLight(0xdff7f3, 0x0b1a19, 0.9));
-  const key = new THREE.DirectionalLight(0xffffff, 2.1);
-  key.position.set(2.2, 4.2, 3.2);
-  key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.left = -2.5; key.shadow.camera.right = 2.5;
-  key.shadow.camera.top = 2.5; key.shadow.camera.bottom = -2.5;
-  key.shadow.bias = -0.0004;
-  key.shadow.radius = 4;
-  scene.add(key);
-  const rim = new THREE.DirectionalLight(0x5eead4, 1.4);
-  rim.position.set(-3, 2.5, -3);
-  scene.add(rim);
-
-  // a round platform with faint distance rings, and a floor that only
-  // shows the shadow
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(2.4, 64),
-    new THREE.MeshStandardMaterial({ color: PALETTE.floor, roughness: 0.95 }));
-  disc.rotation.x = -Math.PI / 2;
-  disc.receiveShadow = true;
-  scene.add(disc);
-  for (const r of [0.5, 1, 1.5, 2]) {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.004, r + 0.004, 96),
-      new THREE.MeshBasicMaterial({ color: 0x1f3b39, transparent: true, opacity: 0.8 }));
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.001;
-    scene.add(ring);
-  }
-
-  const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 50);
-  return { renderer, scene, camera, key };
-}
-
-function makeFigure(scene, move) {
-  const J = buildSkeleton();
-  scene.add(J.root);
-  const mats = buildBody(J, PALETTE, move.muscles);
-  // light the working muscles
-  const tint = (names, color, amount) => {
-    for (const n of names || []) {
-      for (const region of MUSCLE_REGIONS[n] || []) {
-        const m = mats[region];
-        if (!m || m.userData.tinted >= amount) continue;
-        m.color.set(PALETTE.skin).lerp(new THREE.Color(color), amount);
-        m.emissive.set(color).multiplyScalar(amount * 0.25);
-        m.userData.tinted = amount;
-      }
-    }
-  };
-  const mus = move.muscles || {};
-  tint(mus.secondary, PALETTE.secondary, 0.35);
-  tint(mus.primary, PALETTE.primary, 0.6);
-  const tl = timeline(move);
-  const props = buildProps(scene, J, move.props, PALETTE);
-  return { J, tl, props, move };
-}
-
-// The whole rep's extent, so the camera frames every part of it.
-function motionBounds(fig) {
-  const box = new THREE.Box3();
-  for (let i = 0; i <= 48; i++) {
-    poseAt(fig.J, fig.tl, (fig.tl.total * i) / 48);
-    for (const p of bodyPoints(fig.J)) box.expandByPoint(p);
-    // held equipment reaches past the hands (a barbell's plates)
-    if ((fig.move.props || []).some(p => /bell|dumbbell/.test(p.type)))
-      for (const s of ['L', 'R']) box.expandByPoint(fig.J['wrist' + s].getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.2, 0)));
-  }
-  box.expandByScalar(0.08);
-  return box;
-}
-
-function placeCamera(camera, box, yawDeg, pitchDeg = 8, aspect = 1) {
-  // fit the rep's bounding sphere, so no angle crops it
-  const sph = box.getBoundingSphere(new THREE.Sphere());
-  const c = sph.center;
-  const vfov = (camera.fov * Math.PI) / 180;
-  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
-  const r = (sph.radius * 0.92) / Math.sin(Math.min(vfov, hfov) / 2);
-  const yaw = (yawDeg * Math.PI) / 180, pitch = (pitchDeg * Math.PI) / 180;
-  camera.position.set(c.x + Math.sin(yaw) * Math.cos(pitch) * r, c.y + Math.sin(pitch) * r, c.z + Math.cos(yaw) * Math.cos(pitch) * r);
-  camera.lookAt(c);
-  return c;
+  const renderer = makeRenderer(canvas, { preserve: !!CHECK, shadows });
+  return { renderer, ...buildScene() };
 }
 
 // ---------------------------------------------------------- one movement

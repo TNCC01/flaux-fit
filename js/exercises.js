@@ -19,7 +19,7 @@
     alt        injury / lower-impact alternative
     equipment  ids from EQUIPMENT; [] = bodyweight, always available
     bw         exercise id to fall back to when equipment is deselected
-    img        animation base name in img/exercises/<img>.svg
+    img        3D movement name in js/moves/ (several exercises can share one)
     regions    body regions trained, primary first (see REGIONS)
     pattern    movement pattern, used by the generator to avoid putting
                two of the same pattern back to back
