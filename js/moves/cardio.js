@@ -208,7 +208,7 @@ const HK_LEFT = {
   pelvis: { pos: [0, 0.95, 0], pitch: -2 },
   legs: {
     L: { hip: { flex: 92, abd: 2 }, knee: 95, ankle: 5 },
-    R: { foot: [-0.1, 0.12, 0.01], heel: 20, toeOut: 5 },
+    R: { foot: [-0.1, 0.12, 0.01], heel: -20, toeOut: 5 },
   },
   arms: {
     L: { shoulder: { elev: -35, plane: 0 }, elbow: 85 },
@@ -218,7 +218,7 @@ const HK_LEFT = {
 const HK_MID = {
   label: 'Switch',
   pelvis: { pos: [0, 0.94, 0] },
-  legs: { L: { foot: [0.1, 0.12, 0.01], heel: 20, toeOut: 5 }, R: 'mirror' },
+  legs: { L: { foot: [0.1, 0.12, 0.01], heel: -20, toeOut: 5 }, R: 'mirror' },
   arms: { L: { shoulder: { elev: 10, plane: 0 }, elbow: 85 }, R: 'mirror' },
 };
 const BK_LEFT = {
@@ -226,7 +226,7 @@ const BK_LEFT = {
   pelvis: { pos: [0, 0.95, 0], pitch: 4 },
   legs: {
     L: { hip: { flex: 8, abd: 2 }, knee: 130, ankle: -30 },
-    R: { foot: [-0.1, 0.12, 0.01], heel: 20, toeOut: 5 },
+    R: { foot: [-0.1, 0.12, 0.01], heel: -20, toeOut: 5 },
   },
   arms: {
     L: { shoulder: { elev: -30, plane: 0 }, elbow: 90 },
@@ -239,7 +239,7 @@ const SPRINT_LEFT = {
   spine: { flex: 3 },
   legs: {
     L: { hip: { flex: 80, abd: 2 }, knee: 105, ankle: 5 },
-    R: { foot: [-0.1, 0.13, -0.08], heel: 25, toeOut: 3 },
+    R: { foot: [-0.1, 0.13, -0.08], heel: -25, toeOut: 3 },
   },
   arms: {
     L: { shoulder: { elev: -50, plane: 0 }, elbow: 80 },
@@ -340,7 +340,7 @@ function stride(label, z, face, stance) {
   const sg = stance === 'L' ? 1 : -1;
   const swing = stance === 'L' ? 'R' : 'L';
   const legs = {
-    [stance]: { foot: [sg * face * 0.1, 0.11, z], heel: 15, toeOut: 4, knee: [0, 0, face] },
+    [stance]: { foot: [sg * face * 0.1, 0.11, z], heel: -15, toeOut: 4, knee: [0, 0, face] },
     [swing]: { hip: { flex: 70, abd: 2 }, knee: 100, ankle: 0 },
   };
   const arms = {
@@ -384,7 +384,7 @@ export default {
       in: {
         label: 'Feet together',
         pelvis: { pos: [0, 0.9, 0] },
-        legs: { L: { foot: [0.1, 0.095, 0], heel: 10, toeOut: 6 }, R: 'mirror' },
+        legs: { L: { foot: [0.1, 0.095, 0], heel: -10, toeOut: 6 }, R: 'mirror' },
         arms: ARMS_DOWN,
       },
       air: {
@@ -396,7 +396,7 @@ export default {
       out: {
         label: 'Arms overhead',
         pelvis: { pos: [0, 0.87, 0] },
-        legs: { L: { foot: [0.33, 0.095, 0], heel: 10, toeOut: 15, knee: [0.35, 0, 1] }, R: 'mirror' },
+        legs: { L: { foot: [0.33, 0.095, 0], heel: -10, toeOut: 15, knee: [0.35, 0, 1] }, R: 'mirror' },
         arms: { L: { shoulder: { elev: 176, plane: 88 }, elbow: 8 }, R: 'mirror' },
       },
     },
@@ -432,7 +432,7 @@ export default {
       in: {
         label: 'Clap in front',
         pelvis: { pos: [0, 0.9, 0] },
-        legs: { L: { foot: [0.1, 0.095, 0], heel: 10, toeOut: 6 }, R: 'mirror' },
+        legs: { L: { foot: [0.1, 0.095, 0], heel: -10, toeOut: 6 }, R: 'mirror' },
         arms: { L: { shoulder: { elev: 86, plane: -13 }, elbow: 4 }, R: 'mirror' },
       },
       air: {
@@ -445,7 +445,7 @@ export default {
         label: 'Arms wide',
         pelvis: { pos: [0, 0.87, 0] },
         spine: { flex: -3 },
-        legs: { L: { foot: [0.33, 0.095, 0], heel: 10, toeOut: 15, knee: [0.35, 0, 1] }, R: 'mirror' },
+        legs: { L: { foot: [0.33, 0.095, 0], heel: -10, toeOut: 15, knee: [0.35, 0, 1] }, R: 'mirror' },
         arms: { L: { shoulder: { elev: 86, plane: 102 }, elbow: 6 }, R: 'mirror' },
       },
     },
@@ -1122,7 +1122,7 @@ export default {
       land: {
         label: 'Land light',
         pelvis: { pos: [0, 0.92, 0] },
-        legs: { L: { foot: [0.08, 0.12, 0.01], heel: 20, toeOut: 4 }, R: 'mirror' },
+        legs: { L: { foot: [0.08, 0.12, 0.01], heel: -20, toeOut: 4 }, R: 'mirror' },
         arms: { L: { hand: [0.29, 0.97, 0.15], elbow: [0.3, 0, -1], wrist: -10 }, R: 'mirror' },
       },
     },
@@ -1178,7 +1178,7 @@ export default {
       land: {
         label: 'Land light',
         pelvis: { pos: [0, 0.9, -0.01], pitch: 3 },
-        legs: { L: { foot: [0.08, 0.12, 0.01], heel: 20, toeOut: 4, knee: [0.1, 0, 1] }, R: 'mirror' },
+        legs: { L: { foot: [0.08, 0.12, 0.01], heel: -20, toeOut: 4, knee: [0.1, 0, 1] }, R: 'mirror' },
         arms: { L: { hand: [0.3, 0.95, 0.15], elbow: [0.3, 0, -1], wrist: -10 }, R: 'mirror' },
       },
     },

@@ -128,7 +128,7 @@ export default {
       drive: {
         label: 'Drive',
         pelvis: { pos: [0, 0.97, 0.01] },
-        legs: { L: { foot: [0.12, 0.11, 0.01], toeOut: 8, heel: 18 }, R: 'mirror' },
+        legs: { L: { foot: [0.12, 0.11, 0.01], toeOut: 8, heel: -18 }, R: 'mirror' },
         arms: { L: { hand: [0.27, 1.62, 0.06], elbow: [0.8, -1, 0.3] }, R: 'mirror' },
       },
       top: {

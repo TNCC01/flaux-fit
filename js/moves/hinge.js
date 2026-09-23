@@ -62,7 +62,7 @@ export default {
       tempo: 'About 2 seconds down, a brief pause, 1 to 2 seconds up.',
     },
     keys: {
-      top: { label: 'Stand tall', legs: HIP_FEET, arms: HANDS_HEAD },
+      top: { label: 'Stand tall', pelvis: { pos: [0, 0.92, 0] }, legs: HIP_FEET, arms: HANDS_HEAD },
       bottom: {
         label: 'Hinge',
         pelvis: { pos: [0, 0.88, -0.18], pitch: 78 },
@@ -108,7 +108,7 @@ export default {
       tempo: 'About 2 seconds down, a brief pause, 1 to 2 seconds up.',
     },
     keys: {
-      top: { label: 'Bar on back', legs: HIP_FEET, arms: BAR_BACK },
+      top: { label: 'Bar on back', pelvis: { pos: [0, 0.92, 0] }, legs: HIP_FEET, arms: BAR_BACK },
       bottom: {
         label: 'Hinge',
         pelvis: { pos: [0, 0.89, -0.17], pitch: 70 },
