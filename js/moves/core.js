@@ -213,7 +213,7 @@ function inchworm(withPushup) {
 const INCH_PLAIN = inchworm(false);
 const INCH_PUSH = inchworm(true);
 
-export default {
+const MOVES = {
   plank: {
     camera: { yaw: 60, pitch: 12 },
     keys: {
@@ -407,3 +407,8 @@ export default {
     ...INCH_PUSH,
   },
 };
+export default MOVES;
+// DEBUG-VIEW
+const _pick = (m, ks) => ({ ...m, keys: Object.fromEntries(ks.map((k) => [k, { ...m.keys[k], label: k }])), seq: ks, tempo: 0.5, holds: {} });
+for (const n of decodeURIComponent((globalThis.location && globalThis.location.search) || '').split(/[=,&]/))
+  if (n.startsWith('_v~')) { const [, mv, ...ks] = n.split('~'); MOVES[n] = _pick(MOVES[mv], ks); }

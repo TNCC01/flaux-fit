@@ -225,7 +225,7 @@ const BK_LEFT = {
   label: 'Left heel up',
   pelvis: { pos: [0, 0.95, 0], pitch: 4 },
   legs: {
-    L: { hip: { flex: 8, abd: 2 }, knee: 130, ankle: -30 },
+    L: { hip: { flex: 12, abd: 2 }, knee: 145, ankle: -30 },
     R: { foot: [-0.1, 0.12, 0.01], heel: -20, toeOut: 5 },
   },
   arms: {

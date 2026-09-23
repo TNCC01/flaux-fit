@@ -18,9 +18,8 @@ function onTrunk(pos, pitch, [x, up, fwd]) {
 
 // Up on the toes: the ankle target for a foot whose flat ankle sits at
 // `flat`, with the heel raised `deg` degrees about the front of the foot
-// (the rigid foot pivots on its toe tip, which stays where it was, so the foot doesn't slide). Note the
-// engine's `heel` lifts the toes for positive values, so pair this with
-// heel: -deg.
+// (the rigid foot pivots on its toe tip, which stays where it was, so the
+// foot doesn't slide). Pair it with heel: -deg (negative raises the heel).
 function onToes(flat, deg) {
   const a = ((20.22 + deg) * Math.PI) / 180, L = 0.2025;
   return [flat[0], r3(L * Math.sin(a)), r3(flat[2] + 0.19 - L * Math.cos(a))];
@@ -617,13 +616,13 @@ export default {
         pelvis: { pos: [0, 0.98, 0.42], pitch: 32 },
         spine: { flex: 4 },
         neck: { flex: -16 },
-        legs: { L: { foot: [0.13, 0.47, 0.55], toeOut: 10, knee: [0.2, 0, 1], heel: -0.01 }, R: 'mirror' },
+        legs: { L: { foot: [0.13, 0.47, 0.55], toeOut: 10, knee: [0.2, 0, 1], heel: 0.01 }, R: 'mirror' },
         arms: { L: { shoulder: { elev: 70, plane: 10 }, elbow: 12 }, R: 'mirror' },
       },
       top: {
         label: 'Stand tall',
         pelvis: { pos: [0, 1.33, 0.55] },
-        legs: { L: { foot: [0.13, 0.47, 0.55], toeOut: 10, heel: -0.01 }, R: 'mirror' },
+        legs: { L: { foot: [0.13, 0.47, 0.55], toeOut: 10, heel: 0.01 }, R: 'mirror' },
         arms: ARMS_DOWN,
       },
       stepBack: {
@@ -631,7 +630,7 @@ export default {
         pelvis: { pos: [0, 1.2, 0.47], pitch: 12 },
         neck: { flex: 8 },
         legs: {
-          L: { foot: [0.13, 0.47, 0.55], toeOut: 10, knee: [0.15, 0, 1], heel: -0.01 },
+          L: { foot: [0.13, 0.47, 0.55], toeOut: 10, knee: [0.15, 0, 1], heel: 0.01 },
           R: { foot: [-0.13, 0.6, 0.18], toeOut: 10, knee: [-0.1, -0.3, 1], ankle: -10 },
         },
         arms: { L: { shoulder: { elev: 25, plane: 60 }, elbow: 15 }, R: 'mirror' },
@@ -641,7 +640,7 @@ export default {
         pelvis: { pos: [0, 0.84, 0.27], pitch: 12 },
         neck: { flex: 8 },
         legs: {
-          L: { foot: [0.13, 0.47, 0.55], toeOut: 10, knee: [0.15, 0, 1], heel: -0.01 },
+          L: { foot: [0.13, 0.47, 0.55], toeOut: 10, knee: [0.15, 0, 1], heel: 0.01 },
           R: { foot: [-0.13, 0.07, 0.02], toeOut: 10, knee: [-0.1, 0, 1] },
         },
         arms: { L: { shoulder: { elev: 25, plane: 60 }, elbow: 15 }, R: 'mirror' },
