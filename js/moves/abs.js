@@ -114,7 +114,8 @@ export default {
       },
     },
     seq: ['down', 'up'],
-    tempo: [1.0, 1.6],
+    tempo: [1.0, 1.8],
+    holds: { up: 0.4, down: 0.3 },
   },
   reverseCrunch: {
     camera: { yaw: 70, pitch: 12 },
@@ -158,6 +159,7 @@ export default {
     },
     seq: ['table', 'curl'],
     tempo: [1.0, 1.8],
+    holds: { curl: 0.4 },
   },
   legRaise: {
     camera: { yaw: 70, pitch: 12 },
@@ -398,14 +400,14 @@ export default {
     },
     keys: {
       left: {
-        label: 'Right elbow, left knee',
+        label: 'Right elbow across',
         pelvis: { pos: [0, LY, 0], pitch: LIE },
         spine: { flex: 40, twist: 45 },
         legs: { L: { hip: { flex: 110 }, knee: 110 }, R: { hip: { flex: 25 }, knee: 6 } },
         arms: { L: BIKE_BASE, R: BIKE_CROSS },
       },
       right: {
-        label: 'Left elbow, right knee',
+        label: 'Left elbow across',
         pelvis: { pos: [0, LY, 0], pitch: LIE },
         spine: { flex: 40, twist: -45 },
         legs: { R: { hip: { flex: 110 }, knee: 110 }, L: { hip: { flex: 25 }, knee: 6 } },
@@ -507,14 +509,14 @@ export default {
         arms: { L: { hand: [0.22, 0.03, -0.45], elbow: 'back', palm: 'floor' }, R: 'mirror' },
       },
       reachL: {
-        label: 'Right hand, left toe',
+        label: 'Left toe reach',
         pelvis: { pos: [0, 0.5, 0], pitch: -75 },
         spine: { flex: 30, twist: 45 },
         legs: { R: { foot: [-0.15, 0.07, 0.4], knee: 'up' }, L: { hip: { flex: 115, abd: -8 }, knee: 10, ankle: -15 } },
         arms: { L: { hand: [0.22, 0.03, -0.45], elbow: 'back', palm: 'floor' }, R: { hand: [-0.03, 1.23, -0.13], elbow: 'out' } },
       },
       reachR: {
-        label: 'Left hand, right toe',
+        label: 'Right toe reach',
         pelvis: { pos: [0, 0.5, 0], pitch: -75 },
         spine: { flex: 30, twist: -45 },
         legs: { L: { foot: [0.15, 0.07, 0.4], knee: 'up' }, R: { hip: { flex: 115, abd: -8 }, knee: 10, ankle: -15 } },

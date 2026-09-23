@@ -137,8 +137,9 @@ const hollowPose = (label, pitch, z) => ({
 const INCH = [
   [0.32, 0.86, -0.12, 120, 35, [0, 0, 1]],     // folded, knees soft, hands down
   [0.6, 0.87, 0.14, 136, 12, [0, 0, 1]],       // pike
-  [0.83, 0.85, 0.3, 142, 4, [0, -0.3, 1]],
-  [1.04, 0.8, 0.46, 135, 0, [0, -0.6, 1]],     // on the balls of the feet
+  [0.77, 0.87, 0.28, 144, 4, [0, -0.3, 1]],
+  [0.93, 0.88, 0.46, 140, 0, [0, -0.6, 1]],    // on the balls of the feet
+  [1.1, 0.66, 0.66, 104, 0, [0, -0.8, 0.6]],
   [1.26, 0.402, 0.845, 71, 0, [0, -1, 0.2]],   // high plank
 ];
 // Up on the toes: the ankle target for a flat foot at [x, 0.07, z] with the
@@ -147,7 +148,7 @@ function onToes(x, z, deg) {
   const a = ((26.57 + deg) * Math.PI) / 180, L = 0.1565;
   return [x, r3(L * Math.sin(a)), r3(z + 0.14 - L * Math.cos(a))];
 }
-const INCH_HEEL = [0, 0, 0, 30, 23];     // heel lift at each station
+const INCH_HEEL = [0, 0, 0, 30, 25, 23];     // heel lift at each station
 function inchPose(hL, hR, lift, label) {
   const h = (hL + hR) / 2;
   let i = 0;

@@ -30,7 +30,9 @@ const EX = typeof EXERCISES !== 'undefined' ? EXERCISES : {};  // eslint-disable
 // exercise id or animation name -> { id, ex, base, move }
 function resolve(key) {
   const ex = EX[key];
-  const base = ex ? ex.img : key;
+  // an exercise can have its own 3D record (a loaded variant) even when it
+  // shares its workout animation with another
+  const base = ex && MOVES[key] ? key : ex ? ex.img : key;
   const move = MOVES[base];
   if (!move) return null;
   return { id: ex ? key : null, ex, base, move };

@@ -4,7 +4,9 @@ The tap-through viewer (`move.html#<exerciseId>`) plays a 3D demonstration of ea
 movement with coaching notes. The data lives here, one file per family, keyed by the
 animation name (`img` in `js/exercises.js`). Several exercises can share one
 animation (air squats and tempo squats both use `bwSquat`), so write the coaching
-for the movement they share.
+for the movement they share. When a variant needs its own 3D version (the kettlebell
+Russian twist), key a record by the exercise id itself (`russianTwistKb`): the viewer
+prefers it over the shared animation.
 
 The in-workout SVG prompts (`img/exercises/`, from `scripts/gen-anims.py`) are a
 separate, lighter system. This is the reference version: it has to be right.

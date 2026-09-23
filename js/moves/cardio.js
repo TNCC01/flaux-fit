@@ -179,10 +179,10 @@ const BURPEE_FLOOR = {
 
 const SKI_LEFT = {
   label: 'Land left',
-  pelvis: { pos: [0.2, 0.8, -0.07], pitch: 20, roll: -4 },
+  pelvis: { pos: [0.25, 0.8, -0.07], pitch: 20, roll: -4 },
   spine: { flex: 4 },
   neck: { flex: -10 },
-  legs: { L: { foot: [0.33, 0.07, 0.02], toeOut: 4, knee: [0.1, 0, 1] }, R: { foot: [0.17, 0.07, 0.02], toeOut: 4, knee: [0.1, 0, 1] } },
+  legs: { L: { foot: [0.38, 0.07, 0.02], toeOut: 4, knee: [0.1, 0, 1] }, R: { foot: [0.22, 0.07, 0.02], toeOut: 4, knee: [0.1, 0, 1] } },
   arms: { L: { shoulder: { elev: 35, plane: 15 }, elbow: 75 }, R: 'mirror' },
 };
 

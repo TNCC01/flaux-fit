@@ -16,8 +16,8 @@
     pelvis: { pos: [x, y, z], pitch, yaw, roll }
             pos is the hip-joint centre (standing: [0, 0.93, 0]).
             pitch + tips the body forward (a hip hinge; 90 = lying face
-            down), yaw + turns to the figure's left, roll + lifts the left
-            hip. y may be 'auto' to drop the body until its lowest point
+            down), yaw + turns to the figure's left, roll - lifts the left
+            hip (+ lifts the right). y may be 'auto' to drop the body until its lowest point
             touches the floor.
     spine:  { flex, side, twist }  flex + bends forward, - arches back;
             side + bends to the left; twist + turns the chest left.
