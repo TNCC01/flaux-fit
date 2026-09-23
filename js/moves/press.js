@@ -218,12 +218,12 @@ export default {
       rack: {
         label: 'Rack',
         legs: STANCE,
-        arms: { L: ARM_DOWN, R: { hand: [-0.1, 1.33, 0.14], elbow: [-0.4, -1, 0.3], wrist: -150 } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.11, 1.37, 0.13], elbow: [-0.4, -1, 0.3], wrist: -150 } },
       },
       mid: {
         label: 'Press',
         legs: STANCE,
-        arms: { L: ARM_DOWN, R: { hand: [-0.2, 1.62, 0.05], elbow: [-1, -1, 0.2], wrist: -150 } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.27, 1.64, 0.04], elbow: [-0.6, -1, 0.2], wrist: -150 } },
       },
       top: {
         label: 'Lockout',
@@ -243,10 +243,10 @@ export default {
     keys: {
       floor: {
         label: 'Grip',
-        pelvis: { pos: [0, 0.64, -0.24], pitch: 48 },
-        spine: { flex: 4 }, neck: { flex: -14 },
+        pelvis: { pos: [0, 0.62, -0.31], pitch: 60 },
+        spine: { flex: 3 }, neck: { flex: -22 },
         legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12, knee: [0.3, 0, 1] }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 40, plane: 60 }, elbow: 10 }, R: { hand: [-0.03, 0.31, 0.12], elbow: 'back' } },
+        arms: { L: { shoulder: { elev: 58, plane: 12 }, elbow: 12 }, R: { hand: [-0.03, 0.31, 0.12], elbow: 'back' } },
       },
       pull: {
         label: 'Hips snap',
@@ -257,17 +257,22 @@ export default {
       rack: {
         label: 'Rack',
         legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12 }, R: 'mirror' },
-        arms: { L: ARM_DOWN, R: { hand: [-0.1, 1.33, 0.14], elbow: [-0.3, -1, 0.4], wrist: -130 } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.11, 1.37, 0.13], elbow: [-0.4, -1, 0.3], wrist: -150 } },
+      },
+      mid: {
+        label: 'Press',
+        legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12 }, R: 'mirror' },
+        arms: { L: ARM_DOWN, R: { hand: [-0.27, 1.64, 0.04], elbow: [-0.6, -1, 0.2], wrist: -150 } },
       },
       top: {
         label: 'Lockout',
         legs: { L: { foot: [0.17, 0.07, 0], toeOut: 12 }, R: 'mirror' },
-        arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back', wrist: -130 } },
+        arms: { L: ARM_DOWN, R: { hand: [-0.18, 1.92, -0.01], elbow: 'back', wrist: -150 } },
       },
     },
-    seq: ['floor', 'pull', 'rack', 'top', 'rack'],
-    tempo: [0.5, 0.35, 1.1, 1.4, 1.2],
-    holds: { floor: 0.4, pull: 0, rack: 0.3, top: 0.5 },
+    seq: ['floor', 'pull', 'rack', 'mid', 'top', 'mid', 'rack', 'pull'],
+    tempo: [0.5, 0.35, 0.6, 0.6, 0.9, 0.8, 0.5, 0.6],
+    holds: { floor: 0.4, pull: 0, rack: 0.3, mid: 0, top: 0.5 },
   },
   kbHalo: {
     camera: { yaw: 30, pitch: 8 },
@@ -275,29 +280,21 @@ export default {
     muscles: { primary: ['shoulders'], secondary: ['core', 'obliques', 'upperBack', 'triceps'] },
     coaching: { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' },
     keys: {
-      front: {
-        label: 'In front',
-        legs: STANCE,
-        arms: { L: { hand: [0.04, 1.3, 0.24], elbow: [0.5, -1, 0] }, R: 'mirror' },
-      },
-      right: {
-        label: 'Right side',
-        legs: STANCE,
-        arms: { L: { hand: [-0.16, 1.55, 0.06], elbow: [0.6, 0.2, 1] }, R: { hand: [-0.22, 1.55, -0.02], elbow: [-1, -0.3, 0] } },
-      },
-      back: {
-        label: 'Behind',
-        legs: STANCE,
-        arms: { L: { hand: [0.04, 1.5, -0.2], elbow: [0.5, 0.3, 1] }, R: 'mirror' },
-      },
-      left: {
-        label: 'Left side',
-        legs: STANCE,
-        arms: { L: { hand: [0.22, 1.55, -0.02], elbow: [1, -0.3, 0] }, R: { hand: [0.16, 1.55, 0.06], elbow: [-0.6, 0.2, 1] } },
-      },
+h0: { label: 'In front', legs: STANCE, arms: { L: { hand: [0.05, 1.36, 0.25], elbow: [-0.028, -0.23, 0.191] }, R: { hand: [-0.05, 1.36, 0.25], elbow: [0.028, -0.23, 0.191] } } },
+      h30: { label: 'Round', legs: STANCE, arms: { L: { hand: [-0.082, 1.481, 0.242], elbow: [-0.141, -0.116, 0.238] }, R: { hand: [-0.168, 1.481, 0.192], elbow: [0.025, -0.152, 0.257] } } },
+      h60: { label: 'Round', legs: STANCE, arms: { L: { hand: [-0.192, 1.569, 0.168], elbow: [-0.191, 0.019, 0.231] }, R: { hand: [-0.242, 1.569, 0.082], elbow: [-0.08, 0.001, 0.289] } } },
+      h90: { label: 'Right side', legs: STANCE, arms: { L: { hand: [-0.25, 1.6, 0.05], elbow: [-0.226, 0.103, 0.168] }, R: { hand: [-0.25, 1.6, -0.05], elbow: [-0.143, 0.147, 0.219] } } },
+      h120: { label: 'Round', legs: STANCE, arms: { L: { hand: [-0.242, 1.57, -0.082], elbow: [-0.248, 0.119, 0.121] }, R: { hand: [-0.192, 1.57, -0.168], elbow: [-0.124, 0.259, 0.087] } } },
+      h150: { label: 'Round', legs: STANCE, arms: { L: { hand: [-0.168, 1.489, -0.192], elbow: [-0.275, 0.081, 0.088] }, R: { hand: [-0.082, 1.489, -0.242], elbow: [-0.032, 0.289, -0.075] } } },
+      h180: { label: 'Behind', legs: STANCE, arms: { L: { hand: [-0.05, 1.38, -0.25], elbow: [-0.068, 0.2, -0.213] }, R: { hand: [0.05, 1.38, -0.25], elbow: [0.068, 0.2, -0.213] } } },
+      h210: { label: 'Round', legs: STANCE, arms: { L: { hand: [0.082, 1.489, -0.242], elbow: [0.049, 0.283, -0.087] }, R: { hand: [0.168, 1.489, -0.192], elbow: [0.294, -0.04, 0.042] } } },
+      h240: { label: 'Round', legs: STANCE, arms: { L: { hand: [0.192, 1.57, -0.168], elbow: [0.124, 0.259, 0.087] }, R: { hand: [0.242, 1.57, -0.082], elbow: [0.263, 0.084, 0.117] } } },
+      h270: { label: 'Left side', legs: STANCE, arms: { L: { hand: [0.25, 1.6, -0.05], elbow: [0.227, 0.121, 0.155] }, R: { hand: [0.25, 1.6, 0.05], elbow: [0.226, 0.103, 0.168] } } },
+      h300: { label: 'Round', legs: STANCE, arms: { L: { hand: [0.242, 1.569, 0.082], elbow: [0.267, 0.048, 0.128] }, R: { hand: [0.192, 1.569, 0.168], elbow: [0.145, 0.095, 0.245] } } },
+      h330: { label: 'Round', legs: STANCE, arms: { L: { hand: [0.168, 1.481, 0.192], elbow: [0.229, 0.052, 0.186] }, R: { hand: [0.082, 1.481, 0.242], elbow: [0.053, -0.033, 0.293] } } },
     },
-    seq: ['front', 'right', 'back', 'left'],
-    tempo: [0.8, 0.8, 0.8, 0.8],
-    holds: { front: 0.2, right: 0, back: 0, left: 0 },
+    seq: ['h0', 'h30', 'h60', 'h90', 'h120', 'h150', 'h180', 'h210', 'h240', 'h270', 'h300', 'h330'],
+    tempo: 0.3,
+    holds: { h0: 0.3, h30: 0, h60: 0, h90: 0, h120: 0, h150: 0, h180: 0, h210: 0, h240: 0, h270: 0, h300: 0, h330: 0 },
   },
 };

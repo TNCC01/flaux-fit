@@ -27,8 +27,8 @@ const mirrorArm = (a) => ({ ...a, hand: flipX(a.hand), elbow: Array.isArray(a.el
 // body onto its left side).
 const SIDE_ELBOW = { hand: [-0.46, 0.03, 0.26], elbow: [0, -1, -0.3], palm: 'floor' };
 const SIDE_FEET = {
-  L: { foot: [0.827, 0.133, 0], knee: 'fwd', ankle: 0 },
-  R: { foot: [0.797, 0.048, 0], knee: 'fwd', ankle: 0 },
+  L: { foot: [0.827, 0.137, 0], knee: 'fwd', ankle: 0 },
+  R: { foot: [0.797, 0.052, 0], knee: 'fwd', ankle: 0 },
 };
 const TOP_ARM_UP = { shoulder: { elev: 111, plane: 90 } };
 
@@ -85,7 +85,7 @@ function gait(base, steps) {
 const CRAB = {
   label: 'Hips up',
   pelvis: { pos: [0, 0.4, 0], pitch: -66 },
-  neck: { flex: 18 },
+  neck: { flex: 34 },
   leg: { knee: [0.2, 1, 0.6] }, foot: [0.15, 0.07, 0.42], footLift: 0.07,
   arm: { elbow: [0, 0, -1], palm: 'floor' }, hand: [0.2, 0.03, -0.42], handLift: 0.07,
 };
@@ -111,12 +111,107 @@ const bearFwd = gait(BEAR, [
   ['R', 'L', [0, 0, -BEAR_STEP], 'Crawl back'], ['L', 'R', [0, 0, -BEAR_STEP]],
   ['R', 'L', [0, 0, -BEAR_STEP]], ['L', 'R', [0, 0, -BEAR_STEP]],
 ]);
+// sideways: the leading hand and foot step out together, then the trailing
+// pair follows, so the feet never cross
 const bearSide = gait(BEAR, [
-  ['R', 'L', [-BEAR_STEP, 0, 0], 'Crawl right'], ['L', 'R', [-BEAR_STEP, 0, 0]],
-  ['R', 'L', [-BEAR_STEP, 0, 0]], ['L', 'R', [-BEAR_STEP, 0, 0]],
-  ['L', 'R', [BEAR_STEP, 0, 0], 'Crawl left'], ['R', 'L', [BEAR_STEP, 0, 0]],
-  ['L', 'R', [BEAR_STEP, 0, 0]], ['R', 'L', [BEAR_STEP, 0, 0]],
+  ['R', 'R', [-BEAR_STEP, 0, 0], 'Step right'], ['L', 'L', [-BEAR_STEP, 0, 0]],
+  ['R', 'R', [-BEAR_STEP, 0, 0]], ['L', 'L', [-BEAR_STEP, 0, 0]],
+  ['L', 'L', [BEAR_STEP, 0, 0], 'Step left'], ['R', 'R', [BEAR_STEP, 0, 0]],
+  ['L', 'L', [BEAR_STEP, 0, 0]], ['R', 'R', [BEAR_STEP, 0, 0]],
 ]);
+
+// Lying on the back, low back pressed down, shoulders and legs off the floor,
+// arms by the ears. `pitch` rocks the whole rigid shape.
+const hollowPose = (label, pitch, z) => ({
+  label,
+  pelvis: { pos: [0, 'auto', z], pitch }, spine: { flex: 16 }, neck: { flex: 10 },
+  legs: { L: { hip: { flex: 26, abd: -2 }, knee: 0, ankle: -25 }, R: 'mirror' },
+  arms: { L: { shoulder: { elev: 184, plane: 4 }, elbow: 0 }, R: 'mirror' },
+});
+
+// ---------------------------------------------------------- inchworm
+// Feet stay put at z 0; the hands walk out from beside the feet to a high
+// plank at z 1.26 and back. The trunk shape comes from stations along the
+// walk, chosen by where the hands are (their midpoint):
+//   [hands, hip y, hip z, pitch, spine flex, knee hint]
+const INCH = [
+  [0.32, 0.86, -0.12, 120, 35, [0, 0, 1]],     // folded, knees soft, hands down
+  [0.6, 0.87, 0.14, 136, 12, [0, 0, 1]],       // pike
+  [0.83, 0.85, 0.3, 142, 4, [0, -0.3, 1]],
+  [1.04, 0.8, 0.46, 135, 0, [0, -0.6, 1]],     // on the balls of the feet
+  [1.26, 0.402, 0.845, 71, 0, [0, -1, 0.2]],   // high plank
+];
+// Up on the toes: the ankle target for a flat foot at [x, 0.07, z] with the
+// heel raised `deg` about the ball of the foot, so the toes stay planted.
+function onToes(x, z, deg) {
+  const a = ((26.57 + deg) * Math.PI) / 180, L = 0.1565;
+  return [x, r3(L * Math.sin(a)), r3(z + 0.14 - L * Math.cos(a))];
+}
+const INCH_HEEL = [0, 0, 0, 30, 23];     // heel lift at each station
+function inchPose(hL, hR, lift, label) {
+  const h = (hL + hR) / 2;
+  let i = 0;
+  while (i < INCH.length - 2 && h > INCH[i + 1][0]) i++;
+  const a = INCH[i], b = INCH[i + 1];
+  const t = Math.min(1, Math.max(0, (h - a[0]) / (b[0] - a[0])));
+  const heel = mix(INCH_HEEL[i], INCH_HEEL[i + 1], t);
+  const foot = heel > 0.5 ? onToes(0.1, 0, heel) : [0.1, 0.07, 0];
+  const hand = (z, up) => ({ hand: [0.19, up ? 0.1 : 0.03, r3(z)], elbow: [0.4, 0, -1], palm: 'floor' });
+  const pose = {
+    pelvis: { pos: [0, mix(a[1], b[1], t), mix(a[2], b[2], t)], pitch: mix(a[3], b[3], t) },
+    spine: { flex: mix(a[4], b[4], t) },
+    neck: { flex: -6 },
+    legs: { L: { foot, knee: mix(a[5], b[5], t), toeOut: 4 }, R: 'mirror' },
+    arms: { L: hand(hL, lift === 'L'), R: { ...hand(hR, lift === 'R'), hand: [-0.19, lift === 'R' ? 0.1 : 0.03, r3(hR)], elbow: [-0.4, 0, -1] } },
+  };
+  if (label) pose.label = label;
+  return pose;
+}
+// the hand path out: [left hand, right hand] after each step
+const INCH_WALK = [[0.32, 0.32], [0.47, 0.32], [0.47, 0.62], [0.77, 0.62], [0.77, 0.92], [1.07, 0.92], [1.07, 1.26], [1.26, 1.26]];
+function inchworm(withPushup) {
+  const keys = {
+    stand: { label: 'Stand tall', legs: { L: { foot: [0.1, 0.07, 0], toeOut: 4 }, R: 'mirror' },
+      arms: { L: { shoulder: { elev: 6, plane: 90 }, elbow: 8 }, R: 'mirror' } },
+    roll: { pelvis: { pos: [0, 0.91, -0.07], pitch: 70 }, spine: { flex: 28 }, neck: { flex: 10 },
+      legs: { L: { foot: [0.1, 0.07, 0], knee: 'fwd', toeOut: 4 }, R: 'mirror' },
+      arms: { L: { shoulder: { elev: 88, plane: 4 }, elbow: 8 }, R: 'mirror' } },
+  };
+  const out = ['stand', 'roll'];
+  INCH_WALK.forEach(([l, r], i) => {
+    const name = `w${i}`;
+    keys[name] = inchPose(l, r, null, i === 0 ? 'Hands down' : i === INCH_WALK.length - 1 ? 'Plank' : null);
+    if (i > 0) {
+      const [pl, pr] = INCH_WALK[i - 1];
+      const mover = l !== pl ? 'L' : 'R';
+      keys[`u${i}`] = inchPose((l + pl) / 2, (r + pr) / 2, mover);
+      out.push(`u${i}`);
+    }
+    out.push(name);
+  });
+  const back = out.slice(1, -1).reverse();     // walk the hands back, then roll up
+  let seq = [...out];
+  if (withPushup) {
+    keys.bottom = {
+      label: 'Push-up', pelvis: { pos: [0, 0.197, 0.887], pitch: 85 }, neck: { flex: 4 },
+      legs: { L: { foot: onToes(0.1, 0, 23), knee: [0, -1, 0.2], toeOut: 4 }, R: 'mirror' },
+      arms: { L: { hand: [0.2, 0.03, 1.26], elbow: [0.7, 0.4, -1], palm: 'floor' }, R: { hand: [-0.2, 0.03, 1.26], elbow: [-0.7, 0.4, -1], palm: 'floor' } },
+    };
+    keys.w7.arms.L.hand[0] = 0.2;
+    keys.w7.arms.R.hand[0] = -0.2;
+    seq.push('bottom', 'w7');
+  }
+  seq = [...seq, ...back];
+  const tempo = [], holds = {};
+  for (let i = 0; i < seq.length; i++) {
+    const to = seq[(i + 1) % seq.length];
+    tempo.push(to === 'roll' || seq[i] === 'roll' ? 1.1 : to === 'bottom' ? 1.3 : seq[i] === 'bottom' ? 0.9 : 0.24);
+    holds[to] = to === 'stand' ? 0.8 : to === 'w7' ? 0.5 : to === 'w0' ? 0.3 : to === 'bottom' ? 0.2 : 0;
+  }
+  return { keys, seq, tempo, holds };
+}
+const INCH_PLAIN = inchworm(false);
+const INCH_PUSH = inchworm(true);
 
 export default {
   plank: {
@@ -136,9 +231,9 @@ export default {
     keys: {
       plank: { label: 'High plank', pelvis: HIGH_P, legs: WIDE_FEET, arms: { L: PALM, R: 'mirror' } },
       tapR: { label: 'Right tap', pelvis: { ...HIGH_P, pos: [0.02, 0.405, -0.447] }, legs: WIDE_FEET,
-        arms: { L: PALM, R: { hand: [0.08, 0.48, 0.02], elbow: [-0.3, -1, 0.2] } } },
+        arms: { L: PALM, R: { hand: [0.08, 0.455, 0.05], elbow: [-0.3, -1, 0.2] } } },
       tapL: { label: 'Left tap', pelvis: { ...HIGH_P, pos: [-0.02, 0.405, -0.447] }, legs: WIDE_FEET,
-        arms: { R: mirrorArm(PALM), L: { hand: [-0.08, 0.48, 0.02], elbow: [0.3, -1, 0.2] } } },
+        arms: { R: mirrorArm(PALM), L: { hand: [-0.08, 0.455, 0.05], elbow: [0.3, -1, 0.2] } } },
     },
     seq: ['plank', 'tapR', 'plank', 'tapL'],
     tempo: [0.6, 0.6, 0.6, 0.6],
@@ -207,15 +302,9 @@ export default {
   hollow: {
     camera: { yaw: 80, pitch: 8 },
     keys: {
-      hold: { label: 'Hollow hold', pelvis: { pos: [0, 'auto', 0], pitch: -82 }, spine: { flex: 20 }, neck: { flex: 12 },
-        legs: { L: { hip: { flex: 30, abd: -2 }, knee: 0, ankle: -20 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 172, plane: 4 }, elbow: 0 }, R: 'mirror' } },
-      back: { label: 'Rock back', pelvis: { pos: [0, 'auto', 0.05], pitch: -94 }, spine: { flex: 20 }, neck: { flex: 12 },
-        legs: { L: { hip: { flex: 30, abd: -2 }, knee: 0, ankle: -20 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 172, plane: 4 }, elbow: 0 }, R: 'mirror' } },
-      fwd: { label: 'Rock forward', pelvis: { pos: [0, 'auto', -0.05], pitch: -72 }, spine: { flex: 20 }, neck: { flex: 12 },
-        legs: { L: { hip: { flex: 30, abd: -2 }, knee: 0, ankle: -20 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 172, plane: 4 }, elbow: 0 }, R: 'mirror' } },
+      hold: hollowPose('Hollow hold', -86, 0),
+      back: hollowPose('Rock to shoulders', -95, 0.03),
+      fwd: hollowPose('Rock to hips', -78, -0.03),
     },
     seq: ['hold', 'back', 'fwd', 'back', 'fwd'],
     tempo: [0.6, 0.7, 0.7, 0.7, 0.6],
@@ -261,9 +350,9 @@ export default {
   sidePlankHold: {
     camera: { yaw: 20, pitch: 8 },
     keys: {
-      hold: { label: 'Side plank', pelvis: { pos: [0, 0.37, 0], roll: -71 }, legs: SIDE_FEET,
+      hold: { label: 'Side plank', pelvis: { pos: [0, 0.374, 0], roll: -71 }, legs: SIDE_FEET,
         arms: { R: SIDE_ELBOW, L: TOP_ARM_UP } },
-      breathe: { label: 'Breathe', pelvis: { pos: [0, 0.375, 0], roll: -71.3 }, legs: SIDE_FEET,
+      breathe: { label: 'Breathe', pelvis: { pos: [0, 0.379, 0], roll: -71.3 }, legs: SIDE_FEET,
         arms: { R: SIDE_ELBOW, L: TOP_ARM_UP } },
     },
     seq: ['hold', 'breathe'],
@@ -274,10 +363,10 @@ export default {
   sideBridge: {
     camera: { yaw: 20, pitch: 8 },
     keys: {
-      up: { label: 'Hips high', pelvis: { pos: [0, 0.37, 0], roll: -71 }, legs: SIDE_FEET,
+      up: { label: 'Hips high', pelvis: { pos: [0, 0.374, 0], roll: -71 }, legs: SIDE_FEET,
         arms: { R: SIDE_ELBOW, L: TOP_ARM_UP } },
-      dip: { label: 'Dip', pelvis: { pos: [-0.01, 0.24, 0], roll: -70 }, spine: { side: 22 }, legs: SIDE_FEET,
-        arms: { R: SIDE_ELBOW, L: TOP_ARM_UP } },
+      dip: { label: 'Dip', pelvis: { pos: [-0.02, 0.19, 0], roll: -70 }, spine: { side: 30 }, legs: SIDE_FEET,
+        arms: { R: SIDE_ELBOW, L: { shoulder: { elev: 140, plane: 90 } } } },
     },
     seq: ['up', 'dip'],
     tempo: [1.2, 0.9],
@@ -306,5 +395,15 @@ export default {
     seq: bearSide.seq,
     tempo: 0.3,
     holds: Object.fromEntries(bearSide.seq.map((k) => [k, 0])),
+  },
+
+  inchworm: {
+    camera: { yaw: 70, pitch: 10 },
+    ...INCH_PLAIN,
+  },
+
+  inchwormPushup: {
+    camera: { yaw: 70, pitch: 10 },
+    ...INCH_PUSH,
   },
 };

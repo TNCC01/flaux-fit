@@ -267,18 +267,26 @@ const MC_LEFT = {
   pelvis: { pos: [0, 0.41, -0.39], pitch: 71 },
   neck: { flex: 12 },
   legs: {
-    L: { foot: [0.11, 0.2, -0.52], knee: [0, -1, 0.6] },
+    L: { hip: { flex: 120, abd: 3 }, knee: 145, ankle: -10 },
     R: { ...MC_BACK, foot: [-0.09, 0.122, -1.2] },
   },
   arms: MC_HANDS,
 };
+// legs passing each other: the hips rise a touch so the knees clear the floor
+const MC_MID = {
+  label: 'Switch',
+  pelvis: { pos: [0, 0.46, -0.4], pitch: 77 },
+  neck: { flex: 12 },
+  legs: { L: { foot: [0.12, 0.3, -0.95], knee: [0.15, -1, 0], ankle: -20 }, R: 'mirror' },
+  arms: MC_HANDS,
+};
 const MCX_LEFT = {
   label: 'Left knee across',
-  pelvis: { pos: [0, 0.42, -0.39], pitch: 71, roll: 4 },
+  pelvis: { pos: [0, 0.41, -0.39], pitch: 71 },
   spine: { twist: -4 },
   neck: { flex: 12 },
   legs: {
-    L: { foot: [-0.08, 0.21, -0.52], knee: [-0.7, -1, 0.6] },
+    L: { hip: { flex: 116, abd: -20, rot: -10 }, knee: 145, ankle: -10 },
     R: { ...MC_BACK, foot: [-0.09, 0.122, -1.2] },
   },
   arms: MC_HANDS,
@@ -815,5 +823,367 @@ export default {
     seq: ['left', 'air', 'right', 'air'],
     tempo: [0.3, 0.26, 0.3, 0.26],
     holds: { left: 0.15, right: 0.15, air: 0 },
+  },
+  // ======================================================== running drills
+  highKnees: {
+    camera: { yaw: 60, pitch: 6 },
+    muscles: { primary: ['hipFlexors', 'quads', 'calves'], secondary: ['core', 'glutes', 'shoulders'] },
+    coaching: {
+      setup: [
+        'Stand tall with the feet hip-width apart, weight on the balls of the feet.',
+        'Elbows bent to about 90 degrees, hands relaxed.',
+      ],
+      steps: [
+        'Drive one knee up to hip height as you push off the other foot.',
+        'Put it straight back down under you and drive the other knee up.',
+        'Pump the arms in time with the legs, opposite arm to leg.',
+        'Stay tall through the trunk and land lightly on the balls of the feet.',
+      ],
+      cues: ['Knees to hip height', 'Fast feet', 'Stand tall'],
+      mistakes: [
+        'Leaning back to get the knees up, which loads the lower back.',
+        'Knees only coming halfway up as you tire.',
+        'Landing flat and heavy on the heels.',
+      ],
+      breathing: 'Quick, steady breaths. Do not hold your breath.',
+      tempo: 'As fast as you can while the knees still reach hip height.',
+    },
+    keys: {
+      left: HK_LEFT,
+      mid: HK_MID,
+      right: mirrorPose(HK_LEFT, 'Right knee up'),
+    },
+    seq: ['left', 'mid', 'right', 'mid'],
+    tempo: 0.14,
+    holds: { left: 0, mid: 0, right: 0 },
+  },
+
+  buttKicks: {
+    camera: { yaw: 70, pitch: 6 },
+    muscles: { primary: ['hamstrings', 'calves'], secondary: ['quads', 'glutes', 'core'] },
+    coaching: {
+      setup: [
+        'Stand tall with the feet hip-width apart, weight on the balls of the feet.',
+        'Elbows bent, hands relaxed.',
+      ],
+      steps: [
+        'Jog on the spot, flicking one heel up towards your backside.',
+        'Keep the knee pointing down at the floor rather than lifting it forward.',
+        'Swap legs quickly, landing lightly on the balls of the feet.',
+        'Swing the arms in time with the legs.',
+      ],
+      cues: ['Heels to the backside', 'Quick feet', 'Knees point down'],
+      mistakes: [
+        'Leaning forward from the hips instead of staying tall.',
+        'Letting the thigh swing forward so it becomes a slow high knee.',
+        'Heavy, flat-footed landings.',
+      ],
+      breathing: 'Quick, steady breaths.',
+      tempo: 'Quick and light, about three to four kicks a second.',
+    },
+    keys: {
+      left: BK_LEFT,
+      mid: HK_MID,
+      right: mirrorPose(BK_LEFT, 'Right heel up'),
+    },
+    seq: ['left', 'mid', 'right', 'mid'],
+    tempo: 0.13,
+    holds: { left: 0, mid: 0, right: 0 },
+  },
+
+  sprint: {
+    camera: { yaw: 75, pitch: 6 },
+    muscles: { primary: ['quads', 'glutes', 'hamstrings', 'calves'], secondary: ['hipFlexors', 'core', 'shoulders'] },
+    coaching: {
+      setup: [
+        'Pick a marker such as the mailbox, 20 to 40 metres away, on a flat, clear surface.',
+        'Start in a split stance, leaning forward slightly.',
+      ],
+      steps: [
+        'Drive off hard, pushing the ground back behind you.',
+        'Lift the knees and pump the arms from the shoulders, elbows bent at about 90 degrees.',
+        'Land on the balls of the feet under your hips, not out in front.',
+        'Slow down gradually past the marker, turn, and sprint back.',
+      ],
+      cues: ['Push the ground away', 'Arms drive, cheek to hip', 'Tall and relaxed'],
+      mistakes: [
+        'Reaching the foot out in front, which acts as a brake.',
+        'Swinging the arms across the body instead of front to back.',
+        'Tensing the face, neck and shoulders.',
+        'Stopping dead at the marker instead of slowing down over a few steps.',
+      ],
+      breathing: 'Breathe freely. Keep the jaw loose.',
+      tempo: 'Flat out for each run, then walk or jog while you recover.',
+    },
+    keys: {
+      left: SPRINT_LEFT,
+      flyL: SPRINT_FLY_L,
+      right: mirrorPose(SPRINT_LEFT, 'Right knee drive'),
+      flyR: mirrorPose(SPRINT_FLY_L, 'Flight'),
+    },
+    seq: ['left', 'flyL', 'right', 'flyR'],
+    tempo: 0.11,
+    holds: { left: 0, flyL: 0, right: 0, flyR: 0 },
+  },
+
+  shuttleRun: {
+    camera: { yaw: 90, pitch: 12 },
+    muscles: { primary: ['quads', 'glutes', 'calves'], secondary: ['hamstrings', 'adductors', 'core'] },
+    coaching: {
+      setup: [
+        'Mark two lines about 5 to 10 metres apart.',
+        'Start behind one line in a split stance, leaning forward slightly.',
+      ],
+      steps: [
+        'Run hard to the far line.',
+        'Shorten your steps as you arrive, then sink low with the hips back and knees bent.',
+        'Touch the line with the hand closest to it.',
+        'Turn and push off hard back the way you came, then repeat at the other line.',
+      ],
+      cues: ['Out, touch, back', 'Get low to turn', 'Push off the outside foot'],
+      mistakes: [
+        'Bending at the waist to reach the line instead of lowering the hips.',
+        'Turning on a straight leg, which strains the knee.',
+        'Overrunning the line and losing time slowing down.',
+      ],
+      breathing: 'Breathe freely, and take a big breath on each turn.',
+      tempo: 'Flat out for the set distance, then rest.',
+    },
+    keys: {
+      a1: stride('Run', -0.55, 1, 'R'),
+      a2: stride('Run', -0.05, 1, 'L'),
+      a3: stride('Run', 0.45, 1, 'R'),
+      touchA: {
+        label: 'Low touch',
+        pelvis: { pos: [-0.02, 0.5, 0.8], yaw: 90, pitch: 45 },
+        spine: { flex: 22, side: -6 },
+        neck: { flex: -12 },
+        legs: {
+          L: { foot: [0.02, 0.07, 0.5], toeOut: 15, knee: [1, 0, -0.2] },
+          R: { foot: [0.02, 0.07, 1.08], toeOut: 25, knee: [1, 0, 0.3] },
+        },
+        arms: {
+          L: { shoulder: { elev: 35, plane: 20 }, elbow: 45 },
+          R: { hand: [0.3, 0.03, 1.02], elbow: [0.2, 0.3, 1], palm: 'floor' },
+        },
+      },
+      b1: stride('Run back', 0.55, -1, 'L'),
+      b2: stride('Run back', 0.05, -1, 'R'),
+      b3: stride('Run back', -0.45, -1, 'L'),
+      touchB: {
+        label: 'Low touch',
+        pelvis: { pos: [-0.02, 0.5, -0.8], yaw: 90, pitch: 45 },
+        spine: { flex: 22, side: 6 },
+        neck: { flex: -12 },
+        legs: {
+          L: { foot: [0.02, 0.07, -1.08], toeOut: 25, knee: [1, 0, -0.3] },
+          R: { foot: [0.02, 0.07, -0.5], toeOut: 15, knee: [1, 0, 0.2] },
+        },
+        arms: {
+          L: { hand: [0.3, 0.03, -1.02], elbow: [0.2, 0.3, -1], palm: 'floor' },
+          R: { shoulder: { elev: 35, plane: 20 }, elbow: 45 },
+        },
+      },
+    },
+    seq: ['a1', 'a2', 'a3', 'touchA', 'b1', 'b2', 'b3', 'touchB'],
+    tempo: [0.22, 0.22, 0.3, 0.35, 0.22, 0.22, 0.3, 0.35],
+    holds: { a1: 0, a2: 0, a3: 0, b1: 0, b2: 0, b3: 0, touchA: 0.15, touchB: 0.15 },
+  },
+
+  lateralShuffle: {
+    camera: { yaw: 10, pitch: 8 },
+    muscles: { primary: ['quads', 'glutes', 'adductors'], secondary: ['calves', 'core', 'hamstrings'] },
+    coaching: {
+      setup: [
+        'Feet a bit wider than the shoulders, knees bent, hips back, chest up.',
+        'Weight on the balls of the feet, hands up in front of you.',
+      ],
+      steps: [
+        'Push off the trailing foot and step the leading foot out to the side.',
+        'Bring the trailing foot in behind it, without letting the feet touch or cross.',
+        'Stay at the same low height the whole way; do not bob up and down.',
+        'Shuffle a few steps one way, then change direction and come back.',
+      ],
+      cues: ['Stay low', 'Quick feet across', 'Feet never touch'],
+      mistakes: [
+        'Standing up tall between steps, which slows you down.',
+        'Clicking the heels together or crossing the feet, which puts you off balance.',
+        'Knees caving in as you push off.',
+      ],
+      breathing: 'Quick, steady breaths.',
+      tempo: 'Quick, light steps: about three shuffles a second.',
+    },
+    keys: SHUFFLE.keys,
+    seq: SHUFFLE.seq,
+    tempo: 0.11,
+    holds: Object.fromEntries(Object.keys(SHUFFLE.keys).map(k => [k, 0])),
+  },
+
+  // ======================================================== climbers
+  mountainClimber: {
+    camera: { yaw: 65, pitch: 12 },
+    muscles: { primary: ['core', 'hipFlexors'], secondary: ['shoulders', 'quads', 'chest', 'triceps'] },
+    coaching: {
+      setup: [
+        'Start in a straight-arm plank, hands under the shoulders, fingers spread.',
+        'Body in one line from head to heels, on the balls of the feet.',
+      ],
+      steps: [
+        'Drive one knee in towards the chest, keeping the hips low.',
+        'Switch legs: push that foot back as the other knee drives in.',
+        'Keep the shoulders over the hands and the hands planted.',
+        'Build up to a quick, even rhythm, like running on the spot.',
+      ],
+      cues: ['Hips low', 'Drive the knees in', 'Shoulders over hands'],
+      mistakes: [
+        'Hips bouncing up high, which takes the work off the trunk.',
+        'Shoulders drifting back behind the hands.',
+        'Short, shuffling steps where the knee barely moves.',
+      ],
+      breathing: 'Quick, steady breaths, in time with the legs.',
+      tempo: 'Quick: about two knee drives a second.',
+    },
+    keys: {
+      left: MC_LEFT,
+      mid: MC_MID,
+      right: mirrorPose(MC_LEFT, 'Right knee in'),
+    },
+    seq: ['left', 'mid', 'right', 'mid'],
+    tempo: 0.12,
+    holds: { left: 0.02, mid: 0, right: 0.02 },
+  },
+
+  mountainClimberCross: {
+    camera: { yaw: 40, pitch: 14 },
+    muscles: { primary: ['core', 'obliques', 'hipFlexors'], secondary: ['shoulders', 'chest', 'quads'] },
+    coaching: {
+      setup: [
+        'Start in a straight-arm plank, hands under the shoulders.',
+        'Body in one line from head to heels, on the balls of the feet.',
+      ],
+      steps: [
+        'Drive one knee across the body towards the opposite elbow.',
+        'Push it back to the plank as the other knee drives across.',
+        'Keep the hips low and the shoulders over the hands.',
+        'Build up to a steady, even rhythm.',
+      ],
+      cues: ['Knee to the opposite elbow', 'Hips low', 'Hands stay put'],
+      mistakes: [
+        'Hips rising high or swinging side to side.',
+        'Knee only coming to the middle, so the obliques miss out.',
+        'Shoulders drifting back behind the hands.',
+      ],
+      breathing: 'Breathe out as each knee drives across.',
+      tempo: 'Controlled but quick: about one knee drive a second.',
+    },
+    keys: {
+      left: MCX_LEFT,
+      mid: MC_MID,
+      right: mirrorPose(MCX_LEFT, 'Right knee across'),
+    },
+    seq: ['left', 'mid', 'right', 'mid'],
+    tempo: 0.2,
+    holds: { left: 0.08, mid: 0, right: 0.08 },
+  },
+
+  // ======================================================== skipping
+  ropeJumping: {
+    camera: { yaw: 50, pitch: 6 },
+    props: [{ type: 'rope', period: 0.46 }],
+    muscles: { primary: ['calves'], secondary: ['quads', 'shoulders', 'forearms', 'core'] },
+    coaching: {
+      setup: [
+        'Stand on the middle of the rope and pull the handles up: they should reach about the armpits.',
+        'Feet together, elbows close to your sides, hands just in front of the hips.',
+      ],
+      steps: [
+        'Turn the rope with small circles of the wrists, not big arm swings.',
+        'Hop just high enough for the rope to pass under: a few centimetres.',
+        'Land lightly on the balls of the feet with soft knees.',
+        'Keep a steady rhythm, eyes forward and chest up.',
+      ],
+      cues: ['Light on the toes', 'Wrists do the work', 'Small hops'],
+      mistakes: [
+        'Jumping too high, which tires you quickly and jars the knees.',
+        'Swinging from the shoulders with the arms out wide.',
+        'Landing on the heels.',
+        'Double bouncing between turns when you mean to single skip.',
+      ],
+      breathing: 'Relaxed, steady breathing through the nose and mouth.',
+      tempo: 'About two turns a second, one hop per turn.',
+    },
+    keys: {
+      air: {
+        label: 'Rope under',
+        pelvis: { pos: [0, 0.99, 0] },
+        legs: { L: { foot: [0.08, 0.15, 0.01], ankle: -15, toeOut: 4 }, R: 'mirror' },
+        arms: { L: { hand: [0.29, 1.03, 0.14], elbow: [0.3, 0, -1], wrist: -20 }, R: 'mirror' },
+      },
+      land: {
+        label: 'Land light',
+        pelvis: { pos: [0, 0.92, 0] },
+        legs: { L: { foot: [0.08, 0.12, 0.01], heel: 20, toeOut: 4 }, R: 'mirror' },
+        arms: { L: { hand: [0.29, 0.97, 0.15], elbow: [0.3, 0, -1], wrist: -10 }, R: 'mirror' },
+      },
+    },
+    seq: ['air', 'land'],
+    tempo: [0.23, 0.23],
+    holds: { air: 0, land: 0 },
+  },
+
+  doubleUnder: {
+    camera: { yaw: 50, pitch: 6 },
+    props: [{ type: 'rope', period: 0.5, turns: 2 }],
+    muscles: { primary: ['calves', 'quads'], secondary: ['shoulders', 'forearms', 'core', 'glutes'] },
+    coaching: {
+      setup: [
+        'Rope sized so the handles reach about the armpits.',
+        'Feet together, elbows by your sides, hands just in front of the hips.',
+        'Get comfortable with fast single skips first.',
+      ],
+      steps: [
+        'Do a few single skips to find the rhythm.',
+        'Jump a little higher, straight up with the legs almost straight.',
+        'Flick the wrists hard so the rope passes under twice before you land.',
+        'Land softly on the balls of the feet and go straight into the next jump.',
+      ],
+      cues: ['Two rope passes per jump', 'Fast wrists', 'Jump tall, not tucked'],
+      mistakes: [
+        'Piking or tucking the legs to make room, which wears you out.',
+        'Swinging the arms wide instead of turning with the wrists.',
+        'Landing on the heels or with straight knees.',
+      ],
+      breathing: 'Keep breathing: short, relaxed breaths.',
+      tempo: 'About two jumps a second, four rope turns.',
+    },
+    keys: {
+      rise: {
+        label: 'Rope under',
+        pelvis: { pos: [0, 1.02, 0] },
+        legs: { L: { foot: [0.08, 0.17, 0.01], ankle: -20, toeOut: 4 }, R: 'mirror' },
+        arms: { L: { hand: [0.3, 1.06, 0.13], elbow: [0.3, 0, -1], wrist: -25 }, R: 'mirror' },
+      },
+      peak: {
+        label: 'Top of the jump',
+        pelvis: { pos: [0, 1.12, 0] },
+        legs: { L: { foot: [0.08, 0.3, -0.01], knee: 'fwd', ankle: -15, toeOut: 4 }, R: 'mirror' },
+        arms: { L: { hand: [0.3, 1.15, 0.14], elbow: [0.3, 0, -1], wrist: -10 }, R: 'mirror' },
+      },
+      fall: {
+        label: 'Second pass',
+        pelvis: { pos: [0, 1.02, 0] },
+        legs: { L: { foot: [0.08, 0.17, 0.01], ankle: -20, toeOut: 4 }, R: 'mirror' },
+        arms: { L: { hand: [0.3, 1.06, 0.13], elbow: [0.3, 0, -1], wrist: -25 }, R: 'mirror' },
+      },
+      land: {
+        label: 'Land light',
+        pelvis: { pos: [0, 0.9, -0.01], pitch: 3 },
+        legs: { L: { foot: [0.08, 0.12, 0.01], heel: 20, toeOut: 4, knee: [0.1, 0, 1] }, R: 'mirror' },
+        arms: { L: { hand: [0.3, 0.95, 0.15], elbow: [0.3, 0, -1], wrist: -10 }, R: 'mirror' },
+      },
+    },
+    seq: ['rise', 'peak', 'fall', 'land'],
+    tempo: [0.125, 0.125, 0.08, 0.17],
+    holds: { rise: 0, peak: 0, fall: 0, land: 0 },
   },
 };

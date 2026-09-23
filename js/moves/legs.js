@@ -42,15 +42,24 @@ const goblet = (pos, pitch) =>
 const kbRack = (pos, pitch) =>
   ({ hand: onTrunk(pos, pitch, [-0.075, 0.4, 0.16]), elbow: [-0.3, -1, 0.4], wrist: -170 });
 
-// a barbell in the front rack: bar on the front of the shoulders, elbows up
-const barRack = (pos, pitch, elbow = [0.35, -0.7, 1]) =>
-  ({ L: { hand: onTrunk(pos, pitch, [0.23, 0.4, 0.15]), elbow, wrist: -65 }, R: 'mirror' });
+// a barbell in the thruster rack: bar on the front of the shoulders, elbows
+// a little in front of the bar, ready to press
+const barRack = (pos, pitch, elbow = [0.25, -1, 0.8]) =>
+  ({ L: { hand: onTrunk(pos, pitch, [0.23, 0.4, 0.13]), elbow, wrist: -65 }, R: 'mirror' });
 
 // arms hanging straight from the shoulders (dumbbells at the sides)
-function hang(pos, pitch) {
+// (x: how wide the hands sit, clear of the knees at the bottom)
+function hang(pos, pitch, x = 0.23) {
   const sh = onTrunk(pos, pitch, [0.19, 0.445, -0.035]);
-  return { L: { hand: [0.225, r3(sh[1] - 0.535), sh[2]], elbow: 'out' }, R: 'mirror' };
+  const drop = Math.sqrt(0.55 * 0.55 - (x - 0.19) ** 2);
+  return { L: { hand: [x, r3(sh[1] - drop), sh[2]], elbow: 'out' }, R: 'mirror' };
 }
+
+// a figure turned a quarter to its left (pelvis yaw 90, facing +X):
+// a point given in its own frame [left, up, forward] -> world
+const turn = ([x, y, z]) => [z, y, -x];
+// the near hand flat on a wall beside it (wall at z -0.62, face at -0.57)
+const WALL_HAND = [0.04, 1.3, -0.5];
 
 // the squat stance shared by most of the family
 const FOOT = [0.15, 0.07, 0.01];
@@ -300,14 +309,14 @@ export default {
         spine: { flex: 5 },
         neck: { flex: -16 },
         legs: stance([0.28, 0, 1]),
-        arms: { L: { shoulder: { elev: 50, plane: 172 }, elbow: 12 }, R: 'mirror' },
+        arms: { L: { shoulder: { elev: -45, plane: 0 }, elbow: 12 }, R: 'mirror' },
       },
       takeoff: {
         label: 'Drive',
         pelvis: { pos: [0, 0.995, 0.06], pitch: 4 },
         neck: { flex: -4 },
         legs: { L: { foot: onToes(FOOT, 40), toeOut: 15, knee: [0.25, 0, 1], heel: -40 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 140, plane: 15 }, elbow: 10 }, R: 'mirror' },
+        arms: { L: { shoulder: { elev: 122, plane: 10 }, elbow: 10 }, R: 'mirror' },
       },
       air: {
         label: 'In the air',
@@ -494,8 +503,8 @@ export default {
 
   // ------------------------------------------------------------ single-leg calf raises
   singleLegCalfRaise: {
-    camera: { yaw: 70, pitch: 2 },
-    props: [{ type: 'wall', z: 0.6 }],
+    camera: { yaw: 15, pitch: 4 },
+    props: [{ type: 'wall', z: -0.62 }],
     muscles: { primary: ['calves'], secondary: ['core', 'glutes'] },
     coaching: {
       setup: [
@@ -519,24 +528,26 @@ export default {
       breathing: 'Breathe out as you rise, breathe in as you lower.',
       tempo: 'About 1 to 2 seconds up, a 1 second pause, 3 seconds down.',
     },
+    // Side-on to the wall (turned to face +X) so the working calf is seen in
+    // profile from the front camera; the near hand rests on the wall.
     keys: {
       down: {
         label: 'Heel down',
-        pelvis: { pos: [0.035, 0.93, 0] },
+        pelvis: { pos: turn([0.035, 0.93, 0]), yaw: 90 },
         legs: {
-          L: { foot: [0.09, 0.07, 0], toeOut: 5, knee: 'fwd' },
+          L: { foot: turn([0.09, 0.07, 0]), toeOut: 5, knee: turn([0, 0, 1]) },
           R: { hip: { flex: 4, abd: -4 }, knee: 70, ankle: -20 },
         },
-        arms: { L: { hand: [0.24, 1.36, 0.45], elbow: [0.3, -1, -0.2], wrist: -50 }, R: 'mirror' },
+        arms: { L: { hand: WALL_HAND, elbow: 'down', wrist: -70 }, R: ARMS_DOWN.L },
       },
       up: {
         label: 'Up high',
-        pelvis: { pos: [0.035, 0.93 + toesUp(40)[0], toesUp(40)[1]] },
+        pelvis: { pos: turn([0.035, 0.93 + toesUp(40)[0], toesUp(40)[1]]), yaw: 90 },
         legs: {
-          L: { foot: onToes([0.09, 0.07, 0], 40), toeOut: 5, knee: 'fwd', heel: -40 },
+          L: { foot: turn(onToes([0.09, 0.07, 0], 40)), toeOut: 5, knee: turn([0, 0, 1]), heel: -40 },
           R: { hip: { flex: 4, abd: -4 }, knee: 70, ankle: -20 },
         },
-        arms: { L: { hand: [0.24, 1.36, 0.45], elbow: [0.3, -1, -0.2], wrist: -50 }, R: 'mirror' },
+        arms: { L: { hand: WALL_HAND, elbow: 'down', wrist: -70 }, R: ARMS_DOWN.L },
       },
     },
     seq: ['down', 'up'],
@@ -584,14 +595,14 @@ export default {
         spine: { flex: 4 },
         neck: { flex: -18 },
         legs: { L: { foot: [0.13, 0.07, 0.02], toeOut: 10, knee: [0.2, 0, 1] }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 55, plane: 172 }, elbow: 12 }, R: 'mirror' },
+        arms: { L: { shoulder: { elev: -45, plane: 0 }, elbow: 12 }, R: 'mirror' },
       },
       takeoff: {
         label: 'Take off',
         pelvis: { pos: [0, 0.99, 0.08], pitch: 8 },
         neck: { flex: -6 },
         legs: { L: { foot: onToes([0.13, 0.07, 0.02], 40), toeOut: 10, knee: [0.2, 0, 1], heel: -40 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 135, plane: 15 }, elbow: 10 }, R: 'mirror' },
+        arms: { L: { shoulder: { elev: 118, plane: 10 }, elbow: 10 }, R: 'mirror' },
       },
       flight: {
         label: 'Knees up',
@@ -729,7 +740,7 @@ export default {
       stand: {
         label: 'Front rack',
         legs: STAND,
-        arms: { L: { shoulder: { elev: 32, plane: 80 }, elbow: 14 }, R: kbRack(TOP, 0) },
+        arms: { L: { shoulder: { elev: 24, plane: 75 }, elbow: 14 }, R: kbRack(TOP, 0) },
       },
       bottom: {
         label: 'Bottom',
@@ -776,7 +787,7 @@ export default {
       rack: {
         label: 'Front rack',
         legs: STAND,
-        arms: { L: { shoulder: { elev: 38, plane: 85 }, elbow: 14 }, R: kbRack(TOP, 0) },
+        arms: { L: { shoulder: { elev: 28, plane: 80 }, elbow: 14 }, R: kbRack(TOP, 0) },
       },
       bottom: {
         label: 'Bottom',
@@ -790,13 +801,13 @@ export default {
         label: 'Drive',
         neck: { flex: -10 },
         legs: STAND,
-        arms: { L: { shoulder: { elev: 45, plane: 85 }, elbow: 14 },
+        arms: { L: { shoulder: { elev: 32, plane: 85 }, elbow: 14 },
           R: { hand: [-0.15, 1.6, 0.08], elbow: [-0.7, -1, 0.3], wrist: -170 } },
       },
       lockout: {
         label: 'Lockout',
         legs: STAND,
-        arms: { L: { shoulder: { elev: 45, plane: 85 }, elbow: 14 },
+        arms: { L: { shoulder: { elev: 32, plane: 85 }, elbow: 14 },
           R: { hand: [-0.2, 1.92, 0.0], elbow: 'out', wrist: -170 } },
       },
     },
@@ -845,7 +856,7 @@ export default {
         spine: { flex: 2 },
         neck: { flex: -10 },
         legs: DEEP,
-        arms: barRack([0, 0.44, -0.14], 21, [0.35, -0.4, 1]),
+        arms: barRack([0, 0.44, -0.14], 21, [0.3, -1, 0.15]),
       },
       drive: {
         label: 'Drive',
@@ -904,7 +915,7 @@ export default {
         spine: { flex: 4 },
         neck: { flex: -14 },
         legs: DEEP,
-        arms: hang([0, 0.46, -0.18], 30),
+        arms: hang([0, 0.46, -0.18], 30, 0.31),
       },
     },
     seq: ['stand', 'bottom'],

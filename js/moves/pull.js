@@ -6,6 +6,32 @@ const FEET = { L: { foot: [0.12, 0.07, 0], toeOut: 8 }, R: 'mirror' };
 const NOTES = { setup: [], steps: [], cues: [], mistakes: [], breathing: '', tempo: '' };
 const DB2 = [{ type: 'dumbbell', hand: 'L' }, { type: 'dumbbell', hand: 'R' }];
 
+// Walking on the spot for the carries: each foot lifts and sets down on its
+// own mark (so nothing slides), the pelvis shifts a little over the standing
+// leg, and any free arm swings against the opposite leg. `arms(phase)` gives
+// the arms for 'L' (left foot up), 'R' (right foot up) and 'both'.
+function walk(arms, extra = {}) {
+  const foot = (x) => ({ foot: [x, 0.07, 0], toeOut: 6 });
+  const lift = (x) => ({ foot: [x, 0.19, -0.04], knee: 'fwd', toeOut: 6, ankle: -8 });
+  return {
+    both: { label: 'Step', ...extra, pelvis: { pos: [0, 0.925, 0] },
+      legs: { L: foot(0.11), R: foot(-0.11) }, arms: arms('both') },
+    liftL: { label: 'Left step', ...extra, pelvis: { pos: [-0.025, 0.93, 0.005] },
+      legs: { L: lift(0.11), R: foot(-0.11) }, arms: arms('L') },
+    liftR: { label: 'Right step', ...extra, pelvis: { pos: [0.025, 0.93, 0.005] },
+      legs: { L: foot(0.11), R: lift(-0.11) }, arms: arms('R') },
+  };
+}
+const WALK_SEQ = ['both', 'liftL', 'both', 'liftR'];
+const WALK_TEMPO = 0.3;
+const WALK_HOLDS = { both: 0, liftL: 0.02, liftR: 0.02 };
+// a free arm swinging against the legs: forward when the other foot is up
+const swing = (side, phase) => {
+  if (phase === 'both') return { shoulder: { elev: 6, plane: 90 }, elbow: 12 };
+  const fwd = (side === 'L') === (phase === 'R');
+  return fwd ? { shoulder: { elev: 22, plane: 8 }, elbow: 22 } : { shoulder: { elev: 16, plane: 172 }, elbow: 8 };
+};
+
 export default {
   dbCurl: {
     camera: { yaw: 40 },
@@ -173,13 +199,13 @@ export default {
       down: { label: 'Face down', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, neck: { flex: 10 },
         legs: { L: { hip: { flex: 0, abd: 4 }, knee: 0, ankle: -45 }, R: 'mirror' },
         arms: { L: { shoulder: { elev: 170, plane: 12 }, elbow: 5 }, R: 'mirror' } },
-      lift: { label: 'Lift', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -18 }, neck: { flex: 8 },
+      lift: { label: 'Lift', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -22 }, neck: { flex: 8 },
         legs: { L: { hip: { flex: -14, abd: 4 }, knee: 0, ankle: -45 }, R: 'mirror' },
         arms: { L: { shoulder: { elev: 170, plane: 12 }, elbow: 5 }, R: 'mirror' } },
-      pull: { label: 'Elbows back', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -20 }, neck: { flex: 8 },
+      pull: { label: 'Elbows back', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -23 }, neck: { flex: 8 },
         legs: { L: { hip: { flex: -14, abd: 4 }, knee: 0, ankle: -45 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 55, plane: 115, twist: -60 }, elbow: 100 }, R: 'mirror' } },
-      sweep: { label: 'Sweep', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -19 }, neck: { flex: 8 },
+        arms: { L: { shoulder: { elev: 55, plane: 115, twist: -38 }, elbow: 100 }, R: 'mirror' } },
+      sweep: { label: 'Sweep', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -23 }, neck: { flex: 8 },
         legs: { L: { hip: { flex: -14, abd: 4 }, knee: 0, ankle: -45 }, R: 'mirror' },
         arms: { L: { shoulder: { elev: 112, plane: 108, twist: -60 }, elbow: 30 }, R: 'mirror' } },
     },
@@ -191,14 +217,104 @@ export default {
     keys: {
       Y: { label: 'Y', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -10 }, neck: { flex: 8 },
         legs: { L: { hip: { flex: 0, abd: 4 }, knee: 0, ankle: -45 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 150, plane: 45, twist: 90 }, elbow: 3 }, R: 'mirror' } },
+        arms: { L: { shoulder: { elev: 145, plane: 102, twist: 90 }, elbow: 3 }, R: 'mirror' } },
       T: { label: 'T', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -10 }, neck: { flex: 8 },
         legs: { L: { hip: { flex: 0, abd: 4 }, knee: 0, ankle: -45 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 90, plane: 118, twist: 90 }, elbow: 3 }, R: 'mirror' } },
+        arms: { L: { shoulder: { elev: 90, plane: 108, twist: 90 }, elbow: 3 }, R: 'mirror' } },
       W: { label: 'W', pelvis: { pos: [0, 'auto', 0], pitch: 90 }, spine: { flex: -10 }, neck: { flex: 8 },
         legs: { L: { hip: { flex: 0, abd: 4 }, knee: 0, ankle: -45 }, R: 'mirror' },
-        arms: { L: { shoulder: { elev: 55, plane: 118, twist: -60 }, elbow: 100 }, R: 'mirror' } },
+        arms: { L: { shoulder: { elev: 55, plane: 118, twist: -38 }, elbow: 100 }, R: 'mirror' } },
     },
     seq: ['Y', 'T', 'W'], tempo: [1.2, 1.2, 1.4], holds: { Y: 0.6, T: 0.6, W: 0.6 },
+  },
+  kbFarmersWalk: {
+    camera: { yaw: 30 },
+    props: [{ type: 'kettlebell', hand: 'R' }],
+    coaching: NOTES,
+    keys: walk((ph) => ({ L: swing('L', ph), R: { shoulder: { elev: 11, plane: 90 }, elbow: 2 } })),
+    seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
+  },
+  farmersWalk: {
+    camera: { yaw: 30 },
+    props: [{ type: 'dumbbell', hand: 'R' }],
+    coaching: NOTES,
+    keys: walk((ph) => ({ L: swing('L', ph), R: { shoulder: { elev: 8, plane: 90 }, elbow: 2 } })),
+    seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
+  },
+  dbFarmersWalk: {
+    camera: { yaw: 30 },
+    props: DB2,
+    coaching: NOTES,
+    keys: walk(() => ({ L: { shoulder: { elev: 8, plane: 90 }, elbow: 2 }, R: 'mirror' })),
+    seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
+  },
+  dbOverheadCarry: {
+    camera: { yaw: 30 },
+    props: DB2,
+    coaching: NOTES,
+    keys: walk(() => ({ L: { hand: [0.22, 1.92, -0.02], elbow: 'out' }, R: 'mirror' })),
+    seq: WALK_SEQ, tempo: WALK_TEMPO, holds: WALK_HOLDS,
+  },
+  kbHighPull: {
+    camera: { yaw: 60 },
+    props: [{ type: 'kettlebell', hand: 'both' }],
+    coaching: NOTES,
+    keys: {
+      hinge: { label: 'Hinge', pelvis: { pos: [0, 0.8, -0.2], pitch: 50 }, neck: { flex: -14 },
+        legs: { L: { foot: [0.17, 0.07, 0.02], toeOut: 12, knee: [0.3, 0, 1] }, R: 'mirror' },
+        arms: { L: { hand: [0.045, 0.575, 0.11], elbow: 'out' }, R: 'mirror' } },
+      drive: { label: 'Hips through', pelvis: { pos: [0, 0.925, 0] }, neck: { flex: 0 },
+        legs: { L: { foot: [0.17, 0.07, 0.02], toeOut: 12, knee: [0.3, 0, 1] }, R: 'mirror' },
+        arms: { L: { hand: [0.065, 0.88, 0.15], elbow: 'out' }, R: 'mirror' } },
+      pull: { label: 'Elbows high', pelvis: { pos: [0, 0.93, 0] }, spine: { flex: -2 },
+        legs: { L: { foot: [0.17, 0.07, 0.02], toeOut: 12, knee: [0.3, 0, 1] }, R: 'mirror' },
+        arms: { L: { hand: [0.09, 1.2, 0.2], elbow: [1, 0.8, -0.3] }, R: 'mirror' } },
+    },
+    seq: ['hinge', 'drive', 'pull', 'drive'], tempo: [0.5, 0.35, 0.55, 0.6], holds: { hinge: 0.25, drive: 0, pull: 0.2 },
+  },
+  ringHang: {
+    camera: { yaw: 40, pitch: 4 },
+    props: [{ type: 'rings', top: 2.9 }],
+    coaching: NOTES,
+    keys: {
+      a: { label: 'Hang', pelvis: { pos: [0, 1.35, 0.035], pitch: -2 },
+        legs: { L: { hip: { flex: 6 }, knee: 8, ankle: -20 }, R: 'mirror' },
+        arms: { L: { hand: [0.24, 2.35, 0], elbow: 'out' }, R: 'mirror' } },
+      b: { label: 'Breathe', pelvis: { pos: [0, 1.355, 0.035], pitch: -2 }, spine: { flex: -1.5 },
+        legs: { L: { hip: { flex: 7 }, knee: 9, ankle: -20 }, R: 'mirror' },
+        arms: { L: { hand: [0.24, 2.35, 0], elbow: 'out' }, R: 'mirror' } },
+    },
+    seq: ['a', 'b'], tempo: [1.8, 2.2], holds: { a: 0.3, b: 0.4 },
+  },
+  ringChinup: {
+    camera: { yaw: 50, pitch: 4 },
+    props: [{ type: 'rings', top: 2.9 }],
+    coaching: NOTES,
+    keys: {
+      hang: { label: 'Long arms', pelvis: { pos: [0, 1.35, 0.035], pitch: -2 },
+        legs: { L: { hip: { flex: 8 }, knee: 25, ankle: -20 }, R: 'mirror' },
+        arms: { L: { hand: [0.24, 2.35, 0], elbow: [0.3, -0.3, 1] }, R: 'mirror' } },
+      half: { label: 'Halfway', pelvis: { pos: [0, 1.6, 0.03], pitch: -6 },
+        legs: { L: { hip: { flex: 10 }, knee: 28, ankle: -20 }, R: 'mirror' },
+        arms: { L: { hand: [0.24, 2.35, 0], elbow: [0.15, -1, 0.8] }, R: 'mirror' } },
+      top: { label: 'Chest to rings', pelvis: { pos: [0, 1.86, 0.03], pitch: -12 },
+        legs: { L: { hip: { flex: 12 }, knee: 30, ankle: -20 }, R: 'mirror' },
+        arms: { L: { hand: [0.24, 2.35, 0], elbow: [0.15, -1, 0.7] }, R: 'mirror' } },
+    },
+    seq: ['hang', 'half', 'top', 'half'], tempo: [0.6, 0.6, 1.0, 1.0], holds: { hang: 0.4, half: 0, top: 0.35 },
+  },
+  ringRow: {
+    camera: { yaw: 70, pitch: 6 },
+    props: [{ type: 'rings', top: 2.4 }],
+    coaching: NOTES,
+    keys: {
+      hang: { label: 'Arms long', pelvis: { pos: [0, 0.636, -0.051], pitch: -50 },
+        legs: { L: { foot: [0.1, 0.09, 0.6], knee: [0, 1, 0.6], ankle: 0 }, R: 'mirror' },
+        arms: { L: { hand: [0.22, 1.16, 0.06], elbow: 'down' }, R: 'mirror' } },
+      top: { label: 'Chest to rings', pelvis: { pos: [0, 0.803, 0.137], pitch: -33 },
+        legs: { L: { foot: [0.1, 0.09, 0.6], knee: [0, 1, 0.8], ankle: 0 }, R: 'mirror' },
+        arms: { L: { hand: [0.22, 1.16, 0.06], elbow: [0.4, -0.6, -0.8] }, R: 'mirror' } },
+    },
+    seq: ['hang', 'top'], tempo: [1.0, 1.6], holds: { top: 0.4, hang: 0.3 },
   },
 };
