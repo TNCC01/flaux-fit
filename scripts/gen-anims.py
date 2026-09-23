@@ -2,17 +2,23 @@
 """Generate the animated exercise demo SVGs for FIT.
 
 Each exercise declares two poses, start and end, as joint coordinates.
-They are interpolated into a ping-pong flipbook and baked to a single
-self-animating file at img/exercises/<base>.svg (CSS keyframes, no JS),
-which the app drops straight into an <img>.
+The renderer rigs the figure (limbs rotate at their joints, planted feet
+and hands stay on the floor), cropped to the full range of motion, and
+bakes pose0 -> pose1 -> pose0 into CSS transform keyframes in a single
+self-animating file at img/exercises/<base>.svg (no JS, no SMIL), which
+the app drops straight into an <img>. See the render section for how.
 
-Figures are android-styled in the app palette: teal limbs with a dark
-core, amber equipment, the working muscle group lit in rose (see ACTIVE),
-transparent background.
+Figures are android-styled in the app palette with a 2.5D finish: shaded
+teal-edged limbs, a lit helmet, far-side limbs darker and behind the
+torso, amber equipment, the working muscle group lit in rose (see
+ACTIVE), and a contact shadow on a floor plane.
 
 The two poses of an exercise MUST use the same number of arm chains, leg
-chains and decorations, or the flipbook frames won't line up, the build
-fails loudly with the offending exercise name if they don't.
+chains and decorations, or the parts won't pair up, the build fails
+loudly with the offending exercise name if they don't.
+
+Preview a few without touching img/:
+  python3 scripts/gen-anims.py --preview <dir> pushup kbSwing ...
 
 Re-run after editing poses:  python3 scripts/gen-anims.py
 """
@@ -32,6 +38,8 @@ DARK = '#0c2020'        # android body-panel fill
 VISOR = '#a7f3ee'       # helmet visor slit
 ROSE = '#f43f5e'        # active muscle-group glow
 ROSE_DIM = '#8f2a3e'
+TEAL_FAR = '#0b6f66'    # far-side limbs: clearly behind the near ones
+ROSE_FAR = '#7a2436'
 GLOW_W = 8              # extra width of the glow edge around a limb
 
 # ------------------------------------------------------- part primitives
@@ -66,35 +74,32 @@ def box(x, y, w, h):
 _CTX = {'active': set(), 'variant': 'a'}
 
 def _limb(pts, role, far=False):
+    """A jointed chain. The renderer rigs it, so each joint rotates."""
     active = role in _CTX['active']
-    glow = (ROSE_DIM if far else ROSE) if active else (TEAL_DIM if far else TEAL)
+    glow = (ROSE_FAR if far else ROSE) if active else (TEAL_FAR if far else TEAL)
     w = 13 if _CTX['variant'] == 'a' else 11
     if role == 'torso':
         w += 4
-    return [line(pts, glow, w + GLOW_W, 0.95), line(pts, DARK, w)]
+    if far:
+        w -= 2
+    return {'t': 'chain', 'pts': [tuple(map(float, p)) for p in pts],
+            'glow': glow, 'w': w, 'far': far, 'role': role}
 
 def figure(head, neck, hip, arms, legs, head_r=HEAD_R):
     """arms/legs: list of point-chains starting at the shoulder / hip.
-    The first chain is the far-side limb (dimmed), last is near side."""
-    out = []
-    n = len(arms)
-    for i, a in enumerate(arms):
-        out += _limb([neck] + list(a), 'arms', far=(n > 1 and i == 0))
-    n = len(legs)
-    for i, l in enumerate(legs):
-        out += _limb([hip] + list(l), 'legs', far=(n > 1 and i == 0))
-    out += _limb([neck, hip], 'torso')
-    # visor helmet
-    hx, hy = head
+    The first chain is the far-side limb (darker, drawn behind the torso),
+    the last is the near side (bright, drawn in front)."""
+    far, near = [], []
+    for chains, root, role in ((legs, hip, 'legs'), (arms, neck, 'arms')):
+        n = len(chains)
+        for i, c in enumerate(chains):
+            is_far = n > 1 and i == 0
+            (far if is_far else near).append(_limb([root] + list(c), role, is_far))
     active = 'torso' in _CTX['active']
-    out.append(circle(head, head_r + 4, ROSE if active else TEAL, True, 0, 0.95))
-    out.append(circle(head, head_r, DARK))
-    # ponytail on the 'b' (feminine) variant
-    if _CTX['variant'] == 'b':
-        out.append(line([(hx - 2, hy - head_r - 2), (hx - head_r - 6, hy + 2),
-                         (hx - head_r - 2, hy + head_r + 6)], TEAL, 5))
-    out.append(line([(hx - head_r * 0.62, hy - 3), (hx + head_r * 0.62, hy - 3)], VISOR, 5))
-    return out
+    head_part = {'t': 'head', 'pts': [tuple(map(float, neck)), tuple(map(float, head))],
+                 'r': float(head_r), 'glow': ROSE if active else TEAL,
+                 'pony': _CTX['variant'] == 'b'}
+    return far + [_limb([hip, neck], 'torso'), head_part] + near
 
 def kb(hand, r=11):
     """Kettlebell hanging just below the hand point."""
@@ -123,7 +128,25 @@ def rings(hands):
         out.append(circle((hx, hy), 10, AMBER, fill=False, w=5))
     return out
 
-# --------------------------------------------------- render + interpolate
+# --------------------------------------------------------------- render
+# Each exercise is two poses. The renderer rigs every limb chain so each
+# segment rotates about its joint, and bakes pose0 -> pose1 -> pose0 into
+# CSS transform keyframes: the browser tweens every frame, limbs keep their
+# length and swing in arcs, and CSS animation plays inside an <img> on
+# every browser. Equipment rides along with the hand (or foot) it is held
+# by. Anything that bends in a way transforms can't express (a skipping
+# rope) falls back to a small flipbook on the same clock.
+#
+# The 2.5D look: limbs are shaded tubes, the head is a lit sphere, far
+# limbs sit darker and behind the torso, and a contact shadow on a floor
+# plane shrinks when the figure leaves the ground.
+import math
+
+DUR = 2.4                        # seconds per rep, out and back
+EASE = 'cubic-bezier(.45,0,.55,1)'
+PAD = 16                         # frame padding around the full motion
+FLIP_FRAMES = 24
+
 def flatten(parts):
     out = []
     for chunk in parts:
@@ -133,7 +156,6 @@ def flatten(parts):
 def resample(pts, n=12):
     if len(pts) == 1:
         return pts * n
-    import math
     segs = [math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
     total = sum(segs) or 1.0
     out = []
@@ -149,158 +171,567 @@ def resample(pts, n=12):
             acc += s
     return out
 
-def lerp_part(a, b, t):
-    if a['t'] != b['t']:
-        raise ValueError('part type mismatch')
-    p = dict(a)
-    if a['t'] == 'path':
-        pa, pb = resample(a['pts']), resample(b['pts'])
-        p['pts'] = [(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)
-                    for (x0, y0), (x1, y1) in zip(pa, pb)]
-    elif a['t'] == 'circle':
-        p['c'] = (a['c'][0] + (b['c'][0] - a['c'][0]) * t,
-                  a['c'][1] + (b['c'][1] - a['c'][1]) * t)
-        p['r'] = a['r'] + (b['r'] - a['r']) * t
-    elif a['t'] == 'rect':
-        for k in 'xywh':
-            p[k] = a[k] + (b[k] - a[k]) * t
-    return p
+def _lerp(a, b, t):
+    return a + (b - a) * t
 
-def emit(p):
+def _lerp_pt(p, q, t):
+    return (_lerp(p[0], q[0], t), _lerp(p[1], q[1], t))
+
+def _bezier_ease(u, x1=.45, y1=0.0, x2=.55, y2=1.0):
+    """CSS cubic-bezier timing, so flipbook frames stay on the CSS clock."""
+    def bez(s, a, b):
+        return 3 * a * s * (1 - s) ** 2 + 3 * b * s * s * (1 - s) + s ** 3
+    lo, hi = 0.0, 1.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if bez(mid, x1, x2) < u:
+            lo = mid
+        else:
+            hi = mid
+    return bez((lo + hi) / 2, y1, y2)
+
+def _pose_t(u):
+    """Cycle position 0..1 -> pose blend: move 40%, hold, back 40%, hold."""
+    if u < 0.4:
+        return _bezier_ease(u / 0.4)
+    if u < 0.5:
+        return 1.0
+    if u < 0.9:
+        return 1.0 - _bezier_ease((u - 0.5) / 0.4)
+    return 0.0
+
+# ------------------------------------------------------------ rigging
+# A chain moves one of three ways, picked per chain:
+#   rot   each segment rotates about its joint (arcs, lengths kept)
+#   ik    a foot or hand planted on the floor in both poses slides along
+#         it while the joint between bends (two-bone IK), so nothing
+#         swings through the floor
+#   lerp  joints move straight between the poses; for limbs swinging
+#         towards or away from the camera, where a flat rotation would
+#         flip the limb out sideways. The segment shortens, the joint
+#         caps keep it solid, so it reads as foreshortening.
+# rot needs two keyframes; ik and lerp are sampled into several.
+def _split_longest(pts):
+    i = max(range(len(pts) - 1), key=lambda k: math.dist(pts[k], pts[k + 1]))
+    return pts[:i + 1] + [_lerp_pt(pts[i], pts[i + 1], 0.5)] + pts[i + 1:]
+
+def _angle(p, q):
+    return math.degrees(math.atan2(q[1] - p[1], q[0] - p[0]))
+
+def _wrap(a):
+    return (a + 180) % 360 - 180
+
+def _bend(p):
+    """Which way a two-segment chain bends: +1 / -1 (0 if straight)."""
+    (ax, ay), (bx, by), (cx, cy) = p
+    z = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+    return (z > 0) - (z < 0)
+
+def rig(pts0, pts1, allow_ik=True):
+    """Two poses of a chain -> root + per-segment (L0, L1, local a0, a1)."""
+    p0, p1 = list(pts0), list(pts1)
+    while len(p0) < len(p1):
+        p0 = _split_longest(p0)
+    while len(p1) < len(p0):
+        p1 = _split_longest(p1)
+    segs, prev0, prev1 = [], 0.0, 0.0
+    for i in range(len(p0) - 1):
+        w0, w1 = _angle(p0[i], p0[i + 1]), _angle(p1[i], p1[i + 1])
+        a0 = _wrap(w0 - prev0)
+        a1 = a0 + _wrap(_wrap(w1 - prev1) - a0)      # shortest way round
+        segs.append((math.dist(p0[i], p0[i + 1]), math.dist(p1[i], p1[i + 1]), a0, a1))
+        prev0, prev1 = w0, w1
+    mode = 'rot'
+    on_floor = lambda p: abs(p[-1][1] - GY) < 12
+    if (allow_ik and len(p0) == 3 and on_floor(p0) and on_floor(p1)
+            and p0 != p1 and _bend(p0) == _bend(p1) != 0):
+        mode = 'ik'
+    elif any(abs(a1 - a0) > 150 for _, _, a0, a1 in segs):
+        mode = 'lerp'
+    r = {'root': (p0[0], p1[0]), 'segs': segs, 'p': (p0, p1), 'mode': mode,
+         'parent': None}
+    if mode == 'rot' and allow_ik and _sink(r) > 6:
+        # a limb rotating through the floor: straight lines sink less
+        r['mode'] = 'lerp'
+        if _sink(r) >= _sink(dict(r, mode='rot')):
+            r['mode'] = 'rot'
+    return r
+
+def _sink(r):
+    """How far a chain dips below the floor during the move."""
+    return max(max(y for _, y in joints(r, k / 10)) for k in range(11)) - max(
+        max(y for _, y in r['p'][0]), max(y for _, y in r['p'][1]), GY)
+
+def _root_at(r, t):
+    if r['parent']:
+        pr, m = r['parent']
+        return joints(pr, t)[m]
+    return _lerp_pt(r['root'][0], r['root'][1], t)
+
+def joints(r, t):
+    """World joint positions of a rigged chain at blend t."""
+    x, y = _root_at(r, t)
+    p0, p1 = r['p']
+    if r['mode'] == 'lerp':
+        (ox0, oy0), (ox1, oy1) = p0[0], p1[0]
+        return [(x + _lerp(a[0] - ox0, b[0] - ox1, t), y + _lerp(a[1] - oy0, b[1] - oy1, t))
+                for a, b in zip(p0, p1)]
+    if r['mode'] == 'ik':
+        (L10, L11, *_), (L20, L21, *_) = r['segs']
+        L1, L2 = _lerp(L10, L11, t), _lerp(L20, L21, t)
+        tx, ty = _lerp_pt(p0[2], p1[2], t)
+        d = min(max(math.dist((x, y), (tx, ty)), abs(L1 - L2) + 1e-3), L1 + L2 - 1e-3)
+        base = math.atan2(ty - y, tx - x)
+        a = math.acos(max(-1.0, min(1.0, (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d))))
+        a1 = base - _bend(p0) * a
+        kx, ky = x + L1 * math.cos(a1), y + L1 * math.sin(a1)
+        a2 = math.atan2(ty - ky, tx - kx)
+        return [(x, y), (kx, ky), (kx + L2 * math.cos(a2), ky + L2 * math.sin(a2))]
+    pts, ang = [(x, y)], 0.0
+    for L0, L1, a0, a1 in r['segs']:
+        ang += _lerp(a0, a1, t)
+        L = _lerp(L0, L1, t)
+        x += L * math.cos(math.radians(ang))
+        y += L * math.sin(math.radians(ang))
+        pts.append((x, y))
+    return pts
+
+def end_angle(r, t):
+    """World angle of a chain's last segment."""
+    if r['mode'] == 'rot':
+        return sum(_lerp(a0, a1, t) for _, _, a0, a1 in r['segs'])
+    pts = joints(r, t)
+    return _angle(pts[-2], pts[-1])
+
+# sample points in the cycle for ik / lerp chains: 8 steps each way
+_STOPS = ([k * 0.05 for k in range(9)] + [0.5 + k * 0.05 for k in range(9)] + [1.0])
+
+# ----------------------------------------------------- rigid equipment
+def _shape_pts(p):
     if p['t'] == 'path':
-        d = 'M' + ' L'.join(f'{x:.1f},{y:.1f}' for x, y in p['pts'])
-        return (f'<path d="{d}" fill="none" stroke="{p["color"]}" stroke-width="{p["w"]}" '
-                f'stroke-linecap="round" stroke-linejoin="round" opacity="{p["op"]}"/>')
+        return list(p['pts'])
+    if p['t'] == 'circle':
+        return [p['c']]
+    return [(p['x'], p['y']), (p['x'] + p['w'], p['y'] + p['h'])]
+
+def _centroid(pts):
+    return (sum(x for x, _ in pts) / len(pts), sum(y for _, y in pts) / len(pts))
+
+def rigid_fit(a, b):
+    """(c0, c1, dtheta, scale) mapping part a onto b, or None if it bends."""
+    if a['t'] == 'circle':
+        return (a['c'], b['c'], 0.0, b['r'] / a['r'] if a['r'] else 1.0)
+    if a['t'] == 'rect':
+        if (a['w'], a['h']) != (b['w'], b['h']):
+            return None
+        return (_centroid(_shape_pts(a)), _centroid(_shape_pts(b)), 0.0, 1.0)
+    n = max(len(a['pts']), len(b['pts']))
+    pa = a['pts'] if len(a['pts']) == n else resample(a['pts'], n)
+    pb = b['pts'] if len(b['pts']) == n else resample(b['pts'], n)
+    ca, cb = _centroid(pa), _centroid(pb)
+    qa = [(x - ca[0], y - ca[1]) for x, y in pa]
+    qb = [(x - cb[0], y - cb[1]) for x, y in pb]
+    th = math.atan2(sum(x0 * y1 - y0 * x1 for (x0, y0), (x1, y1) in zip(qa, qb)),
+                    sum(x0 * x1 + y0 * y1 for (x0, y0), (x1, y1) in zip(qa, qb)))
+    c, s = math.cos(th), math.sin(th)
+    err = max(math.dist((x * c - y * s, x * s + y * c), q) for (x, y), q in zip(qa, qb))
+    if err > 2.5:
+        return None
+    return (ca, cb, math.degrees(th), 1.0)
+
+# ------------------------------------------------------------ emitting
+class _Anim:
+    """Collects keyframes; identical motions share one CSS rule."""
+    def __init__(self):
+        self.rules, self.seen = [], {}
+
+    def _rule(self, key, body, timing):
+        if key not in self.seen:
+            k = f'm{len(self.seen)}'
+            self.seen[key] = k
+            self.rules.append(f'@keyframes {k}{{{body}}}.{k}{{animation:{k} {DUR}s {timing} infinite}}')
+        return f' class="{self.seen[key]}"'
+
+    def attr(self, f0, f1, extra0='', extra1=''):
+        """pose0 -> pose1 -> pose0; static transforms become attributes."""
+        if f0 == f1 and extra0 == extra1:
+            if not f0:
+                return extra0 and f' style="{extra0}"'
+            return f' transform="{_svg_tf(f0)}"' + (extra0 and f' style="{extra0}"')
+        s0 = f'transform:{_css_tf(f0)};{extra0}'
+        s1 = f'transform:{_css_tf(f1)};{extra1}'
+        return self._rule((f0, f1, extra0, extra1),
+                          f'0%,90%,100%{{{s0}}}40%,50%{{{s1}}}', EASE)
+
+    def stops(self, frames):
+        """Sampled motion: [(cycle 0..1, transform)], linear between."""
+        if all(f == frames[0][1] for _, f in frames):
+            return self.attr(frames[0][1], frames[0][1])
+        body = ''.join(f'{_num(100 * u)}%{{transform:{_css_tf(f)}}}' for u, f in frames)
+        return self._rule(tuple(frames), body, 'linear')
+
+def _num(v):
+    s = f'{v:.2f}'.rstrip('0').rstrip('.')
+    return '0' if s in ('-0', '') else s
+
+# transforms are tuples: ('t', x, y) translate, ('r', deg), ('s', sx, sy)
+def _svg_tf(f):
+    out = []
+    for op in f:
+        if op[0] == 't':
+            out.append(f'translate({_num(op[1])},{_num(op[2])})')
+        elif op[0] == 'r':
+            out.append(f'rotate({_num(op[1])})')
+        else:
+            out.append(f'scale({_num(op[1])},{_num(op[2])})')
+    return ' '.join(out)
+
+def _css_tf(f):
+    out = []
+    for op in f:
+        if op[0] == 't':
+            out.append(f'translate({_num(op[1])}px,{_num(op[2])}px)')
+        elif op[0] == 'r':
+            out.append(f'rotate({_num(op[1])}deg)')
+        else:
+            out.append(f'scale({_num(op[1])},{_num(op[2])})')
+    return ' '.join(out) or 'none'
+
+def _stroke(d, color, w, op=1.0, cap='round'):
+    o = '' if op == 1.0 else f' opacity="{op}"'
+    return (f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{_num(w)}" '
+            f'stroke-linecap="{cap}" stroke-linejoin="round"{o}/>')
+
+def _emit_local(p, c):
+    """A part drawn relative to point c."""
+    if p['t'] == 'path':
+        d = 'M' + ' L'.join(f'{_num(x - c[0])},{_num(y - c[1])}' for x, y in p['pts'])
+        return _stroke(d, p['color'], p['w'], p['op'])
     if p['t'] == 'circle':
         f = p['color'] if p['fill'] else 'none'
         s = 'none' if p['fill'] else p['color']
-        return (f'<circle cx="{p["c"][0]:.1f}" cy="{p["c"][1]:.1f}" r="{p["r"]:.1f}" '
-                f'fill="{f}" stroke="{s}" stroke-width="{p["w"]}" opacity="{p["op"]}"/>')
-    if p['t'] == 'rect':
-        return (f'<rect x="{p["x"]:.1f}" y="{p["y"]:.1f}" width="{p["w"]:.1f}" '
-                f'height="{p["h"]:.1f}" rx="6" fill="none" stroke="{p["color"]}" '
-                f'stroke-width="{p["sw"]}"/>')
-    raise ValueError(p['t'])
-
-def smoothstep(u):
-    return u * u * (3 - 2 * u)
-
-def animated_svg(parts0, parts1, dur=2.4):
-    """Interpolate pose0 -> pose1 -> pose0 into a baked flipbook SVG."""
-    if len(parts0) != len(parts1):
-        raise ValueError(f'part count mismatch {len(parts0)} vs {len(parts1)}')
-    static = [i for i, (a, b) in enumerate(zip(parts0, parts1)) if a == b]
-    moving = [i for i in range(len(parts0)) if i not in static]
-
-    HALF = 9
-    fwd = [smoothstep(k / (HALF - 1)) for k in range(HALF)]
-    ts = fwd + fwd[-2:0:-1]                       # ping-pong, ends not repeated
-    widths = [2 if (t in (0.0, 1.0)) else 1 for t in ts]   # hold the end poses
-    total = sum(widths)
-
-    css, groups, pos = [], [], 0
-    for k, (t, wd) in enumerate(zip(ts, widths)):
-        a, b = 100 * pos / total, 100 * (pos + wd) / total
-        pos += wd
-        if k == 0:
-            css.append(f'@keyframes k{k}{{0%{{opacity:1}}{b:.3f}%{{opacity:0}}100%{{opacity:0}}}}')
-        else:
-            css.append(f'@keyframes k{k}{{0%{{opacity:0}}{a:.3f}%{{opacity:1}}'
-                       + (f'{b:.3f}%{{opacity:0}}' if b < 100 else '')
-                       + '100%{opacity:' + ('1' if b >= 100 else '0') + '}}')
-        css.append(f'.f{k}{{opacity:0;animation:k{k} {dur}s steps(1,end) infinite}}')
-        frame = [emit(lerp_part(parts0[i], parts1[i], t)) for i in moving]
-        groups.append(f'<g class="f{k}">' + ''.join(frame) + '</g>')
-
-    static_body = ''.join(emit(parts0[i]) for i in static)
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}">'
-            f'<style>{"".join(css)}</style>{static_body}{"".join(groups)}</svg>\n')
-
-# ------------------------------------------- smooth, auto-framed renderer
-# Preview of the v2 style: the frame is cropped to the figure's full range
-# of motion (so it fills the card), and the motion is SMIL-animated between
-# the two poses, so the browser tweens every frame instead of flicking
-# through 17 baked ones. SMIL runs inside an <img>, unlike script.
-PAD = 16
+        o = '' if p['op'] == 1.0 else f' opacity="{p["op"]}"'
+        return (f'<circle cx="{_num(p["c"][0] - c[0])}" cy="{_num(p["c"][1] - c[1])}" '
+                f'r="{_num(p["r"])}" fill="{f}" stroke="{s}" stroke-width="{_num(p["w"])}"{o}/>')
+    return (f'<rect x="{_num(p["x"] - c[0])}" y="{_num(p["y"] - c[1])}" width="{_num(p["w"])}" '
+            f'height="{_num(p["h"])}" rx="6" fill="none" stroke="{p["color"]}" '
+            f'stroke-width="{p["sw"]}"/>')
 
 def _is_ground(p):
     return (p['t'] == 'path' and p['color'] == BORDER
             and all(y == GY for _, y in p['pts']))
 
-def _bounds(parts):
-    xs, ys = [], []
-    for p in parts:
-        if _is_ground(p):
-            continue
-        if p['t'] == 'path':
-            h = p['w'] / 2
-            for x, y in p['pts']:
-                xs += [x - h, x + h]; ys += [y - h, y + h]
-        elif p['t'] == 'circle':
-            r = p['r'] + (0 if p['fill'] else p['w'] / 2)
-            xs += [p['c'][0] - r, p['c'][0] + r]; ys += [p['c'][1] - r, p['c'][1] + r]
-        elif p['t'] == 'rect':
-            xs += [p['x'] - 3, p['x'] + p['w'] + 3]; ys += [p['y'] - 3, p['y'] + p['h'] + 3]
-    return min(xs), min(ys), max(xs), max(ys)
+# --------------------------------------------------------------- scene
+JOINT_N, JOINT_F = '#0b1f1f', '#071313'
 
-def frame_box(parts0, parts1):
-    """3:2 viewBox around both poses, ground line pinned to the bottom."""
-    x0, y0, x1, y1 = _bounds(parts0 + parts1)
-    x0, x1, y0 = x0 - PAD, x1 + PAD, y0 - PAD
-    y1 = max(y1, GY) + PAD
-    w, h = x1 - x0, y1 - y0
-    if w / h < W / H:                 # too tall: widen about the centre
-        cx, w = (x0 + x1) / 2, h * W / H
-        x0 = cx - w / 2
-    else:                             # too wide: grow upwards, keep the floor
-        h = w * H / W
-        y0 = y1 - h
-    return x0, y0, w, h
+def _defs():
+    tube = lambda i, edge, mid: (
+        f'<linearGradient id="{i}" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{edge}"/><stop offset=".45" stop-color="{mid}"/>'
+        f'<stop offset="1" stop-color="{edge}"/></linearGradient>')
+    return ('<defs>'
+            + tube('tn', '#061414', '#1f4a47') + tube('tf', '#040c0c', '#102828')
+            + '<radialGradient id="hd" cx=".35" cy=".3" r=".75">'
+              '<stop offset="0" stop-color="#2a5a57"/><stop offset=".55" stop-color="#0c2020"/>'
+              '<stop offset="1" stop-color="#050e0e"/></radialGradient>'
+            + '<radialGradient id="sh"><stop offset="0" stop-color="#000" stop-opacity=".9"/>'
+              '<stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>'
+            + '<linearGradient id="fl" x1="0" y1="0" x2="0" y2="1">'
+              '<stop offset="0" stop-color="#16302f"/><stop offset="1" stop-color="#16302f" stop-opacity="0"/>'
+              '</linearGradient>'
+            + '</defs>')
 
-def _d(pts):
-    return 'M' + ' L'.join(f'{x:.1f},{y:.1f}' for x, y in pts)
-
-def smooth_svg(parts0, parts1, dur=2.4):
-    """pose0 -> pose1 -> pose0, tweened by the browser, with end holds."""
+def render_svg(parts0, parts1):
+    """pose0 -> pose1 -> pose0 as one self-animating SVG (CSS keyframes)."""
     if len(parts0) != len(parts1):
         raise ValueError(f'part count mismatch {len(parts0)} vs {len(parts1)}')
-    bx, by, bw, bh = frame_box(parts0, parts1)
-    # out, hold, back, hold: eased moves, the holds let each end pose read
-    kt = '0;0.4;0.5;0.9;1'
-    ease = '0.45 0 0.55 1'
-    anim = (f'dur="{dur}s" repeatCount="indefinite" calcMode="spline" '
-            f'keyTimes="{kt}" keySplines="{ease};0 0 1 1;{ease};0 0 1 1"')
-
-    def seq(a, b):
-        return ';'.join([a, b, b, a, a])
-
-    out = []
     for a, b in zip(parts0, parts1):
-        if _is_ground(a):
-            a = b = line([(bx, GY), (bx + bw, GY)], BORDER, 6)
-        if a == b:
-            out.append(emit(a))
+        if a['t'] != b['t']:
+            raise ValueError(f'part type mismatch {a["t"]} vs {b["t"]}')
+
+    rigs = {}
+    for i, (a, b) in enumerate(zip(parts0, parts1)):
+        if a['t'] in ('chain', 'head'):
+            r = rig(a['pts'], b['pts'], allow_ik=a['t'] == 'chain' and a['role'] != 'torso')
+            if a['t'] == 'head' or a.get('role') == 'torso':
+                r['mode'] = 'rot'
+            rigs[i] = r
+    # one body: limbs and head hang off the torso's hip or neck joint, so
+    # they stay attached however far the torso swings
+    for ti in [i for i in rigs if parts0[i].get('role') == 'torso']:
+        tr = rigs[ti]
+        j0, j1 = joints(tr, 0.0), joints(tr, 1.0)
+        for i, r in rigs.items():
+            if i == ti or r['parent']:
+                continue
+            for m in (0, 1):
+                if math.dist(r['root'][0], j0[m]) < 1 and math.dist(r['root'][1], j1[m]) < 1:
+                    r['parent'] = (tr, m)
+                    break
+
+    # equipment: a moving prop held at a chain end in both poses rides on
+    # it as a rigid body; else it moves rigidly on its own; else flipbook
+    ends = [i for i in rigs if parts0[i]['t'] == 'chain']
+    attached, free, flip, static = {}, {}, [], []
+    for i, (a, b) in enumerate(zip(parts0, parts1)):
+        if i in rigs or _is_ground(a):
             continue
-        if a['t'] == 'path':
-            da, db = _d(resample(a['pts'])), _d(resample(b['pts']))
-            out.append(f'<path d="{da}" fill="none" stroke="{a["color"]}" '
-                       f'stroke-width="{a["w"]}" stroke-linecap="round" '
-                       f'stroke-linejoin="round" opacity="{a["op"]}">'
-                       f'<animate attributeName="d" values="{seq(da, db)}" {anim}/></path>')
-        elif a['t'] == 'circle':
-            f = a['color'] if a['fill'] else 'none'
-            s = 'none' if a['fill'] else a['color']
-            kids = ''.join(
-                f'<animate attributeName="{k}" values="{seq(f"{va:.1f}", f"{vb:.1f}")}" {anim}/>'
-                for k, va, vb in (('cx', a['c'][0], b['c'][0]), ('cy', a['c'][1], b['c'][1]),
-                                  ('r', a['r'], b['r'])) if va != vb)
-            out.append(f'<circle cx="{a["c"][0]:.1f}" cy="{a["c"][1]:.1f}" r="{a["r"]:.1f}" '
-                       f'fill="{f}" stroke="{s}" stroke-width="{a["w"]}" '
-                       f'opacity="{a["op"]}">{kids}</circle>')
+        if a == b:
+            static.append(i)
+            continue
+        fit = rigid_fit(a, b)
+        if fit is None:
+            flip.append(i)
+            continue
+        def near(p, pose_parts):
+            best = None
+            for j in ends:
+                e = pose_parts[j]['pts'][-1]
+                d = min(math.dist(e, q) for q in _shape_pts(p))
+                if p['t'] == 'circle':
+                    d = max(0.0, d - p['r'])
+                if best is None or d < best[0]:
+                    best = (d, j)
+            return best
+        n0, n1 = near(a, parts0), near(b, parts1)
+        if n0 and n1 and n0[1] == n1[1] and n0[0] < 40 and n1[0] < 40:
+            attached.setdefault(n0[1], []).append((i, fit))
         else:
-            out.append(emit(lerp_part(a, b, 0)))   # boxes don't move in practice
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" '
-            f'viewBox="{bx:.1f} {by:.1f} {bw:.1f} {bh:.1f}">{"".join(out)}</svg>\n')
+            free[i] = fit
+
+    def hand_at(j, t):
+        return joints(rigs[j], t)[-1]
+
+    def prop_pts(i, fit, t, j=None):
+        """World points of a rigid prop at blend t (for framing)."""
+        ca, cb, th, sc = fit
+        p = parts0[i]
+        if j is None:
+            c = _lerp_pt(ca, cb, t)
+        else:
+            h0, h1, h = hand_at(j, 0.0), hand_at(j, 1.0), hand_at(j, t)
+            off = _lerp_pt((ca[0] - h0[0], ca[1] - h0[1]), (cb[0] - h1[0], cb[1] - h1[1]), t)
+            c = (h[0] + off[0], h[1] + off[1])
+        r = math.radians(th * t)
+        k = _lerp(1.0, sc, t)
+        out = []
+        for x, y in _shape_pts(p):
+            x, y = (x - ca[0]) * k, (y - ca[1]) * k
+            out.append((c[0] + x * math.cos(r) - y * math.sin(r),
+                        c[1] + x * math.sin(r) + y * math.cos(r)))
+        return out, p.get('r', 0) * max(1.0, sc) + p.get('w', 0) / 2
+
+    # ---- framing: sample the whole motion, not just the end poses
+    xs, ys = [], []
+    def grow(pts, rad):
+        for x, y in pts:
+            xs.extend((x - rad, x + rad)); ys.extend((y - rad, y + rad))
+    for t in [k / 8 for k in range(9)]:
+        for i, r in rigs.items():
+            pts, p = joints(r, t), parts0[i]
+            if p['t'] == 'head':
+                grow(pts[-1:], p['r'] + (8 if p['pony'] else 4))
+            else:
+                grow(pts, (p['w'] + GLOW_W) / 2)
+        for j, items in attached.items():
+            for i, fit in items:
+                grow(*prop_pts(i, fit, t, j))
+        for i, fit in free.items():
+            grow(*prop_pts(i, fit, t))
+    for i in static + flip:
+        for p in (parts0[i], parts1[i]):
+            grow(_shape_pts(p), p.get('r', 0) + (p.get('w', 0) if p['t'] != 'rect' else 0) / 2)
+    x0, x1, y0 = min(xs) - PAD, max(xs) + PAD, min(ys) - PAD
+    y1 = max(min(max(ys), GY + 12), GY) + PAD      # a limb dipping low mustn't grow the floor
+    w, h = x1 - x0, y1 - y0
+    if w / h < W / H:
+        cx, w = (x0 + x1) / 2, h * W / H
+        x0 = cx - w / 2
+    else:
+        h = w * H / W
+        y0 = y1 - h
+    bx, by, bw, bh = x0, y0, w, h
+
+    A = _Anim()
+    body = []
+
+    # ---- floor plane and a contact shadow that follows the hips
+    body.append(f'<rect x="{_num(bx)}" y="{GY}" width="{_num(bw)}" height="{_num(by + bh - GY)}" fill="url(#fl)"/>')
+    body.append(_stroke(f'M{_num(bx)},{GY} H{_num(bx + bw)}', '#26403f', 3))
+    torso = [i for i in rigs if parts0[i].get('role') == 'torso']
+    if torso:
+        chains = [i for i in rigs if parts0[i]['t'] == 'chain']
+        def shadow(t):
+            hip = joints(rigs[torso[0]], t)[0]
+            pts = [q for i in chains for q in joints(rigs[i], t)]
+            spread = max(x for x, _ in pts) - min(x for x, _ in pts)
+            lift = max(0.0, GY - max(y for _, y in pts) - 8)
+            k = max(0.45, 1 - lift / 140)
+            return hip[0], max(40.0, spread / 2 + 18) * k, k
+        (sx0, rx0, k0), (sx1, rx1, k1) = shadow(0.0), shadow(1.0)
+        cls = A.attr((('t', sx0, GY), ('s', 1, 1)), (('t', sx1, GY), ('s', rx1 / rx0, 1)),
+                     f'opacity:{_num(0.9 * k0)}', f'opacity:{_num(0.9 * k1)}')
+        body.append(f'<g{cls}><ellipse rx="{_num(rx0)}" ry="8" fill="url(#sh)"/></g>')
+
+    for i in static:
+        body.append(_emit_local(parts0[i], (0, 0)))
+
+    def motions(r):
+        """Per-group motions for a chain: [root/joint groups..., end frame],
+        each ('2', f0, f1) or ('n', [(u, f)...])."""
+        segs = r['segs']
+        root_local = r['parent'] is not None
+        if r['mode'] == 'rot':
+            out = []
+            (r0, r1) = ((0.0, 0.0), (0.0, 0.0)) if root_local else r['root']
+            for k, (L0, L1, a0, a1) in enumerate(segs):
+                if k == 0:
+                    out.append(('2', (('t', *r0), ('r', a0)), (('t', *r1), ('r', a1))))
+                else:
+                    out.append(('2', (('t', segs[k - 1][0], 0), ('r', a0)),
+                                (('t', segs[k - 1][1], 0), ('r', a1))))
+            tot0 = sum(s_[2] for s_ in segs); tot1 = sum(s_[3] for s_ in segs)
+            out.append(('2', (('t', segs[-1][0], 0), ('r', -tot0)),
+                        (('t', segs[-1][1], 0), ('r', -tot1))))
+            lens = [('2', L0, L1) for L0, L1, _, _ in segs]
+            return out, lens
+        # sampled: world angles unwrapped along the cycle
+        frames = []
+        prev = None
+        for u in _STOPS:
+            t = _pose_t(u)
+            pts = joints(r, t)
+            angs = [_angle(pts[k], pts[k + 1]) for k in range(len(pts) - 1)]
+            if prev is not None:
+                angs = [p_ + _wrap(a - p_) for a, p_ in zip(angs, prev)]
+            prev = angs
+            Ls = [math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1)]
+            root = (0.0, 0.0) if root_local else pts[0]
+            frames.append((u, root, angs, Ls))
+        n = len(segs)
+        out = []
+        for k in range(n):
+            out.append(('n', [(u, (('t', *root), ('r', ag[0]))) if k == 0 else
+                              (u, (('t', Ls[k - 1], 0), ('r', ag[k] - ag[k - 1])))
+                              for u, root, ag, Ls in frames]))
+        out.append(('n', [(u, (('t', Ls[-1], 0), ('r', -ag[-1]))) for u, root, ag, Ls in frames]))
+        lens = [('n', [(u, Ls[k]) for u, _, _, Ls in frames]) for k in range(n)]
+        return out, lens
+
+    def cls_of(m):
+        return A.attr(m[1], m[2]) if m[0] == '2' else A.stops(m[1])
+
+    def prefix(r):
+        """Replay the parent's transforms up to the shared joint, then undo
+        its rotation so this chain's angles stay world angles."""
+        if not r['parent']:
+            return []
+        pr, m = r['parent']
+        ps = pr['segs']
+        if m == 0:
+            return prefix(pr) + [('2', (('t', *pr['root'][0]),), (('t', *pr['root'][1]),))]
+        g = [('2', (('t', *pr['root'][0]), ('r', ps[0][2])), (('t', *pr['root'][1]), ('r', ps[0][3])))]
+        for k in range(1, m):
+            g.append(('2', (('t', ps[k - 1][0], 0), ('r', ps[k][2])),
+                      (('t', ps[k - 1][1], 0), ('r', ps[k][3]))))
+        tot0 = sum(s_[2] for s_ in ps[:m]); tot1 = sum(s_[3] for s_ in ps[:m])
+        g.append(('2', (('t', ps[m - 1][0], 0), ('r', -tot0)), (('t', ps[m - 1][1], 0), ('r', -tot1))))
+        return prefix(pr) + g
+
+    def chain_svg(i, layer):
+        """Nested joint groups; 'glow' draws the outline, 'core' the tube."""
+        p, r = parts0[i], rigs[i]
+        groups, lens = motions(r)
+        out, depth = [], 0
+        for m in prefix(r):
+            out.append(f'<g{cls_of(m)}>'); depth += 1
+        is_chain = p['t'] == 'chain'
+        w = p.get('w', 0)
+        gw = w + GLOW_W
+        def cap():
+            if not is_chain:
+                return ''
+            if layer == 'glow':
+                return f'<circle r="{_num(gw / 2)}" fill="{p["glow"]}"/>'
+            return f'<circle r="{_num(w / 2)}" fill="{JOINT_F if p["far"] else JOINT_N}"/>'
+        for k, m in enumerate(groups[:-1]):
+            out.append(f'<g{cls_of(m)}>'); depth += 1
+            if not is_chain:
+                continue
+            ln = lens[k]
+            Lb = ((ln[1] + ln[2]) / 2 if ln[0] == '2' else
+                  max(v for _, v in ln[1])) or 1.0
+            if layer == 'glow':
+                seg = _stroke(f'M0,0 H{_num(Lb)}', p['glow'], gw, cap='butt')
+            else:
+                seg = (f'<rect y="{_num(-w / 2)}" width="{_num(Lb)}" height="{_num(w)}" '
+                       f'fill="url(#{"tf" if p["far"] else "tn"})"/>')
+            out.append(cap())
+            if ln[0] == '2':
+                s0, s1 = ln[1] / Lb, ln[2] / Lb
+                if abs(s0 - s1) < 0.01 and abs(s0 - 1) < 0.01:
+                    out.append(seg)
+                else:
+                    out.append(f'<g{A.attr((("s", s0, 1),), (("s", s1, 1),))}>{seg}</g>')
+            else:
+                out.append(f'<g{A.stops([(u, (("s", v / Lb, 1),)) for u, v in ln[1]])}>{seg}</g>')
+        # upright frame at the chain end: end cap, head, held equipment
+        end = cap()
+        if layer == 'core' and p['t'] == 'head':
+            hr = p['r']
+            pony = (_stroke(f'M-2,{_num(-hr - 2)} L{_num(-hr - 6)},2 L{_num(-hr - 2)},{_num(hr + 6)}',
+                            TEAL, 5) if p['pony'] else '')
+            end += (pony + f'<circle r="{_num(hr + 4)}" fill="{p["glow"]}" opacity="0.95"/>'
+                    f'<circle r="{_num(hr)}" fill="url(#hd)"/>'
+                    + _stroke(f'M{_num(-hr * 0.62)},-3 H{_num(hr * 0.62)}', VISOR, 5))
+        if layer == 'core' and i in attached:
+            h0, h1 = hand_at(i, 0.0), hand_at(i, 1.0)
+            for j, (ca, cb, th, sc) in attached[i]:
+                g0 = (('t', ca[0] - h0[0], ca[1] - h0[1]), ('r', 0), ('s', 1, 1))
+                g1 = (('t', cb[0] - h1[0], cb[1] - h1[1]), ('r', th), ('s', sc, sc))
+                end += f'<g{A.attr(g0, g1)}>{_emit_local(parts0[j], ca)}</g>'
+        if end:
+            out.append(f'<g{cls_of(groups[-1])}>{end}</g>')
+        out.append('</g>' * depth)
+        return ''.join(out)
+
+    for i, p in enumerate(parts0):
+        if i in rigs:
+            if p['t'] == 'chain':
+                body.append(chain_svg(i, 'glow'))
+            body.append(chain_svg(i, 'core'))
+        elif i in free:
+            ca, cb, th, sc = free[i]
+            cls = A.attr((('t', *ca), ('r', 0), ('s', 1, 1)), (('t', *cb), ('r', th), ('s', sc, sc)))
+            body.append(f'<g{cls}>{_emit_local(p, ca)}</g>')
+        elif i in flip:
+            # frames of the straight blend, each shown for 1/FLIP_FRAMES of the rep
+            n = FLIP_FRAMES
+            a, b = parts0[i], parts1[i]
+            for k in range(n):
+                t = _pose_t((k + 0.5) / n)
+                if a['t'] == 'path':
+                    pa, pb = resample(a['pts']), resample(b['pts'])
+                    q = dict(a, pts=[_lerp_pt(u, v, t) for u, v in zip(pa, pb)])
+                elif a['t'] == 'circle':
+                    q = dict(a, c=_lerp_pt(a['c'], b['c'], t), r=_lerp(a['r'], b['r'], t))
+                else:
+                    q = dict(a, **{c: _lerp(a[c], b[c], t) for c in 'xywh'})
+                lo, hi = 100 * k / n, 100 * (k + 1) / n
+                kf = f'f{i}_{k}'
+                A.rules.append(f'@keyframes {kf}{{0%{{opacity:{1 if k == 0 else 0}}}'
+                               + (f'{_num(lo)}%{{opacity:1}}' if k else '')
+                               + (f'{_num(hi)}%{{opacity:0}}' if hi < 100 else '')
+                               + f'100%{{opacity:{1 if hi >= 100 else 0}}}}}'
+                               f'.{kf}{{opacity:0;animation:{kf} {DUR}s step-end infinite}}')
+                body.append(f'<g class="{kf}">{_emit_local(q, (0, 0))}</g>')
+
+    css = ('g{transform-box:view-box;transform-origin:0 0}'
+           + ''.join(A.rules)
+           + '@media (prefers-reduced-motion:reduce){*{animation-play-state:paused!important}}')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {_num(bw)} {_num(bh)}">'
+            f'<style>{css}</style>{_defs()}'
+            f'<g transform="translate({_num(-bx)},{_num(-by)})">{"".join(body)}</g></svg>\n')
 
 # ---------------------------------------------------------------- poses
 POSES = {}
@@ -2219,7 +2650,7 @@ def preview(out_dir, bases):
         _CTX['variant'] = 'a' if order.index(base) % 2 == 0 else 'b'
         fn = POSES[base]
         with open(os.path.join(out_dir, f'{base}.svg'), 'w') as f:
-            f.write(smooth_svg(flatten(fn(0)), flatten(fn(1))))
+            f.write(render_svg(flatten(fn(0)), flatten(fn(1))))
     print(f'wrote {len(bases)} preview SVGs to {out_dir}')
 
 if __name__ == '__main__':
@@ -2237,7 +2668,7 @@ if __name__ == '__main__':
         _CTX['variant'] = 'a' if idx % 2 == 0 else 'b'   # mix of body types
         p0, p1 = flatten(fn(0)), flatten(fn(1))
         try:
-            out = animated_svg(p0, p1)
+            out = render_svg(p0, p1)
         except ValueError as e:
             raise SystemExit(f'{base}: {e}, the two poses must use the same '
                              f'number of arm/leg chains and decorations')

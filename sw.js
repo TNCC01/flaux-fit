@@ -3,7 +3,7 @@
 
   SERVICE WORKER: the app opens without a network.
 
-  On install it caches the app shell and every animation (about 6 MB, once,
+  On install it caches the app shell and every animation (about 1.6 MB, once,
   on the first visit). After that:
 
     app files   network-first, four-second timeout, cache as the fallback,
@@ -15,7 +15,7 @@
   deploy costs nothing: the next online load fetches the new files and
   refreshes the cache. Bumping it only clears out old entries sooner.
 */
-const VERSION = 'fit-v1';
+const VERSION = 'fit-v2';
 const NETWORK_TIMEOUT_MS = 4000;
 
 // The animation list comes from the dictionary itself, so it can't drift.
