@@ -43,7 +43,7 @@ const PATTERNS = ['squat', 'hinge', 'lunge', 'pushH', 'pushV', 'pullH', 'pullV',
 const ALL_EQUIP = { ...DEFAULT_EQUIPMENT };
 const ctxFor = (ivId, equipment = ALL_EQUIP) => {
   const iv = INTERVALS[ivId];
-  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec,
+  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps,
            hasEquip: (id) => equipment[id] !== false };
 };
 
@@ -139,7 +139,8 @@ CLASSICS.forEach(w => {
 });
 
 // ------------------------------------------- 5. interval-aware cue timing
-for (const ivId of Object.keys(INTERVALS)) {
+// (an EMOM counts reps instead: checked in 5b)
+for (const ivId of Object.keys(INTERVALS).filter(id => !INTERVALS[id].reps)) {
   const iv = INTERVALS[ivId];
   const ctx = ctxFor(ivId);
   const half = Math.round(iv.workSec / 2);
@@ -158,6 +159,34 @@ for (const ivId of Object.keys(INTERVALS)) {
     if (!d.cue.includes(`${every}s`)) {
       fail(`${id} (${ivId}): rotation cue should say every ${every}s, got "${d.cue}"`);
     }
+  });
+}
+
+// ------------------------------------------------- 5b. EMOM rep targets
+// Every exercise says what to do each minute, in a form the screen can
+// show, and a timed target leaves at least 15 seconds of the minute to rest.
+const emomIds = Object.keys(INTERVALS).filter(id => INTERVALS[id].reps);
+if (!emomIds.length) fail('no EMOM interval style');
+ids.forEach(id => {
+  const v = EXERCISES[id].emom;
+  const ok = (Number.isInteger(v) && v > 0 && v <= 50)
+    || (typeof v === 'string' && /^(\d+\/side|\d+s(\/side)?|\d+ [a-z ]+)$/.test(v));
+  if (!ok) { fail(`${id}: emom target "${v}" should be a rep count, '8/side', '40s', '20s/side' or a short phrase`); return; }
+  const secs = typeof v === 'string' && /^(\d+)s(\/side)?$/.exec(v);
+  if (secs && +secs[1] * (secs[2] ? 2 : 1) > 45) fail(`${id}: emom "${v}" leaves under 15s of the minute to rest`);
+});
+for (const ivId of emomIds) {
+  const ctx = ctxFor(ivId);
+  ids.forEach(id => {
+    const d = describeEx(id, ctx);
+    if (!d.reps) fail(`${id} (${ivId}): no reps on screen`);
+    if (/swap sides at/.test(d.cue)) fail(`${id} (${ivId}): EMOM cue still times a side swap: "${d.cue}"`);
+  });
+  ids.filter(id => EXERCISES[id].rotateCue).forEach(id => {
+    const m = /^(\d+)s$/.exec(EXERCISES[id].emom || '');
+    const d = describeEx(id, ctx);
+    if (!m) fail(`${id}: a rotating hold needs a timed EMOM target`);
+    else if (!d.cue.includes(`${Math.round(+m[1] / EXERCISES[id].rotateCue)}s`)) fail(`${id} (${ivId}): rotation cue doesn't fit the ${m[1]}s hold: "${d.cue}"`);
   });
 }
 
@@ -188,9 +217,10 @@ const lens = Object.keys(INTERVALS).map(id => blockSeconds(INTERVALS[id]));
 if (new Set(lens).size !== 1) {
   fail(`interval styles disagree on block length: ${lens.join(' vs ')}s`);
 }
-// And the same total work, which is the whole point of the "long efforts"
-// option, fewer stops, not less work.
-const work = Object.keys(INTERVALS).map(id => INTERVALS[id].rounds * INTERVALS[id].workSec);
+// And the timed styles do the same total work, which is the whole point of
+// the "long efforts" option, fewer stops, not less work. (An EMOM's work is
+// set by the reps, not the clock.)
+const work = Object.keys(INTERVALS).filter(id => !INTERVALS[id].reps).map(id => INTERVALS[id].rounds * INTERVALS[id].workSec);
 if (new Set(work).size !== 1) {
   fail(`interval styles disagree on total work: ${work.join(' vs ')}s`);
 }

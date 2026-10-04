@@ -97,7 +97,7 @@ const currentInterval = () => INTERVALS[state.intervalStyle] || INTERVALS[DEFAUL
 const intervalFor = (w) => (w && w.intervalId && INTERVALS[w.intervalId]) || currentInterval();
 const buildCtx = (w) => {
   const iv = intervalFor(w);
-  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, hasEquip };
+  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, hasEquip };
 };
 
 // Classics carry no bookends of their own; derive them once at load.
@@ -138,8 +138,8 @@ const els = {
   timerCard: $('timerCard'), phaseLabel: $('phaseLabel'),
   timeDisplay: $('timeDisplay'), totalTime: $('totalTime'),
   exerciseGrid: $('exerciseGrid'), labelA: $('labelA'), labelB: $('labelB'),
-  exerciseA: $('exerciseA'), cueA: $('cueA'), animA: $('animA'), alternativeA: $('alternativeA'),
-  personB: $('personB'), exerciseB: $('exerciseB'), cueB: $('cueB'),
+  exerciseA: $('exerciseA'), repsA: $('repsA'), cueA: $('cueA'), animA: $('animA'), alternativeA: $('alternativeA'),
+  personB: $('personB'), exerciseB: $('exerciseB'), repsB: $('repsB'), cueB: $('cueB'),
   animB: $('animB'), alternativeB: $('alternativeB'),
   upcoming: $('upcoming'), preStart: $('preStart'),
   previewList: $('previewList'),
@@ -208,9 +208,10 @@ function buildSequence(workout, people) {
       const label = `Block ${blockIdx + 1} of ${total}: ${block.name}`;
       for (let round = 1; round <= iv.rounds; round++) {
         const w = isDuo ? block.duo(round, ctx) : { a: block.solo(round, ctx), b: null };
-        seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round,
+        seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round, emom: !!iv.reps,
                    totalBlocks: total, totalRounds: iv.rounds, name: label, a: w.a, b: w.b });
-        seq.push({ kind: 'rest', duration: iv.restSec, blockIdx, round,
+        // an EMOM's rest is whatever is left of the minute, not a phase of its own
+        if (iv.restSec > 0) seq.push({ kind: 'rest', duration: iv.restSec, blockIdx, round,
                    totalBlocks: total, totalRounds: iv.rounds, name: label,
                    ...pair({ name: 'Rest', display: 'Rest', cue: 'Breathe', alt: '', img: null }) });
       }
@@ -451,7 +452,7 @@ function renderIntervalPicker() {
     });
     b.innerHTML = `
       <div class="interval-name">${esc(iv.label)}</div>
-      <div class="interval-sub">${esc(iv.sub)} × ${iv.rounds} rounds</div>
+      <div class="interval-sub">${esc(iv.sub)}${iv.reps ? '' : ` × ${iv.rounds} rounds`}</div>
       <div class="interval-blurb">${esc(iv.blurb)}</div>`;
     b.setAttribute('aria-pressed', String(state.intervalStyle === id));
     els.intervalPicker.appendChild(b);
@@ -893,9 +894,9 @@ function renderPreview() {
   const iv = intervalFor(w);
   add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupExercise.cue);
   w.blocks.forEach((b, i) => {
-    const names = Array.from(new Set((b.ids || []).map(id => describeEx(id, ctx).display)));
+    const names = Array.from(new Set((b.ids || []).map(id => withReps(describeEx(id, ctx)))));
     add(`Block ${i + 1}: ${b.name}`,
-        `${iv.rounds} × ${iv.workSec}s · ${names.join('  ·  ')}`);
+        `${iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
   });
   add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownExercise.cue);
 }
@@ -903,6 +904,12 @@ function renderPreview() {
 const fmt = (s) => {
   s = Math.max(0, Math.floor(s));
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+};
+
+// An exercise as it reads in a list or preview: in an EMOM, with its reps.
+const withReps = (ex) => {
+  const name = ex.display || ex.name;
+  return ex.reps ? `${name} · ${ex.reps}` : name;
 };
 
 function setAlt(el, alt) {
@@ -974,7 +981,7 @@ function openNextSheet() {
          aria-label="${esc(ex.display || ex.name)}: how to do it">
       <div class="next-thumb" data-move="${esc(ex.id || ex.img)}"></div>
       <div class="next-text">
-        <strong>${esc(ex.display || ex.name)}</strong>
+        <strong>${esc(withReps(ex))}</strong>
         ${ex.cue ? `<span>${esc(ex.cue)}</span>` : ''}
         ${r.length ? `<span class="next-rounds">${esc(rounds(r))}</span>` : ''}
       </div>
@@ -1045,12 +1052,12 @@ window.addEventListener('message', (e) => {
   if (e.origin === location.origin && e.data && e.data.type === 'fit-move-close') closeMove();
 });
 
-function renderSegBar(current, total, kind) {
+function renderSegBar(current, total, kind, unit = 'Round') {
   const row = document.createElement('div');
   row.className = 'round-row';
   const count = document.createElement('div');
   count.className = 'round-count';
-  count.innerHTML = `Round <b>${current}</b><span class="of"> of ${total}</span>`;
+  count.innerHTML = `${unit} <b>${current}</b><span class="of"> of ${total}</span>`;
   const remaining = document.createElement('div');
   remaining.className = 'remaining-tag';
   remaining.textContent = `${total - current + 1} left`;
@@ -1076,7 +1083,7 @@ function renderSegBar(current, total, kind) {
 
 function renderRoundDots(phase) {
   els.roundDots.innerHTML = '';
-  if (phase.totalRounds) renderSegBar(phase.round, phase.totalRounds, phase.kind);
+  if (phase.totalRounds) renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
   else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind);
   else if (phase.totalBlocks) {
     const label = document.createElement('div');
@@ -1157,7 +1164,7 @@ function render() {
   if (!phase) return;
 
   els.timerCard.className = 'timer-card ' + phase.kind;
-  els.phaseLabel.textContent = PHASE_LABEL[phase.kind] || '';
+  els.phaseLabel.textContent = phase.emom ? 'EMOM' : (PHASE_LABEL[phase.kind] || '');
   els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
   els.blockName.textContent = phase.name;
@@ -1183,11 +1190,13 @@ function render() {
   if (!prep) closeNextSheet();
 
   els.exerciseA.textContent = dispA ? (dispA.display || dispA.name) : '';
+  els.repsA.textContent = dispA ? (dispA.reps || '') : '';
   els.cueA.textContent = dispA ? (dispA.cue || '') : '';
   setAlt(els.alternativeA, dispA ? dispA.alt : '');
   updateAnim(els.animA, dispA);
   if (state.people === 2 && dispB) {
     els.exerciseB.textContent = dispB.display || dispB.name;
+    els.repsB.textContent = dispB.reps || '';
     els.cueB.textContent = dispB.cue || '';
     setAlt(els.alternativeB, dispB.alt);
     updateAnim(els.animB, dispB);
@@ -1211,9 +1220,9 @@ function renderUpcoming() {
   if (next.kind === 'rest') preview = `Rest ${next.duration}s`;
   else if (next.kind === 'work') {
     preview = state.people === 2
-      ? `${short('a', 'A')}: ${next.a.display || next.a.name} · ` +
-        `${short('b', 'B')}: ${next.b.display || next.b.name}`
-      : (next.a.display || next.a.name);
+      ? `${short('a', 'A')}: ${withReps(next.a)} · ` +
+        `${short('b', 'B')}: ${withReps(next.b)}`
+      : withReps(next.a);
   } else preview = next.name;
   const c = PHASE_COLOR[next.kind];
   const swatch = c ? `background:${c.hex};box-shadow:0 0 8px 1px rgba(${c.rgb},0.7)` : '';
