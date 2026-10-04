@@ -18,7 +18,7 @@ The home screen asks how you want to train:
 
 Workouts in the first two paths are **generated on the spot** rather than
 pulled from a table of presets. The input space (6 equipment items × 8
-durations × 2 people × 2 interval styles × 31 region combinations ×
+durations × 2 people × 3 workout styles × 31 region combinations ×
 arbitrary exclusions) is far too large for presets to cover, which is why
 short preset sessions used to feel like a trimmed-down copy of the long
 ones. The generator composes from the whole library every time and
@@ -26,16 +26,23 @@ remembers what recent sessions used, so consecutive workouts differ. In
 testing, back-to-back 30-minute sessions share under a quarter of their
 movements.
 
-## Interval styles
+## Workout styles
 
-Both run a **240-second block** and the **same 160 seconds of work**, so
-switching between them never changes how long a workout takes, only how
-long each effort lasts:
+All three run a **240-second block**, so switching between them never
+changes how long a workout takes, only how each minute is spent. The two
+timed styles also do the **same 160 seconds of work**:
 
 | Style | Rounds | Work | Rest | Feel |
 |---|---|---|---|---|
 | Short bursts | 8 | 20s | 10s | More stops, more recovery |
 | Long efforts | 4 | 40s | 20s | Half the stops, so it burns more |
+| EMOM | 4 | the reps | rest of the minute | Faster reps, more rest |
+
+In an EMOM each exercise has a rep target (`emom` in `js/exercises.js`):
+a count, a count per side, or a timed effort for holds and carries, pitched
+to take 30 to 40 seconds so there's time left in the minute to recover. The
+card shows it above the name ("12 reps", "8 each side", "40s"). One number
+for everyone for now; levels can come later.
 
 Cues that name a time ("swap sides at 10s", "change every 5s") are written
 from the live interval, so they stay truthful in both styles. Weight-swap
@@ -150,7 +157,7 @@ npm test                         # self-check, then the browser suite
 exercise's fields, that every movement has 3D data and a bodyweight
 fallback, that no block hands one item to two people in any round of either
 interval style, that duration labels match what the timer actually runs,
-and that all 496 generator input combinations either build a valid workout
+and that all 744 generator input combinations either build a valid workout
 or refuse for a good reason. It also proves a workout rebuilds exactly from
 its stored request and seed, and that a seed builds the same workout
 whatever sort algorithm the browser uses. Safari and Chrome sort

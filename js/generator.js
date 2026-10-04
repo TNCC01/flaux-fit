@@ -204,7 +204,7 @@ function generateWorkout(opts) {
   }
 
   const plan = planBlocks(opts.minutes, iv);
-  const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, hasEquip };
+  const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, hasEquip };
 
   // Score: unseen beats recently-used, with seeded jitter so two runs at
   // the same settings still differ.
@@ -338,7 +338,7 @@ function generateWorkout(opts) {
     id: `gen-${opts.seed}`,
     generated: true,
     name: `${title} · ${realMin} min`,
-    tagline: iv.id === 'long' ? 'Long efforts, fewer stops' : 'Sharp bursts',
+    tagline: iv.id === 'long' ? 'Long efforts, fewer stops' : iv.id === 'emom' ? 'Every minute on the minute' : 'Sharp bursts',
     focus: focusFor(regions),
     blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()}, ${iv.sub}.`,
     format: 'tabata',

@@ -242,6 +242,30 @@ try {
   assert(await st(() => state.workout.exerciseIds.every(id => EXERCISES[id].regions.includes('legs'))), 'custom build on target');
   ok('custom flow: body map, search, and a legs-only build');
 
+  step = 'EMOM: a minute per round, reps on the card';
+  await p.click('#btnBack'); await pickInterval('EMOM');
+  await p.click('#btnBuild');
+  const emom = await st(() => {
+    const work = state.sequence.filter(x => x.kind === 'work');
+    const perBlock = {};
+    work.forEach(x => { perBlock[x.blockIdx] = (perBlock[x.blockIdx] || 0) + x.duration; });
+    return { rests: state.sequence.filter(x => x.kind === 'rest').length,
+             minutes: work.every(x => x.duration === 60 && x.emom),
+             blocks: Object.values(perBlock), reps: work.every(x => x.a.reps) };
+  });
+  assert(emom.minutes, 'every work phase is a 60s EMOM minute');
+  assert(emom.rests === 0, `no separate rests, got ${emom.rests}`);
+  assert(emom.blocks.every(t => t === 240), `blocks stay 4 minutes: ${emom.blocks}`);
+  assert(emom.reps, 'every minute carries its reps');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
+  const shown = await p.$eval('#repsA', e => e.textContent);
+  assert(/^(\d+ reps|\d+s? each side|\d+s|.+)$/.test(shown) && shown.length > 0, `reps on the card, got "${shown}"`);
+  assert(await p.$eval('#phaseLabel', e => e.textContent) === 'EMOM', 'the timer says EMOM');
+  assert(/Minute/.test(await p.$eval('#roundDots', e => e.textContent)), 'counts minutes, not rounds');
+  assert((await p.$eval('#upcoming', e => e.textContent)).includes(' · '), 'up next names the reps');
+  await st(() => { state.intervalStyle = 'short'; savePrefs(); });
+  ok(`EMOM: ${emom.blocks.length} blocks of four 60s minutes, "${shown}" on the card`);
+
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathStretch');
   await p.click(card('Sunrise Stretch'));
