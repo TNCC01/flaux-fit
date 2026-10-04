@@ -10,6 +10,8 @@
     long   4 rounds x (40s work + 20s rest)  = 240s   160s of work
     emom   4 rounds x 60s, a set number of reps at the top of each
            minute and whatever is left of it to rest     = 240s
+    amrap  one 240s round: each person works through the block's
+           exercises as many times as they can, tapping after each lap
 
   Everything that used to hardcode "round 5" or "switch at 10s" now reads
   the live interval out of ctx, so cues stay truthful in both styles.
@@ -24,7 +26,10 @@ const INTERVALS = {
            blurb: 'Four long rounds. Same total work, half the stops, so it burns more.' },
   emom:  { id: 'emom',  label: 'EMOM', sub: 'Every minute on the minute',
            rounds: 4, workSec: 60, restSec: 0, reps: true,
-           blurb: 'Do the reps at the start of each minute, then rest until the next one. Faster reps, more rest.' }
+           blurb: 'Do the reps at the start of each minute, then rest until the next one. Faster reps, more rest.' },
+  amrap: { id: 'amrap', label: 'AMRAP', sub: 'As many rounds as possible',
+           rounds: 1, workSec: 240, restSec: 0, reps: true, amrap: true,
+           blurb: 'Four minutes to get through a short list as many times as you can. Tap after each round to keep score.' }
 };
 const DEFAULT_INTERVAL = 'short';
 
@@ -33,8 +38,9 @@ const blockSeconds = (iv) => iv.rounds * (iv.workSec + iv.restSec);
 
 // ---------------------------------------------------------------------
 // EXERCISE RESOLUTION
-// ctx = { rounds, workSec, restSec, reps, hasEquip }, where hasEquip(id) => bool
-// and reps is true for EMOM, which counts reps rather than seconds
+// ctx = { rounds, workSec, restSec, reps, amrap, hasEquip }, where
+// hasEquip(id) => bool, reps is true for the styles that count reps rather
+// than seconds (EMOM, AMRAP) and amrap marks the AMRAP one
 // ---------------------------------------------------------------------
 
 // Walk bw fallbacks until everything the exercise needs is on hand.
@@ -64,6 +70,20 @@ function repsLabel(v) {
   if (m) return `${m[1]}${m[2]} each side`;
   return v || '';                     // '40s', '1 lap', '5 each way'
 }
+// An AMRAP lap strings several exercises together, so each one is about
+// two thirds of its EMOM target: 12 reps -> 8, 20 -> 14, '40s' -> '25s'.
+function amrapTarget(v) {
+  const two3 = (n) => n * 2 / 3;
+  // over ten, an even number reads as a target rather than a calculation
+  const nice = (x) => x > 10 ? Math.round(x / 2) * 2 : Math.round(x);
+  if (typeof v === 'number') return Math.max(3, nice(two3(v)));
+  const m = /^(\d+)(s?)(\/side)?$/.exec(v || '');
+  if (!m) return v;                   // '1 lap', '5 each way'
+  const n = m[2] ? Math.max(10, Math.round(two3(+m[1]) / 5) * 5)
+                 : Math.max(2, nice(two3(+m[1])));
+  return `${n}${m[2]}${m[3] || ''}`;
+}
+
 // Seconds of work in a timed EMOM target ('40s', '20s/side'), else 0.
 function timedSec(v) {
   const m = /^(\d+)s(\/side)?$/.exec(typeof v === 'string' ? v : '');
@@ -75,8 +95,9 @@ function timedSec(v) {
 function describeEx(id, ctx) {
   const ex = resolveEx(id, ctx);
   const emom = !!(ctx && ctx.reps);
-  // in an EMOM the effort is the reps (or the timed hold), not the minute
-  const workSec = (emom && timedSec(ex.emom)) || (ctx && ctx.workSec) || INTERVALS[DEFAULT_INTERVAL].workSec;
+  const target = ctx && ctx.amrap ? amrapTarget(ex.emom) : ex.emom;
+  // when counting reps the effort is the reps (or the timed hold), not the clock
+  const workSec = (emom && timedSec(target)) || (ctx && ctx.workSec) || INTERVALS[DEFAULT_INTERVAL].workSec;
   let cue = ex.cue || '';
   // an EMOM target already says "each side"
   if (ex.sideCue && !emom) {
@@ -89,7 +110,7 @@ function describeEx(id, ctx) {
   // `display` is what goes on screen: the load belongs in the headline, not
   // the cue, so a pair sharing a movement at two weights can tell at a
   // glance which one is theirs.
-  return { id: ex.id, name: ex.name, load: ex.load || '', cue, reps: emom ? repsLabel(ex.emom) : '',
+  return { id: ex.id, name: ex.name, load: ex.load || '', cue, reps: emom ? repsLabel(target) : '',
            display: ex.load ? `${ex.name} · ${ex.load}` : ex.name,
            alt: ex.alt || '', img: ex.img || null, adapted: ex.adapted };
 }
@@ -168,6 +189,29 @@ function blockSwapAlternating(name, heavyId, lightId) {
     },
     solo: (r, ctx) => tag(describeEx(pastHalfway(r, ctx) ? lightId : heavyId, ctx), r)
   };
+}
+
+// AMRAP: each person laps the block's exercises at their own pace, so the
+// two of them are never in step and a shared bell could be wanted by both
+// at once. B starts one exercise along, and anything in B's lap that needs
+// single-instance gear A's lap uses goes to its bodyweight version. A swap
+// block's two ids are one movement at two weights: A takes the first, B
+// the second.
+function amrapCircuits(block, ctx, duo) {
+  const swap = block.shape === 'swap';
+  const ids = swap ? [block.ids[0]] : block.ids;
+  const a = ids.map(id => describeEx(id, ctx));
+  if (!duo) return { a, b: null };
+  const aGear = new Set(a.flatMap(ex => EXERCISES[ex.id].equipment).filter(g => SINGLE_INSTANCE.includes(g)));
+  const has = (ctx && ctx.hasEquip) || (() => true);
+  const bCtx = { ...ctx, hasEquip: (g) => !aGear.has(g) && has(g) };
+  const bIds = swap ? [block.ids[1]] : [...ids.slice(1), ids[0]];
+  const b = [];
+  for (const id of bIds) {
+    const ex = describeEx(id, bCtx);
+    if (!b.some(x => x.id === ex.id)) b.push(ex);   // two bells can fall back to the same move
+  }
+  return { a, b };
 }
 
 const blockCleanPress = () =>

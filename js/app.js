@@ -97,7 +97,7 @@ const currentInterval = () => INTERVALS[state.intervalStyle] || INTERVALS[DEFAUL
 const intervalFor = (w) => (w && w.intervalId && INTERVALS[w.intervalId]) || currentInterval();
 const buildCtx = (w) => {
   const iv = intervalFor(w);
-  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, hasEquip };
+  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, amrap: !!iv.amrap, hasEquip };
 };
 
 // Classics carry no bookends of their own; derive them once at load.
@@ -140,6 +140,7 @@ const els = {
   exerciseGrid: $('exerciseGrid'), labelA: $('labelA'), labelB: $('labelB'),
   exerciseA: $('exerciseA'), repsA: $('repsA'), cueA: $('cueA'), animA: $('animA'), alternativeA: $('alternativeA'),
   personB: $('personB'), exerciseB: $('exerciseB'), repsB: $('repsB'), cueB: $('cueB'),
+  circuitA: $('circuitA'), counterA: $('counterA'), circuitB: $('circuitB'), counterB: $('counterB'),
   animB: $('animB'), alternativeB: $('alternativeB'),
   upcoming: $('upcoming'), preStart: $('preStart'),
   previewList: $('previewList'),
@@ -206,7 +207,13 @@ function buildSequence(workout, people) {
     const total = workout.blocks.length;
     workout.blocks.forEach((block, blockIdx) => {
       const label = `Block ${blockIdx + 1} of ${total}: ${block.name}`;
-      for (let round = 1; round <= iv.rounds; round++) {
+      if (iv.amrap) {
+        // one phase for the whole block; each person carries their lap
+        const c = amrapCircuits(block, ctx, isDuo);
+        seq.push({ kind: 'work', amrap: true, duration: iv.workSec, blockIdx, totalBlocks: total, name: label,
+                   a: { ...c.a[0], circuit: c.a }, b: c.b ? { ...c.b[0], circuit: c.b } : null });
+      }
+      for (let round = 1; !iv.amrap && round <= iv.rounds; round++) {
         const w = isDuo ? block.duo(round, ctx) : { a: block.solo(round, ctx), b: null };
         seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round, emom: !!iv.reps,
                    totalBlocks: total, totalRounds: iv.rounds, name: label, a: w.a, b: w.b });
@@ -743,6 +750,16 @@ function namedCard(w) {
   return card;
 }
 
+// An AMRAP session's rounds, block by block: "Rounds 4 · 5 · 4".
+function scoreLine(rec) {
+  if (!rec.scores || !rec.scores.some(s => s.a || s.b)) return '';
+  const row = (w) => rec.scores.map(s => s[w] || 0).join(' · ');
+  const text = rec.people === 2
+    ? `Rounds: ${personName('a')} ${row('a')}, ${personName('b')} ${row('b')}`
+    : `Rounds: ${row('a')}`;
+  return `<div class="card-score">${esc(text)}</div>`;
+}
+
 function historyCard(rec) {
   const wrap = document.createElement('div');
   wrap.className = 'workout-card history-card ' + (focusClassMap[rec.focus] || 'whole');
@@ -758,6 +775,7 @@ function historyCard(rec) {
       <span>${esc((INTERVALS[rec.intervalId] || {}).sub || '')}</span>
     </div>
     <div class="card-blurb">${esc(rec.blurb || '')}</div>
+    ${scoreLine(rec)}
     ${rec.completed ? '<div class="card-done">Finished</div>'
                     : '<div class="card-part">Started, not finished</div>'}`;
   wrap.addEventListener('click', () => {
@@ -831,6 +849,11 @@ function openWorkout(workout) {
   stopTimer();
   state.workout = workout;
   state.sequence = buildSequence(workout, state.people);
+  // AMRAP rounds counted this session, and what this workout scored last time
+  state.scores = {};
+  state.pick = {};
+  const before = state.history.find(h => h.key === historyKey(workout) && h.scores);
+  state.lastScores = before ? before.scores : null;
   state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
   seekTo(0);
   state.running = false;
@@ -896,7 +919,7 @@ function renderPreview() {
   w.blocks.forEach((b, i) => {
     const names = Array.from(new Set((b.ids || []).map(id => withReps(describeEx(id, ctx)))));
     add(`Block ${i + 1}: ${b.name}`,
-        `${iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
+        `${iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
   });
   add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownExercise.cue);
 }
@@ -942,6 +965,81 @@ window.addEventListener('fitdeck-ready', () => {
   for (const el of document.querySelectorAll('.next-thumb[data-move]')) showFigure(el, el.dataset.move, { thumb: true });
 });
 
+// ---------------------------------------------------------------- AMRAP
+// The card lists the lap. Tapping an exercise in it shows that one's
+// figure and cue; the counter underneath keeps score, saved with the
+// session in history so the next go can be compared against it.
+function renderCircuit(w, ex, phase) {
+  const W = w.toUpperCase();
+  const list = els['circuit' + W], counter = els['counter' + W];
+  const card = list.closest('.person');
+  const lap = ex && ex.circuit;
+  card.classList.toggle('amrap', !!lap);
+  list.hidden = !lap;
+  counter.hidden = !(lap && phase.amrap);
+  if (!lap) return;
+  const k = phase.blockIdx;
+  const pickKey = lapKey(w, lap);
+  const pick = state.pick[pickKey] || 0;
+  const listKey = `${pickKey}#${pick}`;
+  if (list.dataset.key !== listKey) {
+    list.dataset.key = listKey;
+    list.innerHTML = lap.map((x, i) => `
+      <li class="${i === pick ? 'picked' : ''}" data-i="${i}" role="button" tabindex="0">
+        <span class="lap-reps">${esc(x.reps)}</span><span class="lap-name">${esc(x.display || x.name)}</span>
+      </li>`).join('');
+  }
+  if (!phase.amrap) return;
+  const n = (state.scores[k] && state.scores[k][w]) || 0;
+  const last = state.lastScores && state.lastScores[k] && state.lastScores[k][w];
+  const countKey = `${k}:${n}:${last ?? ''}`;
+  if (counter.dataset.key === countKey) return;
+  counter.dataset.key = countKey;
+  counter.innerHTML = `
+    <button class="secondary count-less" data-step="-1" aria-label="Take one round off"${n ? '' : ' disabled'}>−</button>
+    <div class="count-now"><b>${n}</b> ${n === 1 ? 'round' : 'rounds'}${last != null ? `<span>Last time ${last}</span>` : ''}</div>
+    <button class="count-more" data-step="1">+1 round</button>`;
+}
+// Which exercise of an AMRAP lap the card is showing (the first, until
+// another is tapped). The figure, cue and alternative follow it.
+const lapKey = (w, lap) => `${w}:${lap.map(x => x.id).join(',')}`;
+function shownFor(w, ex) {
+  if (!ex || !ex.circuit) return ex;
+  return ex.circuit[state.pick[lapKey(w, ex.circuit)] || 0] || ex.circuit[0];
+}
+function onCircuitTap(e) {
+  const li = e.target.closest('li[data-i]');
+  if (!li) return;
+  const lap = e.currentTarget.dataset.key.split('#')[0];
+  state.pick[lap] = +li.dataset.i;
+  render();
+}
+function onCounterTap(e) {
+  const b = e.target.closest('button[data-step]');
+  if (!b) return;
+  const w = e.currentTarget.dataset.who;
+  const phase = state.sequence[state.currentIdx];
+  if (!phase || !phase.amrap) return;
+  const s = state.scores[phase.blockIdx] || (state.scores[phase.blockIdx] = { a: 0, b: 0 });
+  s[w] = Math.max(0, s[w] + +b.dataset.step);
+  saveScores();
+  render();
+}
+for (const w of ['A', 'B']) {
+  els['circuit' + w].addEventListener('click', onCircuitTap);
+  els['counter' + w].addEventListener('click', onCounterTap);
+}
+// Keep the score on this session's history entry as it goes, so it survives
+// a closed tab as well as a finished workout.
+function saveScores() {
+  const w = state.workout;
+  const entry = w && state.history.find(h => h.key === historyKey(w));
+  if (!entry) return;
+  const blocks = (w.blocks || []).length;
+  entry.scores = Array.from({ length: blocks }, (_, i) => state.scores[i] ? { ...state.scores[i] } : { a: 0, b: 0 });
+  savePrefs();
+}
+
 // ------------------------------------------------------ what's coming up
 // The next block's exercises, in order, once each, per person, with the
 // rounds each one comes round in.
@@ -959,12 +1057,14 @@ function upcomingBlock() {
     if (p.kind !== 'work' && p.kind !== 'stretch') continue;
     if (first.blockIdx !== undefined && p.blockIdx !== first.blockIdx) break;
     for (const w of who) {
-      const ex = p[w];
-      if (!ex || !ex.img) continue;
-      const key = ex.id || ex.name;
-      let e = lists[w].find(x => x.key === key);
-      if (!e) lists[w].push(e = { key, ex, rounds: [] });
-      if (p.round) e.rounds.push(p.round);
+      // an AMRAP phase carries the whole lap
+      for (const ex of (p[w] && p[w].circuit) || [p[w]]) {
+        if (!ex || !ex.img) continue;
+        const key = ex.id || ex.name;
+        let e = lists[w].find(x => x.key === key);
+        if (!e) lists[w].push(e = { key, ex, rounds: [] });
+        if (p.round) e.rounds.push(p.round);
+      }
     }
   }
   if (!lists.a.length && !lists.b.length) return null;
@@ -1083,7 +1183,12 @@ function renderSegBar(current, total, kind, unit = 'Round') {
 
 function renderRoundDots(phase) {
   els.roundDots.innerHTML = '';
-  if (phase.totalRounds) renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
+  if (phase.amrap) {
+    const label = document.createElement('div');
+    label.className = 'round-count';
+    label.textContent = `As many rounds as you can in ${fmtMin(phase.duration)}`;
+    els.roundDots.appendChild(label);
+  } else if (phase.totalRounds) renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
   else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind);
   else if (phase.totalBlocks) {
     const label = document.createElement('div');
@@ -1164,7 +1269,7 @@ function render() {
   if (!phase) return;
 
   els.timerCard.className = 'timer-card ' + phase.kind;
-  els.phaseLabel.textContent = phase.emom ? 'EMOM' : (PHASE_LABEL[phase.kind] || '');
+  els.phaseLabel.textContent = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM' : (PHASE_LABEL[phase.kind] || '');
   els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
   els.blockName.textContent = phase.name;
@@ -1191,18 +1296,22 @@ function render() {
 
   els.exerciseA.textContent = dispA ? (dispA.display || dispA.name) : '';
   els.repsA.textContent = dispA ? (dispA.reps || '') : '';
-  els.cueA.textContent = dispA ? (dispA.cue || '') : '';
-  setAlt(els.alternativeA, dispA ? dispA.alt : '');
-  updateAnim(els.animA, dispA);
+  const showA = shownFor('a', dispA);
+  els.cueA.textContent = showA ? (showA.cue || '') : '';
+  setAlt(els.alternativeA, showA ? showA.alt : '');
+  updateAnim(els.animA, showA);
   if (state.people === 2 && dispB) {
     els.exerciseB.textContent = dispB.display || dispB.name;
     els.repsB.textContent = dispB.reps || '';
-    els.cueB.textContent = dispB.cue || '';
-    setAlt(els.alternativeB, dispB.alt);
-    updateAnim(els.animB, dispB);
+    const showB = shownFor('b', dispB);
+    els.cueB.textContent = showB.cue || '';
+    setAlt(els.alternativeB, showB.alt);
+    updateAnim(els.animB, showB);
   } else {
     updateAnim(els.animB, null);
   }
+  renderCircuit('a', dispA, phase);
+  renderCircuit('b', state.people === 2 ? dispB : null, phase);
 
   renderUpcoming();
 
@@ -1218,6 +1327,7 @@ function renderUpcoming() {
     ((which === 'a' ? state.nameA : state.nameB) || '').trim() || fallback;
   let preview;
   if (next.kind === 'rest') preview = `Rest ${next.duration}s`;
+  else if (next.amrap) preview = `AMRAP: ${next.a.circuit.map(x => x.name).join(', ')}`;
   else if (next.kind === 'work') {
     preview = state.people === 2
       ? `${short('a', 'A')}: ${withReps(next.a)} · ` +

@@ -598,6 +598,31 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   color: var(--teal-bright); font-variant-numeric: tabular-nums; line-height: 1.1;
 }
 .exercise-reps:empty { display: none; }
+
+/* AMRAP: the lap as a list (tap one to see it), and the round counter */
+.person.amrap .exercise-name, .person.amrap .exercise-reps { display: none; }
+/* two columns, the reps one as wide as its longest entry ("8 each side") */
+.circuit {
+  list-style: none; margin: 0.2rem 0 0.4rem; padding: 0;
+  display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 0;
+}
+.circuit li {
+  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
+  column-gap: 0.8rem; align-items: baseline; cursor: pointer;
+  padding: 0.35rem 0.6rem; border-radius: 0.6rem; border: 2px solid transparent;
+  font-size: calc(clamp(1.15rem, 2.6vw, 1.8rem) * var(--ex-scale, 1)); font-weight: 800; line-height: 1.2;
+}
+.circuit li.picked { border-color: var(--border); background: rgba(20,184,166,0.08); }
+.circuit li:focus-visible { outline: 2px solid var(--teal-bright); outline-offset: 2px; }
+.lap-reps { color: var(--teal-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.round-counter { display: flex; align-items: center; gap: 0.6rem; margin: 0.4rem 0 0.5rem; }
+.round-counter button { min-height: 3.2rem; font-size: 1.15rem; font-weight: 800; }
+.round-counter .count-less { width: 3.2rem; padding: 0; }
+.round-counter .count-more { flex: 0 0 auto; padding: 0 1.3rem; }
+.count-now { flex: 1; display: flex; flex-direction: column; align-items: center; font-weight: 700; color: var(--muted); }
+.count-now b { font-size: 2.2rem; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.count-now span { font-size: 0.8rem; margin-top: 0.15rem; }
+.card-score { color: var(--teal-bright); font-weight: 700; font-size: 0.9rem; margin-top: 0.35rem; }
 .exercise-name {
   font-size: calc(clamp(1.7rem, 3.6vw, 3rem) * var(--ex-scale));
   font-weight: 900;

@@ -18,7 +18,7 @@ The home screen asks how you want to train:
 
 Workouts in the first two paths are **generated on the spot** rather than
 pulled from a table of presets. The input space (6 equipment items × 8
-durations × 2 people × 3 workout styles × 31 region combinations ×
+durations × 2 people × 4 workout styles × 31 region combinations ×
 arbitrary exclusions) is far too large for presets to cover, which is why
 short preset sessions used to feel like a trimmed-down copy of the long
 ones. The generator composes from the whole library every time and
@@ -28,7 +28,7 @@ movements.
 
 ## Workout styles
 
-All three run a **240-second block**, so switching between them never
+All four run a **240-second block**, so switching between them never
 changes how long a workout takes, only how each minute is spent. The two
 timed styles also do the **same 160 seconds of work**:
 
@@ -37,12 +37,23 @@ timed styles also do the **same 160 seconds of work**:
 | Short bursts | 8 | 20s | 10s | More stops, more recovery |
 | Long efforts | 4 | 40s | 20s | Half the stops, so it burns more |
 | EMOM | 4 | the reps | rest of the minute | Faster reps, more rest |
+| AMRAP | 1 | as many laps as you can | none | Your own pace, keep score |
 
 In an EMOM each exercise has a rep target (`emom` in `js/exercises.js`):
 a count, a count per side, or a timed effort for holds and carries, pitched
 to take 30 to 40 seconds so there's time left in the minute to recover. The
 card shows it above the name ("12 reps", "8 each side", "40s"). One number
 for everyone for now; levels can come later.
+
+In an AMRAP each block becomes one four-minute lap of its exercises, each
+at about two thirds of its EMOM target since they're done back to back.
+The card lists the lap (tap an exercise to see its figure) with a "+1
+round" counter at the top. The score is saved with the session in history,
+and the next time you open the same workout the counter shows last time's
+number to beat. With two people, B starts one exercise along, and anything
+in B's lap that needs a kettlebell, the barbell, the rope or the rings that
+A's lap also uses goes to its bodyweight version, because the two of you
+won't be in step.
 
 Cues that name a time ("swap sides at 10s", "change every 5s") are written
 from the live interval, so they stay truthful in both styles. Weight-swap
@@ -157,7 +168,7 @@ npm test                         # self-check, then the browser suite
 exercise's fields, that every movement has 3D data and a bodyweight
 fallback, that no block hands one item to two people in any round of either
 interval style, that duration labels match what the timer actually runs,
-and that all 744 generator input combinations either build a valid workout
+and that all 992 generator input combinations either build a valid workout
 or refuse for a good reason. It also proves a workout rebuilds exactly from
 its stored request and seed, and that a seed builds the same workout
 whatever sort algorithm the browser uses. Safari and Chrome sort

@@ -28,7 +28,7 @@ const A = loadApp();
 const {
   EXERCISES, EQUIPMENT, REGIONS, EXCLUSION_TAGS, SINGLE_INSTANCE, STRETCHES,
   INTERVALS, CLASSICS, STRETCH_ROUTINES, DEFAULT_EQUIPMENT,
-  describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends
+  describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits
 } = A;
 
 const failures = [];
@@ -43,7 +43,7 @@ const PATTERNS = ['squat', 'hinge', 'lunge', 'pushH', 'pushV', 'pullH', 'pullV',
 const ALL_EQUIP = { ...DEFAULT_EQUIPMENT };
 const ctxFor = (ivId, equipment = ALL_EQUIP) => {
   const iv = INTERVALS[ivId];
-  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps,
+  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, amrap: !!iv.amrap,
            hasEquip: (id) => equipment[id] !== false };
 };
 
@@ -113,6 +113,16 @@ function checkBlocks(label, workout, equipment) {
         if (!EXERCISES[id]) fail(`${label} block ${bi + 1}: unknown exercise id "${id}"`);
       });
       if (!block.name) fail(`${label} block ${bi + 1}: missing name`);
+      if (iv.amrap) {
+        // the two laps run out of step, so no single-instance item may be in both
+        const c = amrapCircuits(block, ctx, true), solo = amrapCircuits(block, ctx, false);
+        if (!c.a.length || !c.b.length || !solo.a.length) fail(`${label} block ${bi + 1} (${ivId}): empty AMRAP lap`);
+        c.a.forEach(x => c.b.forEach(y => {
+          if (sharesSingle(x.id, y.id)) fail(`${label} block ${bi + 1} (${ivId}): AMRAP laps share gear: ${x.id} + ${y.id}`);
+        }));
+        [...c.a, ...c.b].forEach(x => { if (!x.reps) fail(`${label} block ${bi + 1} (${ivId}): ${x.id} has no AMRAP target`); });
+        return;
+      }
       for (let r = 1; r <= iv.rounds; r++) {
         const duo = block.duo(r, ctx);
         const solo = block.solo(r, ctx);
@@ -182,7 +192,7 @@ for (const ivId of emomIds) {
     if (!d.reps) fail(`${id} (${ivId}): no reps on screen`);
     if (/swap sides at/.test(d.cue)) fail(`${id} (${ivId}): EMOM cue still times a side swap: "${d.cue}"`);
   });
-  ids.filter(id => EXERCISES[id].rotateCue).forEach(id => {
+  ids.filter(id => EXERCISES[id].rotateCue && !INTERVALS[ivId].amrap).forEach(id => {
     const m = /^(\d+)s$/.exec(EXERCISES[id].emom || '');
     const d = describeEx(id, ctx);
     if (!m) fail(`${id}: a rotating hold needs a timed EMOM target`);
@@ -191,7 +201,8 @@ for (const ivId of emomIds) {
 }
 
 // -------------------------------------- 6. blockSwap swaps at the halfway
-for (const ivId of Object.keys(INTERVALS)) {
+// (an AMRAP block is one lap, with each person on one of the two loads)
+for (const ivId of Object.keys(INTERVALS).filter(id => !INTERVALS[id].amrap)) {
   const iv = INTERVALS[ivId];
   const ctx = ctxFor(ivId);
   const swapBlock = CLASSICS.flatMap(w => w.blocks).find(b => b.shape === 'swap');
