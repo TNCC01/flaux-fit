@@ -263,8 +263,34 @@ try {
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'EMOM', 'the timer says EMOM');
   assert(/Minute/.test(await p.$eval('#roundDots', e => e.textContent)), 'counts minutes, not rounds');
   assert((await p.$eval('#upcoming', e => e.textContent)).includes(' · '), 'up next names the reps');
-  await st(() => { state.intervalStyle = 'short'; savePrefs(); });
   ok(`EMOM: ${emom.blocks.length} blocks of four 60s minutes, "${shown}" on the card`);
+
+  step = 'AMRAP: one lap per block, a round counter, the score kept';
+  await p.click('#btnBack'); await pickInterval('AMRAP');
+  await p.click('#btnBuild');
+  const amrap = await st(() => {
+    const work = state.sequence.filter(x => x.kind === 'work');
+    return { all: work.every(x => x.amrap && x.duration === 240 && x.a.circuit.length && x.a.circuit.every(c => c.reps)),
+             blocks: work.length, expect: state.workout.blocks.length };
+  });
+  assert(amrap.all, 'each block is one 240s AMRAP phase with a lap of exercises and their reps');
+  assert(amrap.blocks === amrap.expect, `one phase per block (${amrap.blocks} of ${amrap.expect})`);
+  await p.click('#btnStart');
+  const blk = await st(() => { const i = state.sequence.findIndex(x => x.amrap); seekTo(i); render(); return state.sequence[i].blockIdx; });
+  assert(await p.$eval('#phaseLabel', e => e.textContent) === 'AMRAP', 'the timer says AMRAP');
+  assert(!(await p.$eval('#circuitA', e => e.hidden)) && !(await p.$eval('#counterA', e => e.hidden)), 'the lap and the counter show');
+  await p.click('#counterA .count-more'); await p.click('#counterA .count-more'); await p.click('#counterA .count-less');
+  assert((await p.$eval('#counterA .count-now b', e => e.textContent)) === '1', 'two up and one down leaves 1');
+  assert(await p.evaluate((b) => state.history[0].scores && state.history[0].scores[b].a === 1, blk), 'the score is saved with the session');
+  const lapLen = await p.$$eval('#circuitA li', els => els.length);
+  if (lapLen > 1) {
+    const before = await p.$eval('#animA', e => e.dataset.move);
+    await p.click('#circuitA li[data-i="1"]');
+    assert(await p.$eval('#animA', e => e.dataset.move) !== before, 'tapping an exercise in the lap shows its figure');
+  }
+  await p.click('#btnStart');                                   // pause
+  await st(() => { state.intervalStyle = 'short'; savePrefs(); });
+  ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it`);
 
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathStretch');
