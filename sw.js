@@ -14,7 +14,7 @@
   Bumping it only clears out old entries sooner. When a 3D file is added,
   list it in MOVE_3D (scripts/selfcheck.mjs checks the list is complete).
 */
-const VERSION = 'fit-v4';
+const VERSION = 'fit-v5';
 const NETWORK_TIMEOUT_MS = 4000;
 
 const SHELL = [
