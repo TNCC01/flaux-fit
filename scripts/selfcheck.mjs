@@ -43,7 +43,7 @@ const PATTERNS = ['squat', 'hinge', 'lunge', 'pushH', 'pushV', 'pullH', 'pullV',
 const ALL_EQUIP = { ...DEFAULT_EQUIPMENT };
 const ctxFor = (ivId, equipment = ALL_EQUIP) => {
   const iv = INTERVALS[ivId];
-  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, amrap: !!iv.amrap,
+  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
            hasEquip: (id) => equipment[id] !== false };
 };
 
@@ -113,7 +113,7 @@ function checkBlocks(label, workout, equipment) {
         if (!EXERCISES[id]) fail(`${label} block ${bi + 1}: unknown exercise id "${id}"`);
       });
       if (!block.name) fail(`${label} block ${bi + 1}: missing name`);
-      if (iv.amrap) {
+      if (iv.lap) {
         // the two laps run out of step, so no single-instance item may be in both
         const c = amrapCircuits(block, ctx, true), solo = amrapCircuits(block, ctx, false);
         if (!c.a.length || !c.b.length || !solo.a.length) fail(`${label} block ${bi + 1} (${ivId}): empty AMRAP lap`);
@@ -192,7 +192,7 @@ for (const ivId of emomIds) {
     if (!d.reps) fail(`${id} (${ivId}): no reps on screen`);
     if (/swap sides at/.test(d.cue)) fail(`${id} (${ivId}): EMOM cue still times a side swap: "${d.cue}"`);
   });
-  ids.filter(id => EXERCISES[id].rotateCue && !INTERVALS[ivId].amrap).forEach(id => {
+  ids.filter(id => EXERCISES[id].rotateCue && !INTERVALS[ivId].lap).forEach(id => {
     const m = /^(\d+)s$/.exec(EXERCISES[id].emom || '');
     const d = describeEx(id, ctx);
     if (!m) fail(`${id}: a rotating hold needs a timed EMOM target`);
@@ -201,8 +201,8 @@ for (const ivId of emomIds) {
 }
 
 // -------------------------------------- 6. blockSwap swaps at the halfway
-// (an AMRAP block is one lap, with each person on one of the two loads)
-for (const ivId of Object.keys(INTERVALS).filter(id => !INTERVALS[id].amrap)) {
+// (an AMRAP or For Time block is one lap, with each person on one of the two loads)
+for (const ivId of Object.keys(INTERVALS).filter(id => !INTERVALS[id].lap)) {
   const iv = INTERVALS[ivId];
   const ctx = ctxFor(ivId);
   const swapBlock = CLASSICS.flatMap(w => w.blocks).find(b => b.shape === 'swap');

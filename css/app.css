@@ -612,6 +612,10 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   padding: 0.35rem 0.6rem; border-radius: 0.6rem; border: 2px solid transparent;
   font-size: calc(clamp(1.15rem, 2.6vw, 1.8rem) * var(--ex-scale, 1)); font-weight: 800; line-height: 1.2;
 }
+.circuit li.lap-head {
+  cursor: default; padding-top: 0; padding-bottom: 0;
+  font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
 .circuit li.picked { border-color: var(--border); background: rgba(20,184,166,0.08); }
 .circuit li:focus-visible { outline: 2px solid var(--teal-bright); outline-offset: 2px; }
 .lap-reps { color: var(--teal-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
