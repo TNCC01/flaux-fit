@@ -82,7 +82,12 @@ rather than hardcoded.
   exercises as small moving figures, each opening the full view
 - **16 named workouts** and **3 stretch routines**
 - Equipment picker: tap off gear you haven't got and nothing needing it
-  gets picked
+  gets picked. Under kettlebells, dumbbells and the barbell, tick the
+  weights you own (or what the bar is loaded to). The heaviest bell goes to
+  swings, squats and deadlifts and the one nearest two thirds of it to
+  presses and single-arm work, likewise for dumbbell pairs, and every card
+  shows the real weight. Exercises name roles ("the heavier bell"), not
+  weights, so favourites and share links keep working whatever you own
 - Target-area picker: a tappable body diagram and matching labels, both
   driving the same selection
 - Exclusions: four quick constraint filters (no jumping / floor work /

@@ -325,6 +325,11 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
 
 /* Interval choice, two explanatory cards, not a bare toggle, because
    neither option is "easier": they run the same total work. */
+/* the weights you own, under each weighted item that's switched on */
+.weight-picker { display: grid; gap: 0.8rem; margin-top: 0.8rem; }
+.weight-row { display: grid; gap: 0.4rem; }
+.weight-label { font-size: 0.85rem; font-weight: 700; color: var(--muted); }
+.weight-chips .weight-chip { padding: 0.45rem 0.7rem; font-size: 0.92rem; font-variant-numeric: tabular-nums; }
 .interval-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.6rem; }
 .interval-card {
   background: var(--bg); border: 2px solid var(--border);

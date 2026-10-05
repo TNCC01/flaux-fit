@@ -45,7 +45,7 @@ let step = '';
 const ok = (msg) => console.log('ok   ' + msg);
 const note = (msg) => console.log('     ' + msg);
 const assert = (c, msg) => { if (!c) throw new Error(`FAILED at "${step}": ${msg}`); };
-const GEAR = ['15kg kettlebell', '10kg kettlebell', '10kg barbell', 'Dumbbells', 'Skipping rope', 'Rings'];
+const GEAR = ['Kettlebells', 'Barbell', 'Dumbbells', 'Skipping rope', 'Rings'];
 
 // software WebGL, so the 3D figures draw on machines without a GPU (CI)
 const launch = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
@@ -134,7 +134,7 @@ try {
 
   step = 'shuffle after a favourite respects switched-off gear';
   await p.click('#btnBack'); await p.click('#pathQuick'); await toggleAllGear();
-  assert(await st(() => Object.values(state.equipment).every(v => v === false)), 'all gear off');
+  assert(await st(() => Object.values(effectiveEquip()).every(v => v === false)), 'all gear off');
   await p.click('#btnSetupBack'); await p.click('#pathClassics');
   await (await p.$$('.workout-card:has-text("☆")'))[0].click();
   await p.click('#btnShuffle');
@@ -143,6 +143,24 @@ try {
   assert(await p.$eval('#workoutNote', e => e.textContent === ''), 'no error note after a good shuffle');
   ok('shuffle after a favourite stayed bodyweight-only');
   await p.click('#btnBack'); await p.click('#pathQuick'); await toggleAllGear();
+
+  step = 'the weights you own fill the heavier and lighter bell';
+  const kbChip = (kg) => `.weight-row:has-text("Kettlebells you have") .chip:text-is("${kg}kg")`;
+  await p.click(kbChip(10)); await p.click(kbChip(15));           // off
+  await p.click(kbChip(12)); await p.click(kbChip(16)); await p.click(kbChip(24));
+  assert(await st(() => state.weights.kb.join(',')) === '12,16,24', 'ticked 12, 16 and 24: ' + await st(() => state.weights.kb.join(',')));
+  const loads = await st(() => { const c = buildCtx(null); return [describeEx('kbSwing15', c).display, describeEx('kbPress10', c).display]; });
+  assert(loads[0] === 'KB swings · 24kg', `the heaviest bell takes the swings: ${loads[0]}`);
+  assert(loads[1] === 'Single-arm KB press · 16kg', `the one nearest two thirds takes the press: ${loads[1]}`);
+  assert((await p.$eval('#weightPicker', e => e.textContent)).includes('24kg for swings'), 'setup says which bell does what');
+  await p.click(kbChip(12)); await p.click(kbChip(16));           // just the 24
+  assert(await st(() => effectiveEquip().kb15 && !effectiveEquip().kb10), 'one bell: only the heavier role is on');
+  await p.click('.weight-row:has-text("Barbell") .chip:text-is("30kg")');
+  assert(await st(() => describeEx('barbellPress', buildCtx(null)).display) === 'Strict press · 30kg bar', 'the bar shows its load');
+  await p.click(kbChip(24)); await p.click(kbChip(10)); await p.click(kbChip(15));
+  await p.click('.weight-row:has-text("Barbell") .chip:text-is("10kg")');
+  assert(await st(() => state.weights.kb.join(',') === '10,15' && state.weights.bar === 10), 'back to the defaults');
+  ok('weights: the heaviest bell and the one nearest two thirds of it fill the roles, the bar shows its load');
 
   step = 'classic under long efforts, then the timer survives a suspension';
   await p.click('.interval-card:has-text("Long efforts")');

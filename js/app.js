@@ -22,7 +22,10 @@ const state = {
   // Preferences (persisted, see PERSISTED below)
   people: 2,
   nameA: '', nameB: '',
-  equipment: { ...DEFAULT_EQUIPMENT },
+  equipment: { ...DEFAULT_EQUIPMENT, kettlebells: true },
+  // the weights you own: kettlebells and dumbbell pairs in kg, and what the
+  // bar is loaded to (see GEAR and loadsFor)
+  weights: { kb: [10, 15], db: [], bar: 10 },
   minutes: 20,
   intervalStyle: DEFAULT_INTERVAL,
   regions: REGIONS.map(r => r.id),
@@ -54,7 +57,7 @@ const state = {
   excludeSearch: ''
 };
 
-const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'minutes', 'intervalStyle',
+const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus'];
 
@@ -66,7 +69,8 @@ function loadPrefs() {
     // Only take keys we know about, a stale or hand-edited store must not
     // be able to drop arbitrary values into runtime state.
     PERSISTED.forEach(k => { if (p[k] !== undefined) state[k] = p[k]; });
-    state.equipment = { ...DEFAULT_EQUIPMENT, ...(p.equipment || {}) };
+    state.equipment = { ...DEFAULT_EQUIPMENT, kettlebells: true, ...(p.equipment || {}) };
+    state.weights = cleanWeights(p.weights, p.equipment || {});
     if (!INTERVALS[state.intervalStyle]) state.intervalStyle = DEFAULT_INTERVAL;
     if (!Array.isArray(state.regions) || !state.regions.length) state.regions = REGIONS.map(r => r.id);
     if (!Array.isArray(state.excluded)) state.excluded = [];
@@ -89,7 +93,69 @@ function savePrefs() {
   } catch (e) { /* private mode / quota: preferences just won't stick */ }
 }
 
-const hasEquip = (id) => state.equipment[id] !== false;
+// ---------------------------------------------------------------- gear
+// What setup shows. Kettlebells are one item with the bells you own ticked
+// underneath; the exercises' kb15 and kb10 are roles (the heavier bell and
+// the lighter one) filled from that list, so the generator and saved
+// workouts never see a particular weight.
+const GEAR = [
+  { id: 'kettlebells', label: 'Kettlebells', weights: 'kb' },
+  { id: 'barbell10', label: 'Barbell', weights: 'bar' },
+  { id: 'dumbbells', label: 'Dumbbells', weights: 'db' },
+  { id: 'rope', label: 'Skipping rope' },
+  { id: 'rings', label: 'Rings' }
+];
+const WEIGHT_CHOICES = {
+  kb:  { label: 'Kettlebells you have', many: true, kg: [4, 6, 8, 10, 12, 14, 15, 16, 18, 20, 22, 24, 28, 32] },
+  db:  { label: 'Dumbbell pairs you have', many: true, kg: [2, 3, 4, 5, 6, 7.5, 8, 10, 12.5, 15, 17.5, 20, 22.5, 25, 30] },
+  bar: { label: 'Barbell loaded to', many: false, kg: [10, 15, 20, 25, 30, 35, 40, 50, 60] }
+};
+// Saved weights, checked; or, from before weights existed, the two old
+// kettlebell switches turned into a list.
+function cleanWeights(w, oldEquip) {
+  const pick = (list, ok) => Array.isArray(list) ? [...new Set(list.filter(x => ok.includes(x)))].sort((a, b) => a - b) : null;
+  if (w && typeof w === 'object') {
+    return { kb: pick(w.kb, WEIGHT_CHOICES.kb.kg) || [10, 15],
+             db: pick(w.db, WEIGHT_CHOICES.db.kg) || [],
+             bar: WEIGHT_CHOICES.bar.kg.includes(w.bar) ? w.bar : 10 };
+  }
+  const kb = [10, 15].filter(kg => oldEquip[kg === 15 ? 'kb15' : 'kb10'] !== false);
+  if (!kb.length) state.equipment.kettlebells = false;
+  return { kb: kb.length ? kb : [10, 15], db: [], bar: 10 };
+}
+// The lighter role: the bell (or pair) nearest two thirds of the heaviest.
+function lighterOf(list) {
+  const top = Math.max(...list);
+  const under = list.filter(x => x < top);
+  if (!under.length) return null;
+  return under.reduce((best, x) => Math.abs(x - top * 2 / 3) <= Math.abs(best - top * 2 / 3) ? x : best);
+}
+// Equipment as the generator sees it: the gear switches, with the two
+// kettlebell roles on only when there are bells to fill them.
+function effectiveEquip() {
+  const e = { ...state.equipment };
+  const kb = state.equipment.kettlebells !== false ? state.weights.kb : [];
+  e.kb15 = kb.length >= 1;
+  e.kb10 = kb.length >= 2;
+  delete e.kettlebells;
+  return e;
+}
+// The weight each role stands for, for the cards.
+function loadsFor(weights) {
+  const kg = (n) => `${n}kg`;
+  const L = { bar: `${weights.bar}kg bar` };
+  if (weights.kb.length) {
+    L.kb15 = kg(Math.max(...weights.kb));
+    const light = lighterOf(weights.kb);
+    if (light) L.kb10 = kg(light);
+  }
+  if (weights.db.length) {
+    L.dbHeavy = kg(Math.max(...weights.db));
+    L.dbLight = kg(lighterOf(weights.db) || Math.max(...weights.db));
+  }
+  return L;
+}
+const hasEquip = (id) => effectiveEquip()[id] !== false;
 const currentInterval = () => INTERVALS[state.intervalStyle] || INTERVALS[DEFAULT_INTERVAL];
 // A generated workout carries the interval it was built for, so a saved
 // favourite replays as built without overwriting the interval chosen in
@@ -97,7 +163,8 @@ const currentInterval = () => INTERVALS[state.intervalStyle] || INTERVALS[DEFAUL
 const intervalFor = (w) => (w && w.intervalId && INTERVALS[w.intervalId]) || currentInterval();
 const buildCtx = (w) => {
   const iv = intervalFor(w);
-  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap, hasEquip };
+  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
+           hasEquip, loads: loadsFor(state.weights) };
 };
 
 // Classics carry no bookends of their own; derive them once at load.
@@ -119,7 +186,7 @@ const els = {
   btnSetupBack: $('btnSetupBack'), setupTitle: $('setupTitle'),
   peoplePicker: $('peoplePicker'), nameInputs: $('nameInputs'),
   nameA: $('nameA'), nameB: $('nameB'),
-  equipmentPicker: $('equipmentPicker'), timePicker: $('timePicker'),
+  equipmentPicker: $('equipmentPicker'), weightPicker: $('weightPicker'), timePicker: $('timePicker'),
   intervalPicker: $('intervalPicker'),
   bodyMap: $('bodyMap'), regionPicker: $('regionPicker'), tagPicker: $('tagPicker'),
   btnOpenExclude: $('btnOpenExclude'), excludeSummary: $('excludeSummary'),
@@ -380,10 +447,10 @@ function goWelcome() {
 
 function renderWelcomeFoot() {
   const iv = currentInterval();
-  const gear = Object.keys(EQUIPMENT).filter(hasEquip).length;
+  const gear = GEAR.filter(g => state.equipment[g.id] !== false).length;
   els.welcomeFoot.textContent =
     `${Object.keys(EXERCISES).length} movements · ${iv.label.toLowerCase()} (${iv.sub}) · ` +
-    `${gear}/${Object.keys(EQUIPMENT).length} kit items on · ` +
+    `${gear}/${GEAR.length} kit items on · ` +
     `${state.people === 1 ? 'solo' : 'two people'}`;
 }
 
@@ -424,16 +491,62 @@ function renderPeoplePicker() {
 
 function renderEquipmentPicker() {
   els.equipmentPicker.innerHTML = '';
-  Object.keys(EQUIPMENT).forEach(id => {
-    const b = tappable('chip' + (hasEquip(id) ? ' active' : ''), () => {
-      state.equipment[id] = !hasEquip(id);
+  els.weightPicker.innerHTML = '';
+  GEAR.forEach(g => {
+    const on = state.equipment[g.id] !== false;
+    const b = tappable('chip' + (on ? ' active' : ''), () => {
+      state.equipment[g.id] = !on;
       savePrefs();
       renderEquipmentPicker();
     });
-    b.textContent = EQUIPMENT[id];
-    b.setAttribute('aria-pressed', String(hasEquip(id)));
+    b.textContent = g.label;
+    b.setAttribute('aria-pressed', String(on));
     els.equipmentPicker.appendChild(b);
+    if (on && g.weights) els.weightPicker.appendChild(weightRow(g.weights));
   });
+}
+// A row of weights under an item that's switched on: tick the ones you own
+// (or, for the bar, what it's loaded to).
+function weightRow(kind) {
+  const spec = WEIGHT_CHOICES[kind];
+  const row = document.createElement('div');
+  row.className = 'weight-row';
+  row.innerHTML = `<div class="weight-label">${esc(spec.label)}</div>`;
+  const chips = document.createElement('div');
+  chips.className = 'chip-row weight-chips';
+  spec.kg.forEach(kg => {
+    const on = spec.many ? state.weights[kind].includes(kg) : state.weights[kind] === kg;
+    const c = tappable('chip weight-chip' + (on ? ' active' : ''), () => {
+      if (!spec.many) state.weights[kind] = kg;
+      else state.weights[kind] = on ? state.weights[kind].filter(x => x !== kg)
+                                    : [...state.weights[kind], kg].sort((a, b) => a - b);
+      savePrefs();
+      renderEquipmentPicker();
+    });
+    c.textContent = `${kg}kg`;
+    c.setAttribute('aria-pressed', String(on));
+    chips.appendChild(c);
+  });
+  row.appendChild(chips);
+  if (kind === 'kb') {
+    const L = loadsFor(state.weights), n = state.weights.kb.length;
+    const note = document.createElement('div');
+    note.className = 'picker-hint';
+    note.textContent = !n ? 'Tick at least one, or switch kettlebells off.'
+      : n === 1 ? `With one bell, ${L.kb15} does everything a kettlebell can, and the lighter-bell moves go bodyweight.`
+      : `${L.kb15} for swings, squats and deadlifts; ${L.kb10} for presses and single-arm work.`;
+    row.appendChild(note);
+  }
+  if (kind === 'db') {
+    const L = loadsFor(state.weights);
+    const note = document.createElement('div');
+    note.className = 'picker-hint';
+    note.textContent = !state.weights.db.length ? 'Tick your pairs and the cards will show the weight to grab.'
+      : L.dbHeavy === L.dbLight ? `${L.dbHeavy} for everything.`
+      : `${L.dbHeavy} for squats, rows and deadlifts; ${L.dbLight} for presses, raises and curls.`;
+    row.appendChild(note);
+  }
+  return row;
 }
 
 function renderTimePicker() {
@@ -604,7 +717,7 @@ function requestFromState() {
 function liveOpts(request, extra) {
   return {
     ...request,
-    equipment: { ...state.equipment },
+    equipment: effectiveEquip(),
     excluded: state.excluded.slice(),
     recent: state.recent.slice(),
     ...extra
@@ -1653,7 +1766,7 @@ const SHARE_VERSION = 1;
 function sharePayload(w) {
   if (w.generated) {
     return { v: SHARE_VERSION, seed: w.seed, request: w.request,
-             equipment: { ...state.equipment }, excluded: state.excluded.slice() };
+             equipment: effectiveEquip(), excluded: state.excluded.slice() };
   }
   return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id };
 }
@@ -1687,7 +1800,7 @@ function openSharedLink(hash) {
   }
   if (!payload.seed || !payload.request) return 'That link is missing its workout.';
   return buildAndOpen(payload.request, payload.seed, {
-    equipment: payload.equipment || { ...state.equipment },
+    equipment: payload.equipment || effectiveEquip(),
     excluded: Array.isArray(payload.excluded) ? payload.excluded : [],
     recent: Array.isArray(payload.request.recent) ? payload.request.recent : []
   });
