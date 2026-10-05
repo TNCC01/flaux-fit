@@ -31,6 +31,7 @@ figure. When in doubt, pick the textbook version of the movement.
 | `core.js` | planks, bear holds, dead bugs, bird dogs, side planks, crawls, get-ups |
 | `abs.js` | crunches, sit-up family, leg raises, twists, woodchops |
 | `cardio.js` | jumps, jacks, burpees, climbers, running drills, skipping |
+| `gear.js` | pull-up bar, resistance bands, medicine ball |
 
 `bwSquat` (legs.js), `pushup` (push.js) and `barbellPress` (press.js) are worked
 examples: read them first.
@@ -125,9 +126,40 @@ toes rest on the floor.
 - `{ type: 'barbell', length: 1.5, plate: 0.13 }` (between the hands; 10 kg bar)
 - `{ type: 'rings' }` straps to both hands (hands must be up in the air)
 - `{ type: 'rope', period: 0.5 }` skipping rope turning around the body
-- `{ type: 'box', pos: [x, 0, z], size: [w, h, d] }`, `{ type: 'bench', ... }`, `{ type: 'wall', z: -0.4 }`
+- `{ type: 'box', pos: [x, 0, z], size: [w, h, d] }`, `{ type: 'bench', ... }`, `{ type: 'wall', z: -0.4 }`.
+  A wall can stand to the side instead (`x: -1.4` is on the figure's right), take a
+  `width` (default 3 m) and a `target: 3.0` ring at that height (it grows tall
+  enough to hold it). A wall in front hides the figure from the front, so give the
+  move a side-on camera.
+- `{ type: 'pullupBar', y: 2.25, z: 0, width: 1.1 }` a fixed bar along X with end
+  brackets. It doesn't follow the hands: grip it with hand targets. The middle of the
+  palm sits about 0.07 past the wrist, so a wrist target about 0.07 under the bar
+  puts the palm on it. Set `turn` so the palms face the right way (0 is overhand on
+  a straight hang, about 100 to 106 palms towards you), and give the same palm
+  point in every pose so the hands don't slide along the bar.
+- `{ type: 'band', from, to }` an elastic band between two points that move:
+  `'handL'`, `'handR'`, `'footL'`, `'footR'` (under the arch of that foot) or a
+  fixed world point `[x, y, z]` (a door anchor, drawn as a small stopper). It thins
+  as it stretches; `rest` is the length it looks unstretched at (default 0.5),
+  `handles: true` puts a handle in each hand end. Standing on a band is two of
+  these, `footL` to `handL` and `footR` to `handR`.
+- `{ type: 'band', loop: 'knees' }` a mini band around both thighs just above the
+  knees, following the legs (lateral walks, banded bridges).
+- `{ type: 'ball', hand: 'both', r: 0.12 }` a medicine ball between the hands: it
+  sits at the midpoint of the two palms, so put the palms on its sides (about
+  r + 0.012 either side of its centre, palms facing in). To let go of it, give a
+  key pose `ball: [x, y, z]`, a world position (in the air, against a wall, on the
+  floor). Keys without `ball` hold it. Between two keys:
+  - both have `ball`: it moves straight from one to the other;
+  - held, then `ball`: it starts in the hands and peels away as the move goes on
+    (a throw or a slam: make the key before it a `pass` waypoint with the ball still
+    in the hands at the release point);
+  - `ball`, then held: it travels to where the hands will hold it when the move
+    lands (a catch, a pick-up). Give two keys the same `ball` to leave it lying
+    still, and finish the hands on it in the second so it is picked up cleanly.
 
-A box or bench top is at y = size[1]. Put feet or hands on it with targets.
+  A ball against a wall touches it when its centre is r in front of the wall's face
+  (the face is 0.05 in from the wall's `z` or `x`).
 
 ## Coaching text
 
