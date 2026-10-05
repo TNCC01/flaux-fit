@@ -96,6 +96,22 @@ function timedSec(v) {
   return m ? +m[1] * (m[2] ? 2 : 1) : 0;
 }
 
+// The weight to show on the card. ctx.loads, when the app knows the gear
+// you own, holds the real weight for each role ({ kb15: '16kg', kb10:
+// '12kg', bar: '20kg bar', dbHeavy: '12.5kg', dbLight: '7.5kg' }); without
+// it the exercise's own default label stands.
+function loadFor(ex, ctx) {
+  const L = ctx && ctx.loads;
+  if (!L) return ex.load || '';
+  const eq = ex.equipment || [];
+  const real = eq.includes('kb15') ? L.kb15
+    : eq.includes('kb10') ? L.kb10
+    : eq.includes('barbell10') ? L.bar
+    : eq.includes('dumbbells') ? (ex.db === 'light' ? L.dbLight : L.dbHeavy)
+    : '';
+  return real || ex.load || '';
+}
+
 // Build what the workout screen actually shows: a short bold name plus a
 // coaching cue whose timings match the interval in play.
 function describeEx(id, ctx) {
@@ -116,8 +132,9 @@ function describeEx(id, ctx) {
   // `display` is what goes on screen: the load belongs in the headline, not
   // the cue, so a pair sharing a movement at two weights can tell at a
   // glance which one is theirs.
-  return { id: ex.id, name: ex.name, load: ex.load || '', cue, reps: emom ? repsLabel(target) : '',
-           display: ex.load ? `${ex.name} · ${ex.load}` : ex.name,
+  const load = loadFor(ex, ctx);
+  return { id: ex.id, name: ex.name, load, cue, reps: emom ? repsLabel(target) : '',
+           display: load ? `${ex.name} · ${load}` : ex.name,
            alt: ex.alt || '', img: ex.img || null, adapted: ex.adapted };
 }
 

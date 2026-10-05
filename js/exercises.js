@@ -11,7 +11,17 @@
     load       optional weight tag ('15kg', 'lighter pair'). Appended to the
                headline, because in a swap block both people are doing the
                same movement and the load is the only thing telling them
-               which bell is theirs, it must not be buried in the cue
+               which bell is theirs, it must not be buried in the cue. This
+               is the default: once the weights you own are set, the card
+               shows the real ones (see weights below)
+    db         'light' for dumbbell moves done with the lighter pair
+               (presses, raises, curls); the rest take the heavier pair
+
+  WEIGHTS: kb15 and kb10 are roles, not bells: "the heavier kettlebell" and
+  "the lighter one". The app maps them onto the kettlebells you say you own
+  (the heaviest, and the one nearest two thirds of it), and the same for
+  dumbbell pairs and the bar's load, so these ids, saved favourites and
+  share links all stay valid whatever is in the shed.
     cue        small coaching line under the name ('' for none)
     sideCue    true when the cue must name a halfway switch, the app
                writes "switch sides at Ns" from the live interval, so the
@@ -240,31 +250,31 @@ const EXERCISES = {
   // DUMBBELLS
   // ===================================================================
   dbPressHeavy:   { name: 'Dumbbell shoulder press', load: 'heavier pair', cue: 'Press tall, ribs down', alt: 'Slow tempo, lighter weight', equipment: ['dumbbells'], bw: 'pikePushup', img: 'dbPress', emom: 10, regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
-  dbPressLight:   { name: 'Dumbbell shoulder press', load: 'lighter pair', cue: 'Press tall, ribs down', alt: 'Slow tempo, lighter weight', equipment: ['dumbbells'], bw: 'pikePushup', img: 'dbPress', emom: 12, regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
-  dbArnoldPress:  { name: 'Arnold press', cue: 'Rotate the palms as you press', alt: 'Plain dumbbell press', equipment: ['dumbbells'], bw: 'pikePushup', img: 'dbArnoldPress', emom: 10, regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
-  dbPushPress:    { name: 'Dumbbell push press', cue: 'Dip the knees, drive overhead', alt: 'Strict dumbbell press', equipment: ['dumbbells'], bw: 'squatReach', img: 'dbPushPress', emom: 10, regions: ['push', 'legs'], pattern: 'pushV', tags: ['overhead'] },
-  dbFrontRaise:   { name: 'Front raises', cue: 'To eye height, no swinging', alt: 'Lighter pair, slower', equipment: ['dumbbells'], bw: 'plankShoulderTaps', img: 'dbFrontRaise', emom: 10, regions: ['push'], pattern: 'pushV', tags: [] },
-  dbLateralRaise: { name: 'Lateral raises', cue: 'Elbows lead, stop at shoulder height', alt: 'Lighter pair, slow tempo', equipment: ['dumbbells'], bw: 'plankShoulderTaps', img: 'lateralRaise', emom: 12, regions: ['push'], pattern: 'pushV', tags: [] },
+  dbPressLight:   { name: 'Dumbbell shoulder press', load: 'lighter pair', cue: 'Press tall, ribs down', alt: 'Slow tempo, lighter weight', equipment: ['dumbbells'], db: 'light', bw: 'pikePushup', img: 'dbPress', emom: 12, regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
+  dbArnoldPress:  { name: 'Arnold press', cue: 'Rotate the palms as you press', alt: 'Plain dumbbell press', equipment: ['dumbbells'], db: 'light', bw: 'pikePushup', img: 'dbArnoldPress', emom: 10, regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
+  dbPushPress:    { name: 'Dumbbell push press', cue: 'Dip the knees, drive overhead', alt: 'Strict dumbbell press', equipment: ['dumbbells'], db: 'light', bw: 'squatReach', img: 'dbPushPress', emom: 10, regions: ['push', 'legs'], pattern: 'pushV', tags: ['overhead'] },
+  dbFrontRaise:   { name: 'Front raises', cue: 'To eye height, no swinging', alt: 'Lighter pair, slower', equipment: ['dumbbells'], db: 'light', bw: 'plankShoulderTaps', img: 'dbFrontRaise', emom: 10, regions: ['push'], pattern: 'pushV', tags: [] },
+  dbLateralRaise: { name: 'Lateral raises', cue: 'Elbows lead, stop at shoulder height', alt: 'Lighter pair, slow tempo', equipment: ['dumbbells'], db: 'light', bw: 'plankShoulderTaps', img: 'lateralRaise', emom: 12, regions: ['push'], pattern: 'pushV', tags: [] },
   dbFloorPress:   { name: 'Dumbbell floor press', cue: 'Pause when the elbows touch down', alt: 'Push-ups', equipment: ['dumbbells'], bw: 'pushup', img: 'dbFloorPress', emom: 12, regions: ['push'], pattern: 'pushH', tags: ['floor'] },
-  dbSkullcrusher: { name: 'Skull crushers', cue: 'Elbows still, lower to the forehead', alt: 'Bench dips', equipment: ['dumbbells'], bw: 'tricepDips', img: 'dbSkullcrusher', emom: 12, regions: ['push'], pattern: 'pushV', tags: ['floor'] },
-  dbOverheadTricep: { name: 'Overhead tricep extensions', cue: 'One dumbbell, elbows by the ears', alt: 'Bench dips', equipment: ['dumbbells'], bw: 'tricepDips', img: 'dbOverheadTricep', emom: 12, regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
+  dbSkullcrusher: { name: 'Skull crushers', cue: 'Elbows still, lower to the forehead', alt: 'Bench dips', equipment: ['dumbbells'], db: 'light', bw: 'tricepDips', img: 'dbSkullcrusher', emom: 12, regions: ['push'], pattern: 'pushV', tags: ['floor'] },
+  dbOverheadTricep: { name: 'Overhead tricep extensions', cue: 'One dumbbell, elbows by the ears', alt: 'Bench dips', equipment: ['dumbbells'], db: 'light', bw: 'tricepDips', img: 'dbOverheadTricep', emom: 12, regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
   dbRow:          { name: 'Bent-over rows', cue: 'Both dumbbells, squeeze the blades', alt: 'Rows with lighter dumbbells', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbRow', emom: 12, regions: ['pull'], pattern: 'pullH', tags: [] },
   dbRowSingle:    { name: 'Single-arm rows', cue: 'Hand on the bench, long pull', sideCue: true, alt: 'Two-arm bent-over rows', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbRowSingle', emom: '10/side', regions: ['pull'], pattern: 'pullH', tags: [] },
-  dbRearDeltFly:  { name: 'Rear delt flies', cue: 'Bent over, arms out wide', alt: 'Lighter pair, slower', equipment: ['dumbbells'], bw: 'supermanYtw', img: 'dbRearDeltFly', emom: 12, regions: ['pull'], pattern: 'pullH', tags: [] },
-  dbUprightRow:   { name: 'Upright rows', cue: 'Elbows lead to shoulder height', alt: 'Dumbbell shrugs', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbUprightRow', emom: 12, regions: ['pull'], pattern: 'pullV', tags: [] },
+  dbRearDeltFly:  { name: 'Rear delt flies', cue: 'Bent over, arms out wide', alt: 'Lighter pair, slower', equipment: ['dumbbells'], db: 'light', bw: 'supermanYtw', img: 'dbRearDeltFly', emom: 12, regions: ['pull'], pattern: 'pullH', tags: [] },
+  dbUprightRow:   { name: 'Upright rows', cue: 'Elbows lead to shoulder height', alt: 'Dumbbell shrugs', equipment: ['dumbbells'], db: 'light', bw: 'supermanPull', img: 'dbUprightRow', emom: 12, regions: ['pull'], pattern: 'pullV', tags: [] },
   dbShrug:        { name: 'Dumbbell shrugs', cue: 'Straight up, hold a beat', alt: 'Slow neck and shoulder rolls', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbShrug', emom: 15, regions: ['pull'], pattern: 'pullV', tags: [] },
-  dbCurl:         { name: 'Bicep curls', cue: 'Elbows pinned to the ribs', alt: 'Hammer curls, slower tempo', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbCurl', emom: 12, regions: ['pull'], pattern: 'pullH', tags: [] },
-  dbHammerCurl:   { name: 'Hammer curls', cue: 'Palms facing in the whole way', alt: 'Lighter pair, slower', equipment: ['dumbbells'], bw: 'supermanPull', img: 'dbHammerCurl', emom: 12, regions: ['pull'], pattern: 'pullH', tags: [] },
+  dbCurl:         { name: 'Bicep curls', cue: 'Elbows pinned to the ribs', alt: 'Hammer curls, slower tempo', equipment: ['dumbbells'], db: 'light', bw: 'supermanPull', img: 'dbCurl', emom: 12, regions: ['pull'], pattern: 'pullH', tags: [] },
+  dbHammerCurl:   { name: 'Hammer curls', cue: 'Palms facing in the whole way', alt: 'Lighter pair, slower', equipment: ['dumbbells'], db: 'light', bw: 'supermanPull', img: 'dbHammerCurl', emom: 12, regions: ['pull'], pattern: 'pullH', tags: [] },
   dbSquat:        { name: 'Dumbbell squats', cue: 'A dumbbell in each hand, chest up', alt: 'Bodyweight squats', equipment: ['dumbbells'], bw: 'airSquat', img: 'dbSquat', emom: 12, regions: ['legs'], pattern: 'squat', tags: [] },
   dbLunge:        { name: 'Reverse lunges', cue: 'A dumbbell in each hand', alt: 'Bodyweight reverse lunges', equipment: ['dumbbells'], bw: 'reverseLunge', img: 'reverseLunge', emom: 12, regions: ['legs'], pattern: 'lunge', tags: [] },
   dbSplitSquat:   { name: 'Loaded split squats', cue: 'Dumbbells at the sides', sideCue: true, alt: 'Bodyweight split squats', equipment: ['dumbbells'], bw: 'splitSquat', img: 'dbSplitSquat', emom: '8/side', regions: ['legs'], pattern: 'lunge', tags: [] },
-  dbOverheadLunge:{ name: 'Overhead lunges', cue: 'One dumbbell locked overhead', sideCue: true, alt: 'Bodyweight reverse lunges', equipment: ['dumbbells'], bw: 'reverseLunge', img: 'overheadLunge', emom: '6/side', regions: ['legs', 'core'], pattern: 'lunge', tags: ['overhead'] },
+  dbOverheadLunge:{ name: 'Overhead lunges', cue: 'One dumbbell locked overhead', sideCue: true, alt: 'Bodyweight reverse lunges', equipment: ['dumbbells'], db: 'light', bw: 'reverseLunge', img: 'overheadLunge', emom: '6/side', regions: ['legs', 'core'], pattern: 'lunge', tags: ['overhead'] },
   dbRdl:          { name: 'Romanian deadlifts', cue: 'Dumbbells down the shins', alt: 'Bodyweight good mornings', equipment: ['dumbbells'], bw: 'goodMorning', img: 'dbRdl', emom: 12, regions: ['legs', 'pull'], pattern: 'hinge', tags: [] },
-  renegadeRow:    { name: 'Renegade rows', cue: 'Plank on the dumbbells, row one side', alt: 'Renegade rows from the knees', equipment: ['dumbbells'], bw: 'plankShoulderTaps', img: 'renegadeRow', emom: 10, regions: ['pull', 'core'], pattern: 'pullH', tags: ['floor'] },
-  dbWoodchop:     { name: 'Woodchops', cue: 'One dumbbell, hip to opposite shoulder', sideCue: true, alt: 'Bodyweight torso rotations', equipment: ['dumbbells'], bw: 'russianTwistBw', img: 'dbWoodchop', emom: '8/side', regions: ['core'], pattern: 'coreRot', tags: [] },
+  renegadeRow:    { name: 'Renegade rows', cue: 'Plank on the dumbbells, row one side', alt: 'Renegade rows from the knees', equipment: ['dumbbells'], db: 'light', bw: 'plankShoulderTaps', img: 'renegadeRow', emom: 10, regions: ['pull', 'core'], pattern: 'pullH', tags: ['floor'] },
+  dbWoodchop:     { name: 'Woodchops', cue: 'One dumbbell, hip to opposite shoulder', sideCue: true, alt: 'Bodyweight torso rotations', equipment: ['dumbbells'], db: 'light', bw: 'russianTwistBw', img: 'dbWoodchop', emom: '8/side', regions: ['core'], pattern: 'coreRot', tags: [] },
   dbSuitcaseCarry:{ name: 'Suitcase carry', cue: 'One dumbbell, down the driveway', sideCue: true, alt: 'Suitcase hold in place', equipment: ['dumbbells'], bw: 'bearCrawl', img: 'farmersWalk', emom: '20s/side', regions: ['core'], pattern: 'carry', tags: [] },
   dbFarmersWalk:  { name: "Farmer's walk", cue: 'Both dumbbells, tall and steady', alt: 'Shorter walk, lighter pair', equipment: ['dumbbells'], bw: 'bearCrawl', img: 'dbFarmersWalk', emom: '40s', regions: ['pull', 'core'], pattern: 'carry', tags: [] },
-  dbOverheadCarry:{ name: 'Overhead carry', cue: 'Both locked out, walk tall', alt: 'Front rack carry instead', equipment: ['dumbbells'], bw: 'bearCrawl', img: 'dbOverheadCarry', emom: '30s', regions: ['push', 'core'], pattern: 'carry', tags: ['overhead'] },
+  dbOverheadCarry:{ name: 'Overhead carry', cue: 'Both locked out, walk tall', alt: 'Front rack carry instead', equipment: ['dumbbells'], db: 'light', bw: 'bearCrawl', img: 'dbOverheadCarry', emom: '30s', regions: ['push', 'core'], pattern: 'carry', tags: ['overhead'] },
 
   // ===================================================================
   // ROPE
