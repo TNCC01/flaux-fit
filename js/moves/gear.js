@@ -14,15 +14,16 @@ function onToes(flat, deg) {
 }
 
 // ---------------------------------------------------------- pull-up bar
-// The bar is at 2.25 m. Wrist targets are fitted so the middle of the palm
+// The bar is at 2.45 m, high enough that the feet hang well clear of the
+// floor at full arm length. Wrist targets are fitted so the middle of the palm
 // sits on the bar in every pose (the hand wraps it), so nothing slides.
-const BAR = [{ type: 'pullupBar', y: 2.25, z: 0, width: 1.1 }];
+const BAR = [{ type: 'pullupBar', y: 2.45, z: 0, width: 1.1 }];
 const onBar = (hand, extra = {}) => ({ L: { hand, ...extra }, R: 'mirror' });
-// legs long and together, a touch in front of the body (a light hollow)
-const HANG_LEGS = { L: { hip: { flex: 8, abd: -1 }, knee: 10, ankle: -25 }, R: 'mirror' };
+// legs together and quiet, knees softly bent, a touch in front of the body
+const HANG_LEGS = { L: { hip: { flex: 12, abd: -1 }, knee: 22, ankle: -20 }, R: 'mirror' };
 // hanging from an overhand grip a little wider than the shoulders
-const HANG = { pelvis: { pos: [0, 1.19, 0.02], pitch: -2 }, legs: HANG_LEGS,
-  arms: onBar([0.325, 2.18, -0.004], { elbow: 'out', turn: 0, shrug: 0.02 }) };
+const HANG = { pelvis: { pos: [0, 1.39, 0.02], pitch: -2 }, legs: HANG_LEGS,
+  arms: onBar([0.325, 2.38, -0.004], { elbow: 'out', turn: 0, shrug: 0.02 }) };
 
 // ---------------------------------------------------------- bands
 const BAND_FEET = { L: { foot: [0.12, 0.07, 0], toeOut: 6 }, R: 'mirror' };
@@ -70,7 +71,7 @@ const mirrorKeys = (keys) => Object.fromEntries(Object.entries(keys).map(([n, k]
 export default {
   // ====================================================== pull-up bar
   barPullUp: {
-    camera: { yaw: 40, pitch: 4 },
+    camera: { yaw: 40, pitch: 10 },
     props: BAR,
     muscles: { primary: ['lats', 'upperBack'], secondary: ['biceps', 'forearms', 'core'] },
     coaching: {
@@ -97,16 +98,16 @@ export default {
     },
     keys: {
       hang: { label: 'Long arms', ...HANG },
-      half: { label: 'Halfway', pelvis: { pos: [0, 1.45, 0.0], pitch: -6 }, legs: HANG_LEGS,
-        arms: onBar([0.347, 2.188, 0.02], { elbow: [0.5, -1, 0.4], turn: -20 }) },
-      top: { label: 'Chin over', pelvis: { pos: [0, 1.74, -0.01], pitch: -10 }, neck: { flex: -18 }, legs: HANG_LEGS,
-        arms: onBar([0.316, 2.18, -0.006], { elbow: [0.5, -1, 0.5], turn: -50 }) },
+      half: { label: 'Halfway', pelvis: { pos: [0, 1.65, 0.0], pitch: -6 }, legs: HANG_LEGS,
+        arms: onBar([0.347, 2.388, 0.02], { elbow: [0.5, -1, 0.4], turn: -20 }) },
+      top: { label: 'Chin over', pelvis: { pos: [0, 1.94, -0.01], pitch: -10 }, neck: { flex: -18 }, legs: HANG_LEGS,
+        arms: onBar([0.316, 2.38, -0.006], { elbow: [0.5, -1, 0.5], turn: -50 }) },
     },
     flow: ['half'],
     seq: ['hang', 'half', 'top', 'half'], tempo: [0.6, 0.5, 1.2, 1.3], holds: { hang: 0.45, half: 0, top: 0.35 },
   },
   barChinUp: {
-    camera: { yaw: 50, pitch: 4 },
+    camera: { yaw: 50, pitch: 10 },
     props: BAR,
     muscles: { primary: ['lats', 'biceps'], secondary: ['upperBack', 'forearms', 'core'] },
     coaching: {
@@ -132,18 +133,18 @@ export default {
       tempo: 'About 1 second up, a short pause at the top, 2 to 3 seconds down.',
     },
     keys: {
-      hang: { label: 'Long arms', pelvis: { pos: [0, 1.17, 0.02], pitch: -2 }, legs: HANG_LEGS,
-        arms: onBar([0.2, 2.18, 0], { elbow: [0.3, -0.3, 1], turn: 106, shrug: 0.02 }) },
-      half: { label: 'Halfway', pelvis: { pos: [0, 1.45, 0.0], pitch: -6 }, legs: HANG_LEGS,
-        arms: onBar([0.2, 2.18, 0], { elbow: [0.15, -1, 0.8], turn: 104, wrist: -40 }) },
-      top: { label: 'Chin over', pelvis: { pos: [0, 1.74, -0.02], pitch: -12 }, neck: { flex: -16 }, legs: HANG_LEGS,
-        arms: onBar([0.2, 2.18, 0], { elbow: [0.15, -1, 0.7], turn: 94 }) },
+      hang: { label: 'Long arms', pelvis: { pos: [0, 1.37, 0.02], pitch: -2 }, legs: HANG_LEGS,
+        arms: onBar([0.2, 2.38, 0], { elbow: [0.3, -0.3, 1], turn: 106, shrug: 0.02 }) },
+      half: { label: 'Halfway', pelvis: { pos: [0, 1.65, 0.0], pitch: -6 }, legs: HANG_LEGS,
+        arms: onBar([0.2, 2.38, 0], { elbow: [0.15, -1, 0.8], turn: 104, wrist: -40 }) },
+      top: { label: 'Chin over', pelvis: { pos: [0, 1.94, -0.02], pitch: -12 }, neck: { flex: -16 }, legs: HANG_LEGS,
+        arms: onBar([0.2, 2.38, 0], { elbow: [0.15, -1, 0.7], turn: 94 }) },
     },
     flow: ['half'],
     seq: ['hang', 'half', 'top', 'half'], tempo: [0.6, 0.5, 1.2, 1.3], holds: { hang: 0.45, half: 0, top: 0.35 },
   },
   hangingKneeRaise: {
-    camera: { yaw: 70, pitch: 4 },
+    camera: { yaw: 70, pitch: 10 },
     props: BAR,
     muscles: { primary: ['core', 'hipFlexors'], secondary: ['obliques', 'forearms', 'lats'] },
     coaching: {
@@ -170,14 +171,14 @@ export default {
     },
     keys: {
       hang: { label: 'Long hang', ...HANG },
-      top: { label: 'Knees up', pelvis: { pos: [0, 1.21, 0.05], pitch: -14 }, spine: { flex: 8 }, neck: { flex: -6 },
+      top: { label: 'Knees up', pelvis: { pos: [0, 1.41, 0.05], pitch: -14 }, spine: { flex: 8 }, neck: { flex: -6 },
         legs: { L: { hip: { flex: 105, abd: 2 }, knee: 100, ankle: -20 }, R: 'mirror' },
-        arms: onBar([0.325, 2.18, -0.004], { elbow: 'out', turn: 0, shrug: 0.01 }) },
+        arms: onBar([0.325, 2.38, -0.004], { elbow: 'out', turn: 0, shrug: 0.01 }) },
     },
     seq: ['hang', 'top'], tempo: [1.0, 1.8], holds: { hang: 0.4, top: 0.4 },
   },
   barDeadHang: {
-    camera: { yaw: 40, pitch: 4 },
+    camera: { yaw: 40, pitch: 10 },
     props: BAR,
     muscles: { primary: ['forearms', 'lats'], secondary: ['shoulders', 'core'] },
     coaching: {
@@ -203,11 +204,11 @@ export default {
       tempo: 'Hold for the set time, around 20 to 40 seconds.',
     },
     keys: {
-      a: { label: 'Hang', pelvis: { pos: [0, 1.17, 0.02], pitch: -2 }, legs: HANG_LEGS,
-        arms: onBar([0.325, 2.18, -0.004], { elbow: 'out', turn: 0, shrug: 0.04 }) },
-      b: { label: 'Shoulders set', pelvis: { pos: [0, 1.195, 0.02], pitch: -2 }, spine: { flex: -1.5 },
-        legs: { L: { hip: { flex: 9, abd: -1 }, knee: 11, ankle: -25 }, R: 'mirror' },
-        arms: onBar([0.325, 2.18, -0.004], { elbow: 'out', turn: 0, shrug: 0.015 }) },
+      a: { label: 'Hang', pelvis: { pos: [0, 1.37, 0.02], pitch: -2 }, legs: HANG_LEGS,
+        arms: onBar([0.325, 2.38, -0.004], { elbow: 'out', turn: 0, shrug: 0.04 }) },
+      b: { label: 'Shoulders set', pelvis: { pos: [0, 1.395, 0.02], pitch: -2 }, spine: { flex: -1.5 },
+        legs: { L: { hip: { flex: 13, abd: -1 }, knee: 23, ankle: -20 }, R: 'mirror' },
+        arms: onBar([0.325, 2.38, -0.004], { elbow: 'out', turn: 0, shrug: 0.015 }) },
     },
     seq: ['a', 'b'], tempo: [1.8, 2.2], holds: { a: 0.4, b: 0.5 },
   },

@@ -271,7 +271,9 @@ export function buildProps(scene, J, list, palette, tl) {
       }
       g.position.set(0, y, z);
       scene.add(shadow(g));
-      extra.push(() => [new THREE.Vector3(-w / 2 - 0.05, y + 0.2, z), new THREE.Vector3(w / 2 + 0.05, y + 0.2, z)]);
+      // frame the floor under the bar too, so the gap under the feet shows
+      extra.push(() => [new THREE.Vector3(-w / 2 - 0.05, y + 0.2, z), new THREE.Vector3(w / 2 + 0.05, y + 0.2, z),
+        new THREE.Vector3(0, 0, z + 0.15), new THREE.Vector3(0, 0, z - 0.15)]);
     } else if (p.type === 'band' && p.loop) {
       // a mini band around both thighs just above the knees: a flat strip
       // that hugs the outside of each thigh and runs across front and back
