@@ -45,7 +45,8 @@ let step = '';
 const ok = (msg) => console.log('ok   ' + msg);
 const note = (msg) => console.log('     ' + msg);
 const assert = (c, msg) => { if (!c) throw new Error(`FAILED at "${step}": ${msg}`); };
-const GEAR = ['Kettlebells', 'Barbell', 'Dumbbells', 'Skipping rope', 'Rings'];
+const GEAR = ['Kettlebells', 'Barbell', 'Dumbbells', 'Skipping rope', 'Rings',
+              'Pull-up bar', 'Resistance bands', 'Medicine / slam ball', 'Box or bench'];
 
 // software WebGL, so the 3D figures draw on machines without a GPU (CI)
 const launch = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };

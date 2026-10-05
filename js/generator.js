@@ -8,7 +8,7 @@
   movements to keep out.
 
   Why generated rather than a table of preset workouts: the input space is
-  6 equipment items x ~8 durations x 2 people x 2 intervals x 31 region
+  10 equipment items x ~8 durations x 2 people x 5 styles x 31 region
   combinations x arbitrary exclusions. Presets can only ever cover a
   corner of that, which is exactly why the short sessions kept handing
   back a trimmed-down copy of the long ones. This composes from the whole

@@ -17,7 +17,7 @@ The home screen asks how you want to train:
   named classics.
 
 Workouts in the first two paths are **generated on the spot** rather than
-pulled from a table of presets. The input space (6 equipment items × 8
+pulled from a table of presets. The input space (10 equipment items × 8
 durations × 2 people × 5 workout styles × 31 region combinations ×
 arbitrary exclusions) is far too large for presets to cover, which is why
 short preset sessions used to feel like a trimmed-down copy of the long
