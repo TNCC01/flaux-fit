@@ -14,7 +14,7 @@ import { MOVES } from '../moves/index.js';
 export const PALETTE = {
   bg: 0x0a1514, floor: 0x10201f, skin: 0xb9c9c5, accent: 0x2dd4bf,
   primary: 0xf43f5e, secondary: 0xfb923c, iron: 0x8a9696, gear: 0xfbbf24,
-  wood: 0x6b5a45, wall: 0x35504d,
+  wood: 0x6b5a45, wall: 0x35504d, band: 0xa78bfa,
 };
 
 // exercise id or animation name -> { id, ex, base, move }
@@ -95,7 +95,7 @@ export function makeFigure(scene, move) {
   tint(mus.secondary, PALETTE.secondary, 0.35);
   tint(mus.primary, PALETTE.primary, 0.6);
   const tl = timeline(move);
-  const props = buildProps(scene, J, move.props, PALETTE);
+  const props = buildProps(scene, J, move.props, PALETTE, tl);
   return { J, tl, props, move };
 }
 
@@ -106,8 +106,12 @@ export function motionBounds(fig) {
   const points = [];
   const add = (p) => { box.expandByPoint(p); points.push(p.clone()); };
   for (let i = 0; i <= 48; i++) {
-    poseAt(fig.J, fig.tl, (fig.tl.total * i) / 48);
+    const t = (fig.tl.total * i) / 48;
+    poseAt(fig.J, fig.tl, t);
     for (const p of bodyPoints(fig.J)) add(p);
+    // equipment that reaches past the body (a bar's ends, a thrown ball)
+    fig.props(t);
+    for (const p of fig.props.points()) add(p);
     // held equipment reaches past the hands (a barbell's plates)
     if ((fig.move.props || []).some(p => /bell|dumbbell/.test(p.type)))
       for (const s of ['L', 'R']) add(fig.J['wrist' + s].getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.2, 0)));
