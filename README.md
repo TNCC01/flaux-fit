@@ -17,7 +17,7 @@ The home screen asks how you want to train:
   named classics.
 
 Workouts in the first two paths are **generated on the spot** rather than
-pulled from a table of presets. The input space (6 equipment items × 8
+pulled from a table of presets. The input space (10 equipment items × 8
 durations × 2 people × 5 workout styles × 31 region combinations ×
 arbitrary exclusions) is far too large for presets to cover, which is why
 short preset sessions used to feel like a trimmed-down copy of the long
@@ -81,8 +81,10 @@ rather than hardcoded.
 - **What's coming up**: during a rest, a button shows the next block's
   exercises as small moving figures, each opening the full view
 - **16 named workouts** and **3 stretch routines**
-- Equipment picker: tap off gear you haven't got and nothing needing it
-  gets picked. Under kettlebells, dumbbells and the barbell, tick the
+- Equipment picker: kettlebells, a barbell, dumbbells, a skipping rope,
+  rings, a pull-up bar, resistance bands, a medicine or slam ball and a box
+  or bench. Tap off gear you haven't got and nothing needing it gets
+  picked; moves that stand on a box or bench fall back to a floor version. Under kettlebells, dumbbells and the barbell, tick the
   weights you own (or what the bar is loaded to). The heaviest bell goes to
   swings, squats and deadlifts and the one nearest two thirds of it to
   presses and single-arm work, likewise for dumbbell pairs, and every card

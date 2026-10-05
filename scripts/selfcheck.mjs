@@ -245,7 +245,8 @@ const EQUIP_CASES = [
   ['full kit', ALL_EQUIP],
   ['no kettlebells', noKb],
   ['bodyweight only', bodyOnly],
-  ['rings + rope only', { ...bodyOnly, rings: true, rope: true }]
+  ['rings + rope only', { ...bodyOnly, rings: true, rope: true }],
+  ['bar, bands, ball and box only', { ...bodyOnly, pullupBar: true, bands: true, medball: true, box: true }]
 ];
 const TAG_CASES = [[], ['impact'], ['floor'], ['impact', 'floor', 'running'],
                    ['impact', 'floor', 'overhead', 'running']];

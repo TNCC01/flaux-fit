@@ -138,8 +138,9 @@ function frame(now) {
       bufW = Math.max(bufW, w); bufH = Math.max(bufH, h);
       renderer.setSize(bufW, bufH, false);
     }
-    poseAt(view.fig.J, view.fig.tl, still.matches ? view.stillAt : view.clock);
-    view.fig.props(view.clock);
+    const at = still.matches ? view.stillAt : view.clock;
+    poseAt(view.fig.J, view.fig.tl, at);
+    view.fig.props(at);
     view.camera.aspect = w / h;
     view.camera.updateProjectionMatrix();
     placeCamera(view.camera, view.box, view.yaw, view.pitch, w / h, { tight: true });

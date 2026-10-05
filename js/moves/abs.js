@@ -15,8 +15,8 @@ const FEET_FLAT = { L: { foot: [0.13, 0.07, 0.5], knee: 'up', toeOut: 4 }, R: 'm
 // Russian twists: sitting back on the sit bones, heels light, the ribs turn
 // the hands from one hip to the other. `gap` is half the space between the
 // wrists (wider on the kettlebell horns).
-const TWIST_MUSCLES = { primary: ['obliques', 'core'], secondary: ['hipFlexors', 'lowerBack'] };
-function twistKeys(gap, wrist = 0) {
+export const TWIST_MUSCLES = { primary: ['obliques', 'core'], secondary: ['hipFlexors', 'lowerBack'] };
+export function twistKeys(gap, wrist = 0) {
   return {
     mid: {
       label: 'Centre',

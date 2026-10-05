@@ -103,7 +103,11 @@ const GEAR = [
   { id: 'barbell10', label: 'Barbell', weights: 'bar' },
   { id: 'dumbbells', label: 'Dumbbells', weights: 'db' },
   { id: 'rope', label: 'Skipping rope' },
-  { id: 'rings', label: 'Rings' }
+  { id: 'rings', label: 'Rings' },
+  { id: 'pullupBar', label: 'Pull-up bar' },
+  { id: 'bands', label: 'Resistance bands' },
+  { id: 'medball', label: 'Medicine / slam ball' },
+  { id: 'box', label: 'Box or bench' }
 ];
 const WEIGHT_CHOICES = {
   kb:  { label: 'Kettlebells you have', many: true, kg: [4, 6, 8, 10, 12, 14, 15, 16, 18, 20, 22, 24, 28, 32] },

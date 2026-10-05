@@ -14,7 +14,7 @@
   Bumping it only clears out old entries sooner. When a 3D file is added,
   list it in MOVE_3D (scripts/selfcheck.mjs checks the list is complete).
 */
-const VERSION = 'fit-v4';
+const VERSION = 'fit-v5';
 const NETWORK_TIMEOUT_MS = 4000;
 
 const SHELL = [
@@ -27,7 +27,8 @@ const MOVE_3D = [
   '/move.html', '/vendor/three/three.min.js',
   '/js/move/body.js', '/js/move/motion.js', '/js/move/scene.js', '/js/move/deck.js', '/js/move/viewer.js',
   '/js/moves/index.js', '/js/moves/legs.js', '/js/moves/lunge.js', '/js/moves/hinge.js', '/js/moves/push.js',
-  '/js/moves/press.js', '/js/moves/pull.js', '/js/moves/core.js', '/js/moves/abs.js', '/js/moves/cardio.js'
+  '/js/moves/press.js', '/js/moves/pull.js', '/js/moves/core.js', '/js/moves/abs.js', '/js/moves/cardio.js',
+  '/js/moves/gear.js'
 ];
 
 self.addEventListener('install', (event) => {

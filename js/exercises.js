@@ -3,8 +3,9 @@
 
   EXERCISE DICTIONARY
   ===================
-  Equipment on hand: 15kg KB, 10kg KB, 10kg barbell, dumbbells (set),
-  skipping rope, gymnastic rings, gravel driveway (~1 min round trip).
+  Equipment: kettlebells, a barbell, dumbbells, a skipping rope, rings, a
+  pull-up bar, resistance bands, a medicine or slam ball and a box or bench,
+  each switchable in setup; plus a gravel driveway (~1 min round trip).
 
   Each exercise carries:
     name       short headline shown BIG on the workout screen
@@ -50,12 +51,18 @@ const EQUIPMENT = {
   barbell10: '10kg barbell',
   dumbbells: 'Dumbbells',
   rope:      'Skipping rope',
-  rings:     'Rings'
+  rings:     'Rings',
+  pullupBar: 'Pull-up bar',
+  bands:     'Resistance bands',
+  medball:   'Medicine / slam ball',
+  box:       'Box or bench'
 };
-const DEFAULT_EQUIPMENT = { kb15: true, kb10: true, barbell10: true, dumbbells: true, rope: true, rings: true };
+const DEFAULT_EQUIPMENT = { kb15: true, kb10: true, barbell10: true, dumbbells: true, rope: true, rings: true,
+                            pullupBar: true, bands: true, medball: true, box: true };
 
 // Single-instance gear: two people can't share one of these in a round.
-const SINGLE_INSTANCE = ['kb15', 'kb10', 'barbell10', 'rope', 'rings'];
+// Bands come as a set, so they're not on the list.
+const SINGLE_INSTANCE = ['kb15', 'kb10', 'barbell10', 'rope', 'rings', 'pullupBar', 'medball', 'box'];
 
 // Body regions, in plain-English body-part terms rather than anatomy.
 const REGIONS = [
@@ -85,12 +92,12 @@ const EXERCISES = {
   squatReach:      { name: 'Squat to reach', cue: 'Stand and drive both arms overhead', alt: 'Slow squat, arms forward', equipment: [], img: 'squatReach', emom: 12, regions: ['legs', 'push'], pattern: 'squat', tags: [] },
   squatJump:       { name: 'Squat jumps', cue: 'Land soft, straight back down', alt: 'Explosive squat, no jump', equipment: [], img: 'jumpSquat', emom: 10, regions: ['legs', 'cardio'], pattern: 'squat', tags: ['impact'] },
   splitSquat:      { name: 'Split squats', cue: 'Back knee straight down', sideCue: true, alt: 'Hold a wall for balance', equipment: [], img: 'splitSquat', emom: '8/side', regions: ['legs'], pattern: 'lunge', tags: [] },
-  bulgarianSplit:  { name: 'Bulgarian split squats', cue: 'Rear foot on the bench', sideCue: true, alt: 'Rear foot on the ground instead', equipment: [], img: 'bulgarianSplitSquat', emom: '6/side', regions: ['legs'], pattern: 'lunge', tags: [] },
+  bulgarianSplit:  { name: 'Bulgarian split squats', cue: 'Rear foot on the bench', sideCue: true, alt: 'Rear foot on the ground instead', equipment: ['box'], bw: 'splitSquat', img: 'bulgarianSplitSquat', emom: '6/side', regions: ['legs'], pattern: 'lunge', tags: [] },
   pistolAssisted:  { name: 'Assisted single-leg squats', cue: 'Hold the rings or a doorframe', sideCue: true, alt: 'Sit back to a bench, both feet down', equipment: [], img: 'pistolSquat', emom: '5/side', regions: ['legs'], pattern: 'squat', tags: [] },
   wallSit:         { name: 'Wall sit', cue: 'Thighs parallel, back flat', alt: 'Higher wall sit, less depth', equipment: [], img: 'wallSit', emom: '40s', regions: ['legs'], pattern: 'squat', tags: [] },
   calfRaises:      { name: 'Calf raises', cue: 'Slow up, slower down', alt: 'Seated calf raises', equipment: [], img: 'calfRaise', emom: 20, regions: ['legs'], pattern: 'squat', tags: [] },
   calfRaiseSingle: { name: 'Single-leg calf raises', cue: 'Hold a wall, full range', sideCue: true, alt: 'Both feet down', equipment: [], img: 'singleLegCalfRaise', emom: '12/side', regions: ['legs'], pattern: 'squat', tags: [] },
-  stepDown:        { name: 'Slow step-downs', cue: 'Lower under control, 3 seconds', sideCue: true, alt: 'Lower step, hold a wall', equipment: [], img: 'stepDown', emom: '5/side', regions: ['legs'], pattern: 'lunge', tags: [] },
+  stepDown:        { name: 'Slow step-downs', cue: 'Lower under control, 3 seconds', sideCue: true, alt: 'Lower step, hold a wall', equipment: ['box'], bw: 'reverseLunge', img: 'stepDown', emom: '5/side', regions: ['legs'], pattern: 'lunge', tags: [] },
 
   // ===================================================================
   // LEGS: lunge pattern
@@ -101,9 +108,9 @@ const EXERCISES = {
   curtsyLunge:     { name: 'Curtsy lunges', cue: 'Step back and across', alt: 'Plain reverse lunges', equipment: [], img: 'curtsyLunge', emom: 12, regions: ['legs'], pattern: 'lunge', tags: [] },
   cossackSquat:    { name: 'Cossack squats', cue: 'Side to side, other leg straight', alt: 'Shallow lateral lunges', equipment: [], img: 'cossackSquat', emom: 10, regions: ['legs'], pattern: 'lunge', tags: [] },
   jumpLunge:       { name: 'Jumping split lunges', cue: 'Swap legs in the air', alt: 'Step-through lunges, no jump', equipment: [], img: 'jumpLunge', emom: 12, regions: ['legs', 'cardio'], pattern: 'lunge', tags: ['impact'] },
-  stepUp:          { name: 'Step-ups', cue: 'Drive through the top leg', sideCue: true, alt: 'Toe taps to a low step', equipment: [], img: 'stepUp', emom: '8/side', regions: ['legs'], pattern: 'lunge', tags: [] },
-  stepUpJump:      { name: 'Jumping step-ups', cue: 'Explode off the box, land soft', alt: 'Plain step-ups', equipment: [], img: 'stepUpJump', emom: 10, regions: ['legs', 'cardio'], pattern: 'lunge', tags: ['impact'] },
-  boxJump:         { name: 'Box jumps', cue: 'Jump up, step down', alt: 'Step-ups instead', equipment: [], img: 'boxJump', emom: 8, regions: ['legs', 'cardio'], pattern: 'squat', tags: ['impact'] },
+  stepUp:          { name: 'Step-ups', cue: 'Drive through the top leg', sideCue: true, alt: 'Toe taps to a low step', equipment: ['box'], bw: 'splitSquat', img: 'stepUp', emom: '8/side', regions: ['legs'], pattern: 'lunge', tags: [] },
+  stepUpJump:      { name: 'Jumping step-ups', cue: 'Explode off the box, land soft', alt: 'Plain step-ups', equipment: ['box'], bw: 'jumpLunge', img: 'stepUpJump', emom: 10, regions: ['legs', 'cardio'], pattern: 'lunge', tags: ['impact'] },
+  boxJump:         { name: 'Box jumps', cue: 'Jump up, step down', alt: 'Step-ups instead', equipment: ['box'], bw: 'squatJump', img: 'boxJump', emom: 8, regions: ['legs', 'cardio'], pattern: 'squat', tags: ['impact'] },
 
   // ===================================================================
   // LEGS / POSTERIOR: hinge pattern
@@ -112,7 +119,7 @@ const EXERCISES = {
   singleLegRdl:    { name: 'Single-leg deadlifts', cue: 'Reach for the floor, hips level', sideCue: true, alt: 'Hold a wall, both feet down', equipment: [], img: 'singleLegRdl', emom: '8/side', regions: ['legs'], pattern: 'hinge', tags: [] },
   gluteBridge:     { name: 'Glute bridges', cue: 'Squeeze hard at the top', alt: 'Glute bridge hold', equipment: [], img: 'gluteBridge', emom: 15, regions: ['legs'], pattern: 'hinge', tags: ['floor'] },
   singleLegBridge: { name: 'Single-leg glute bridges', cue: 'One foot down, one leg out', sideCue: true, alt: 'Glute bridges, both legs', equipment: [], img: 'singleLegBridge', emom: '10/side', regions: ['legs'], pattern: 'hinge', tags: ['floor'] },
-  hipThrust:       { name: 'Shoulder-elevated hip thrusts', cue: 'Shoulders on the bench, drive up', alt: 'Glute bridges on the floor', equipment: [], img: 'hipThrust', emom: 12, regions: ['legs'], pattern: 'hinge', tags: [] },
+  hipThrust:       { name: 'Shoulder-elevated hip thrusts', cue: 'Shoulders on the bench, drive up', alt: 'Glute bridges on the floor', equipment: ['box'], bw: 'gluteBridge', img: 'hipThrust', emom: 12, regions: ['legs'], pattern: 'hinge', tags: [] },
   frogPump:        { name: 'Frog pumps', cue: 'Heels together, knees wide', alt: 'Glute bridges, feet flat', equipment: [], img: 'frogPump', emom: 20, regions: ['legs'], pattern: 'hinge', tags: ['floor'] },
   gluteKickback:   { name: 'Quadruped kickbacks', cue: 'Drive the heel to the ceiling', sideCue: true, alt: 'Standing kickbacks, hold a wall', equipment: [], img: 'gluteKickback', emom: '12/side', regions: ['legs'], pattern: 'hinge', tags: ['floor'] },
   fireHydrant:     { name: 'Fire hydrants', cue: 'Knee out to the side, hips square', sideCue: true, alt: 'Standing hip abduction at a wall', equipment: [], img: 'fireHydrant', emom: '12/side', regions: ['legs'], pattern: 'hinge', tags: ['floor'] },
@@ -123,8 +130,8 @@ const EXERCISES = {
   pushup:          { name: 'Push-ups', cue: 'Elbows back, body in one line', alt: 'Incline push-ups (hands on bench)', equipment: [], img: 'pushup', emom: 10, regions: ['push', 'core'], pattern: 'pushH', tags: ['floor'] },
   widePushup:      { name: 'Wide push-ups', cue: 'Hands out wide, chest leads', alt: 'Wide incline push-ups', equipment: [], img: 'widePushup', emom: 10, regions: ['push'], pattern: 'pushH', tags: ['floor'] },
   diamondPushup:   { name: 'Diamond push-ups', cue: 'Hands together under the chest', alt: 'Close-grip incline push-ups', equipment: [], img: 'diamondPushup', emom: 8, regions: ['push'], pattern: 'pushH', tags: ['floor'] },
-  declinePushup:   { name: 'Decline push-ups', cue: 'Feet up on the bench', alt: 'Flat push-ups', equipment: [], img: 'declinePushup', emom: 8, regions: ['push'], pattern: 'pushH', tags: ['floor'] },
-  inclinePushup:   { name: 'Incline push-ups', cue: 'Hands on the bench', alt: 'Hands higher still', equipment: [], img: 'inclinePushup', emom: 12, regions: ['push'], pattern: 'pushH', tags: [] },
+  declinePushup:   { name: 'Decline push-ups', cue: 'Feet up on the bench', alt: 'Flat push-ups', equipment: ['box'], bw: 'pushup', img: 'declinePushup', emom: 8, regions: ['push'], pattern: 'pushH', tags: ['floor'] },
+  inclinePushup:   { name: 'Incline push-ups', cue: 'Hands on the bench', alt: 'Hands higher still', equipment: ['box'], bw: 'pushup', img: 'inclinePushup', emom: 12, regions: ['push'], pattern: 'pushH', tags: [] },
   tempoPushup:     { name: 'Tempo push-ups', cue: 'Three seconds down, one up', alt: 'Tempo incline push-ups', equipment: [], img: 'tempoPushup', emom: 5, regions: ['push'], pattern: 'pushH', tags: ['floor'] },
   clapPushup:      { name: 'Explosive push-ups', cue: 'Push hard, hands leave the floor', alt: 'Regular push-ups', equipment: [], img: 'clapPushup', emom: 6, regions: ['push', 'cardio'], pattern: 'pushH', tags: ['floor', 'impact'] },
 
@@ -132,10 +139,10 @@ const EXERCISES = {
   // PUSH: vertical / triceps
   // ===================================================================
   pikePushup:      { name: 'Pike push-ups', cue: 'Hips high, crown to the floor', alt: 'Incline pike push-ups', equipment: [], img: 'pikePushup', emom: 8, regions: ['push'], pattern: 'pushV', tags: ['floor', 'overhead'] },
-  elevatedPike:    { name: 'Elevated pike push-ups', cue: 'Feet on the bench, stack the shoulders', alt: 'Pike push-ups on the floor', equipment: [], img: 'elevatedPikePushup', emom: 6, regions: ['push'], pattern: 'pushV', tags: ['floor', 'overhead'] },
+  elevatedPike:    { name: 'Elevated pike push-ups', cue: 'Feet on the bench, stack the shoulders', alt: 'Pike push-ups on the floor', equipment: ['box'], bw: 'pikePushup', img: 'elevatedPikePushup', emom: 6, regions: ['push'], pattern: 'pushV', tags: ['floor', 'overhead'] },
   wallHandstand:   { name: 'Wall handstand hold', cue: 'Walk the feet up, squeeze everything', alt: 'Pike hold with feet on a bench', equipment: [], img: 'wallHandstand', emom: '30s', regions: ['push', 'core'], pattern: 'pushV', tags: ['overhead'] },
   wallWalk:        { name: 'Wall walks', cue: 'Walk the hands in, then back out', alt: 'Pike push-ups', equipment: [], img: 'wallWalk', emom: 2, regions: ['push', 'core'], pattern: 'pushV', tags: ['floor', 'overhead'] },
-  tricepDips:      { name: 'Tricep dips', cue: 'On a bench, elbows straight back', alt: 'Bench dips with feet closer in', equipment: [], img: 'benchDips', emom: 12, regions: ['push'], pattern: 'pushV', tags: [] },
+  tricepDips:      { name: 'Tricep dips', cue: 'On a bench, elbows straight back', alt: 'Bench dips with feet closer in', equipment: ['box'], bw: 'diamondPushup', img: 'benchDips', emom: 12, regions: ['push'], pattern: 'pushV', tags: [] },
 
   // ===================================================================
   // PULL: bodyweight
@@ -290,7 +297,33 @@ const EXERCISES = {
   ringPushup:     { name: 'Ring push-ups', cue: 'Rings turned out at the top', alt: 'Regular push-ups', equipment: ['rings'], bw: 'pushup', img: 'ringPushup', emom: 8, regions: ['push'], pattern: 'pushH', tags: [] },
   ringDip:        { name: 'Ring dips', cue: 'Or bench dips if the rings are high', alt: 'Bench dips with feet on the floor', equipment: ['rings'], bw: 'tricepDips', img: 'ringDip', emom: 6, regions: ['push'], pattern: 'pushV', tags: [] },
   ringTuckHold:   { name: 'Ring tuck holds', cue: 'Knees up, shoulders active', alt: 'Lying leg raises or dead bugs', equipment: ['rings'], bw: 'legRaises', img: 'ringTuckHold', emom: '20s', regions: ['core'], pattern: 'coreFlex', tags: [] },
-  ringHang:       { name: 'Ring hang', cue: 'Long arms, shoulders packed', alt: 'Ring rows, hold the top', equipment: ['rings'], bw: 'supermanHold', img: 'ringHang', emom: '30s', regions: ['pull'], pattern: 'pullV', tags: [] }
+  ringHang:       { name: 'Ring hang', cue: 'Long arms, shoulders packed', alt: 'Ring rows, hold the top', equipment: ['rings'], bw: 'supermanHold', img: 'ringHang', emom: '30s', regions: ['pull'], pattern: 'pullV', tags: [] },
+
+  // ===================================================================
+  // PULL-UP BAR
+  // ===================================================================
+  barPullUp:      { name: 'Pull-ups', cue: 'Overhand, chin over the bar', alt: 'Jump up and lower slowly for 3 seconds', equipment: ['pullupBar'], bw: 'supermanPull', img: 'barPullUp', emom: 5, regions: ['pull'], pattern: 'pullV', tags: [] },
+  barChinUp:      { name: 'Chin-ups', cue: 'Palms towards you, chest to the bar', alt: 'Jump up and lower slowly for 3 seconds', equipment: ['pullupBar'], bw: 'supermanPull', img: 'barChinUp', emom: 5, regions: ['pull'], pattern: 'pullV', tags: [] },
+  hangingKneeRaise: { name: 'Hanging knee raises', cue: 'No swinging, knees to the chest', alt: 'Lying knee tucks', equipment: ['pullupBar'], bw: 'reverseCrunch', img: 'hangingKneeRaise', emom: 10, regions: ['core'], pattern: 'coreFlex', tags: [] },
+  barDeadHang:    { name: 'Dead hang', cue: 'Long arms, shoulders packed', alt: 'Toes on a box to take some weight', equipment: ['pullupBar'], bw: 'supermanHold', img: 'barDeadHang', emom: '30s', regions: ['pull', 'core'], pattern: 'pullV', tags: [] },
+
+  // ===================================================================
+  // RESISTANCE BANDS
+  // ===================================================================
+  bandPullApart:  { name: 'Band pull-aparts', cue: 'Straight arms, band to the chest', alt: 'Prone Y-T-Ws', equipment: ['bands'], bw: 'supermanYtw', img: 'bandPullApart', emom: 15, regions: ['pull'], pattern: 'pullH', tags: [] },
+  bandRow:        { name: 'Band rows', cue: 'Anchored at the door, elbows to the ribs', alt: 'Superman pulls', equipment: ['bands'], bw: 'supermanPull', img: 'bandRow', emom: 15, regions: ['pull'], pattern: 'pullH', tags: [] },
+  bandOverheadPress: { name: 'Band overhead press', cue: 'Stand on the band, press tall', alt: 'Pike push-ups', equipment: ['bands'], bw: 'pikePushup', img: 'bandOverheadPress', emom: 12, regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
+  bandCurl:       { name: 'Band curls', cue: 'Stand on the band, elbows pinned', alt: 'Superman pulls', equipment: ['bands'], bw: 'supermanPull', img: 'bandCurl', emom: 15, regions: ['pull'], pattern: 'pullH', tags: [] },
+  bandLateralWalk: { name: 'Banded lateral walks', cue: 'Quarter squat, knees push out', alt: 'Lateral lunges', equipment: ['bands'], bw: 'lateralLunge', img: 'bandLateralWalk', emom: '30s', regions: ['legs'], pattern: 'lunge', tags: [] },
+  bandGluteBridge: { name: 'Banded glute bridges', cue: 'Knees out against the band, squeeze', alt: 'Glute bridges', equipment: ['bands'], bw: 'gluteBridge', img: 'bandGluteBridge', emom: 15, regions: ['legs'], pattern: 'hinge', tags: ['floor'] },
+
+  // ===================================================================
+  // MEDICINE / SLAM BALL
+  // ===================================================================
+  ballSlam:       { name: 'Ball slams', cue: 'Reach tall, slam it through the floor', alt: 'Squat thrusts', equipment: ['medball'], bw: 'squatThrust', img: 'ballSlam', emom: 10, regions: ['cardio', 'core'], pattern: 'cardio', tags: ['overhead'] },
+  wallBall:       { name: 'Wall balls', cue: 'Squat deep, throw to the target', alt: 'Squat to reach', equipment: ['medball'], bw: 'squatReach', img: 'wallBall', emom: 12, regions: ['legs', 'cardio'], pattern: 'squat', tags: ['overhead'] },
+  ballRotationalThrow: { name: 'Rotational wall throws', cue: 'Side-on to the wall, turn from the hips', sideCue: true, alt: 'Russian twists', equipment: ['medball'], bw: 'russianTwistBw', img: 'ballRotationalThrow', emom: '8/side', regions: ['core'], pattern: 'coreRot', tags: [] },
+  russianTwistBall: { name: 'Ball Russian twists', cue: 'Ball across the body, heels light', alt: 'Russian twists, no ball', equipment: ['medball'], bw: 'russianTwistBw', img: 'russianTwist', emom: 16, regions: ['core'], pattern: 'coreRot', tags: ['floor'] },
 };
 
 // ---------------------------------------------------------------------

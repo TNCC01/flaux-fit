@@ -46,7 +46,7 @@ export function timeline(move) {
   });
   for (const s of steps) if (flow.has(s.to)) s.t2 = s.t1;
   return {
-    seq, states, steps, total,
+    seq, states, steps, total, keys: move.keys,
     // time (s) -> the pose to show
     at(time) {
       const u = ((time % total) + total) % total;
@@ -83,12 +83,29 @@ export function poseAt(J, tl, time) {
 //                                          the elbow, in line below it) }
 //   barbell {}  (between the hands)      rings {}  straps to both hands
 //   rope {}     skipping rope            box { pos, size }  bench { pos, size }
-//   wall { z }  a wall behind (-) or in front (+)
-export function buildProps(scene, J, list, palette) {
+//   wall { z }  a wall behind (-) or in front (+); { x } a wall to the left
+//               (+) or right (-) instead; width (3 m); target: a mark at
+//               that height
+//   pullupBar { y, z, width }  a fixed bar across the X axis (hands grip it
+//               with targets in the move: wrists about 0.07 under the bar)
+//   band { from, to, handles }  an elastic band between two points that
+//               move: 'handL' | 'handR' | 'footL' | 'footR' (under the arch)
+//               or a fixed world point [x, y, z] (a door anchor); thinner as
+//               it stretches. { loop: 'knees' } is a mini band around both
+//               thighs just above the knees.
+//   ball { hand: 'both', r }  a medicine ball between the hands. A key pose
+//               with `ball: [x, y, z]` puts it at that world point instead
+//               (thrown, slammed, on the floor), blended through the
+//               timeline: leaving the hands it peels away from them as the
+//               move goes on, coming back it travels to where the hands
+//               will be when the move lands. Keys without `ball` hold it.
+export function buildProps(scene, J, list, palette, tl) {
   const metal = new THREE.MeshStandardMaterial({ color: palette.iron, roughness: 0.35, metalness: 0.6 });
   const accent = new THREE.MeshStandardMaterial({ color: palette.gear, roughness: 0.45, metalness: 0.2 });
   const wood = new THREE.MeshStandardMaterial({ color: palette.wood, roughness: 0.8 });
+  const band = new THREE.MeshStandardMaterial({ color: palette.band ?? 0xa78bfa, roughness: 0.55, metalness: 0 });
   const updates = [];
+  const extra = [];       // points past the body the camera should frame
   const shadow = (m) => { m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return m; };
   const grip = (s) => J['wrist' + s].localToWorld(new THREE.Vector3(0, -0.07, 0.005));
 
@@ -219,13 +236,184 @@ export function buildProps(scene, J, list, palette) {
       m.position.set(x, h / 2, z);
       scene.add(shadow(m));
     } else if (p.type === 'wall') {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(3, 2.6, 0.1), new THREE.MeshStandardMaterial({ color: palette.wall, roughness: 0.9 }));
-      m.position.set(0, 1.3, p.z ?? -0.4);
+      const h = Math.max(2.6, (p.target || 0) + 0.5);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(p.width ?? 3, h, 0.1), new THREE.MeshStandardMaterial({ color: palette.wall, roughness: 0.9 }));
+      const side = p.x !== undefined;
+      const at = side ? p.x : p.z ?? -0.4;
+      m.position.set(side ? at : 0, h / 2, side ? 0 : at);
+      if (side) m.rotation.y = Math.PI / 2;
       m.receiveShadow = true;
       scene.add(m);
+      if (p.target) {
+        // a target ring on the face towards the figure
+        const face = at - Math.sign(at) * 0.052;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.175, 0.022, 8, 40),
+          new THREE.MeshBasicMaterial({ color: palette.gear }));
+        ring.position.set(side ? face : 0, p.target, side ? 0 : face);
+        if (side) ring.rotation.y = Math.PI / 2;
+        scene.add(ring);
+      }
+    } else if (p.type === 'pullupBar') {
+      // a bar across the X axis on two short brackets that run up and back
+      // to the mounting (a doorframe or beam above)
+      const y = p.y ?? 2.25, z = p.z ?? 0, w = p.width ?? 1.1;
+      const g = new THREE.Group();
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, w, 20), metal);
+      bar.rotation.z = Math.PI / 2;
+      g.add(bar);
+      for (const x of [-w / 2, w / 2]) {
+        const up = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.17, 0.04), accent);
+        up.position.set(x, 0.07, 0); g.add(up);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.17), accent);
+        back.position.set(x, 0.15, -0.065); g.add(back);
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.012), metal);
+        plate.position.set(x, 0.15, -0.155); g.add(plate);
+      }
+      g.position.set(0, y, z);
+      scene.add(shadow(g));
+      // frame the floor under the bar too, so the gap under the feet shows
+      extra.push(() => [new THREE.Vector3(-w / 2 - 0.05, y + 0.2, z), new THREE.Vector3(w / 2 + 0.05, y + 0.2, z),
+        new THREE.Vector3(0, 0, z + 0.15), new THREE.Vector3(0, 0, z - 0.15)]);
+    } else if (p.type === 'band' && p.loop) {
+      // a mini band around both thighs just above the knees: a flat strip
+      // that hugs the outside of each thigh and runs across front and back
+      const mesh = new THREE.Mesh(new THREE.BufferGeometry(),
+        new THREE.MeshStandardMaterial({ color: palette.band ?? 0xa78bfa, roughness: 0.55, flatShading: true, side: THREE.DoubleSide }));
+      scene.add(shadow(mesh));
+      updates.push(() => {
+        const at = (s) => {
+          const h = J['hip' + s].getWorldPosition(new THREE.Vector3());
+          const k = J['knee' + s].getWorldPosition(new THREE.Vector3());
+          return { c: h.clone().lerp(k, 0.8), d: k.sub(h).normalize() };
+        };
+        const L = at('L'), R = at('R');
+        const n = L.d.clone().add(R.d).normalize();                  // down the thighs
+        const u = L.c.clone().sub(R.c);
+        u.sub(n.clone().multiplyScalar(u.dot(n))).normalize();      // across, left
+        const f = new THREE.Vector3().crossVectors(n, u).normalize();
+        const r = 0.06, pts = [];
+        // round the outside of the left thigh, across, round the right
+        for (let i = 0; i <= 12; i++) {
+          const a = -Math.PI / 2 + (i / 12) * Math.PI;
+          pts.push(L.c.clone().addScaledVector(u, Math.cos(a) * r).addScaledVector(f, Math.sin(a) * r));
+        }
+        for (let i = 0; i <= 12; i++) {
+          const a = Math.PI / 2 + (i / 12) * Math.PI;
+          pts.push(R.c.clone().addScaledVector(u, Math.cos(a) * r).addScaledVector(f, Math.sin(a) * r));
+        }
+        mesh.geometry.dispose();
+        mesh.geometry = stripGeometry(pts, n, 0.05, 0.006, true);
+      });
+    } else if (p.type === 'band') {
+      // an elastic band between two points that move every frame; it thins
+      // as it stretches, so the pull reads
+      const point = (e) => {
+        if (Array.isArray(e)) return new THREE.Vector3(...e);
+        const s = e.slice(-1);
+        if (e.startsWith('hand')) return grip(s);
+        // under the arch of the foot, on the sole
+        return J['ankle' + s].localToWorld(new THREE.Vector3(0, -DIM.ankle + 0.004, 0.05));
+      };
+      const strap = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12), band);
+      const g = new THREE.Group();
+      g.add(strap);
+      const handles = [];
+      for (const e of [p.from, p.to]) {
+        if (Array.isArray(e)) {
+          // a door anchor: a small stopper at the fixed point
+          const nub = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.04), metal);
+          nub.position.set(...e);
+          g.add(nub);
+        } else if (p.handles && e.startsWith('hand')) {
+          const hdl = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.13, 14), accent);
+          hdl.rotation.x = Math.PI / 2;
+          const hg = new THREE.Group();
+          hg.add(hdl);
+          g.add(hg);
+          handles.push([hg, e.slice(-1)]);
+        }
+      }
+      scene.add(shadow(g));
+      const rest = p.rest ?? 0.5;
+      updates.push(() => {
+        const a = point(p.from), b = point(p.to);
+        const len = Math.max(0.01, a.distanceTo(b));
+        const k = Math.min(1.5, Math.max(0.55, Math.sqrt(rest / len)));
+        strap.position.copy(a).add(b).multiplyScalar(0.5);
+        strap.scale.set(0.016 * k, len, 0.004 * k + 0.002);
+        strap.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+        for (const [hg, s] of handles) {
+          hg.position.copy(grip(s));
+          hg.quaternion.copy(J['wrist' + s].getWorldQuaternion(new THREE.Quaternion()));
+        }
+      });
+    } else if (p.type === 'ball') {
+      const r = p.r ?? 0.12;
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(r, 32, 22), accent));
+      const seamMat = new THREE.MeshStandardMaterial({ color: palette.iron, roughness: 0.7 });
+      for (const rot of [[0, 0, 0], [0, Math.PI / 2, 0]]) {
+        const seam = new THREE.Mesh(new THREE.TorusGeometry(r * 1.002, r * 0.05, 8, 48), seamMat);
+        seam.rotation.set(...rot);
+        g.add(seam);
+      }
+      scene.add(shadow(g));
+      const between = () => grip('L').add(grip('R')).multiplyScalar(0.5);
+      // where the hands hold it in each key pose, for a ball coming back to
+      // them (worked out now, before anything is shown)
+      const held = {};
+      if (tl) for (const name of new Set(tl.seq)) { applyState(J, tl.states[name]); held[name] = between(); }
+      const spot = (k) => (k && Array.isArray(k.ball) ? new THREE.Vector3(...k.ball) : null);
+      const pos = new THREE.Vector3();
+      updates.push((time) => {
+        pos.copy(between());
+        if (tl) {
+          const { f, step } = tl.at(time);
+          const a = spot(tl.keys[step.from]), b = spot(tl.keys[step.to]);
+          if (a && b) pos.copy(a).lerp(b, f);
+          else if (b) pos.lerp(b, f);                          // leaving the hands
+          else if (a) pos.copy(a).lerp(held[step.to], f);       // coming back
+        }
+        g.position.copy(pos);
+        g.quaternion.copy(J.wristL.getWorldQuaternion(new THREE.Quaternion())
+          .slerp(J.wristR.getWorldQuaternion(new THREE.Quaternion()), 0.5));
+      });
+      extra.push(() => [pos.clone().setY(pos.y + r), pos.clone().setY(pos.y - r)]);
     }
   }
-  return (time) => updates.forEach(u => u(time));
+  const update = (time) => updates.forEach(u => u(time));
+  // points the props reach past the body (a bar's ends, a thrown ball), for
+  // framing the camera: call after update()
+  update.points = () => extra.flatMap(e => e());
+  return update;
+}
+
+// A flat strip (width w along `across`, thickness t) through a list of
+// points, open or closed: a rubber band that still reads edge on.
+function stripGeometry(pts, across, w, t, closed) {
+  const n = pts.length;
+  const pos = [], idx = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    const next = pts[Math.min(n - 1, i + 1)], prev = pts[Math.max(0, i - 1)];
+    const tan = (closed ? pts[(i + 1) % n].clone().sub(pts[(i - 1 + n) % n]) : next.clone().sub(prev)).normalize();
+    const out = new THREE.Vector3().crossVectors(tan, across).normalize();
+    const a = across.clone().multiplyScalar(w / 2), o = out.multiplyScalar(t / 2);
+    for (const [sa, so] of [[1, 1], [-1, 1], [-1, -1], [1, -1]])
+      pos.push(p.x + a.x * sa + o.x * so, p.y + a.y * sa + o.y * so, p.z + a.z * sa + o.z * so);
+  }
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const j = (i + 1) % n;
+    for (let k = 0; k < 4; k++) {
+      const a = i * 4 + k, b = i * 4 + ((k + 1) % 4), c = j * 4 + k, d = j * 4 + ((k + 1) % 4);
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
 }
 
 export { DIM };
