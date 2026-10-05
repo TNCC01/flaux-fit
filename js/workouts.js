@@ -12,6 +12,8 @@
            minute and whatever is left of it to rest     = 240s
     amrap  one 240s round: each person works through the block's
            exercises as many times as they can, tapping after each lap
+    fortime  a set number of laps of the block's exercises against a
+           240s cap; tap Done to log the time, the rest of the cap is rest
 
   Everything that used to hardcode "round 5" or "switch at 10s" now reads
   the live interval out of ctx, so cues stay truthful in both styles.
@@ -28,8 +30,11 @@ const INTERVALS = {
            rounds: 4, workSec: 60, restSec: 0, reps: true,
            blurb: 'Do the reps at the start of each minute, then rest until the next one. Faster reps, more rest.' },
   amrap: { id: 'amrap', label: 'AMRAP', sub: 'As many rounds as possible',
-           rounds: 1, workSec: 240, restSec: 0, reps: true, amrap: true,
-           blurb: 'Four minutes to get through a short list as many times as you can. Tap after each round to keep score.' }
+           rounds: 1, workSec: 240, restSec: 0, reps: true, lap: true, amrap: true,
+           blurb: 'Four minutes to get through a short list as many times as you can. Tap after each round to keep score.' },
+  fortime: { id: 'fortime', label: 'For Time', sub: 'Race the clock',
+           rounds: 1, workSec: 240, restSec: 0, reps: true, lap: true, forTime: true,
+           blurb: 'A set amount of work with a four-minute cap. Finish faster and the rest of the cap is yours to recover. Tap Done to log your time.' }
 };
 const DEFAULT_INTERVAL = 'short';
 
@@ -38,9 +43,10 @@ const blockSeconds = (iv) => iv.rounds * (iv.workSec + iv.restSec);
 
 // ---------------------------------------------------------------------
 // EXERCISE RESOLUTION
-// ctx = { rounds, workSec, restSec, reps, amrap, hasEquip }, where
+// ctx = { rounds, workSec, restSec, reps, lap, hasEquip }, where
 // hasEquip(id) => bool, reps is true for the styles that count reps rather
-// than seconds (EMOM, AMRAP) and amrap marks the AMRAP one
+// than seconds (EMOM, AMRAP, For Time) and lap for the two that work
+// through the block as one list (AMRAP, For Time)
 // ---------------------------------------------------------------------
 
 // Walk bw fallbacks until everything the exercise needs is on hand.
@@ -95,7 +101,7 @@ function timedSec(v) {
 function describeEx(id, ctx) {
   const ex = resolveEx(id, ctx);
   const emom = !!(ctx && ctx.reps);
-  const target = ctx && ctx.amrap ? amrapTarget(ex.emom) : ex.emom;
+  const target = ctx && ctx.lap ? amrapTarget(ex.emom) : ex.emom;
   // when counting reps the effort is the reps (or the timed hold), not the clock
   const workSec = (emom && timedSec(target)) || (ctx && ctx.workSec) || INTERVALS[DEFAULT_INTERVAL].workSec;
   let cue = ex.cue || '';
@@ -197,6 +203,10 @@ function blockSwapAlternating(name, heavyId, lightId) {
 // single-instance gear A's lap uses goes to its bodyweight version. A swap
 // block's two ids are one movement at two weights: A takes the first, B
 // the second.
+// For Time: laps to finish, so the work lands around three minutes for most
+// people, leaving the rest of the four-minute cap to recover.
+const forTimeRounds = (lapLength) => lapLength >= 3 ? 3 : lapLength === 2 ? 4 : 5;
+
 function amrapCircuits(block, ctx, duo) {
   const swap = block.shape === 'swap';
   const ids = swap ? [block.ids[0]] : block.ids;

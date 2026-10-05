@@ -204,7 +204,7 @@ function generateWorkout(opts) {
   }
 
   const plan = planBlocks(opts.minutes, iv);
-  const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, amrap: !!iv.amrap, hasEquip };
+  const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap, hasEquip };
 
   // Score: unseen beats recently-used, with seeded jitter so two runs at
   // the same settings still differ.
@@ -339,7 +339,8 @@ function generateWorkout(opts) {
     generated: true,
     name: `${title} · ${realMin} min`,
     tagline: iv.id === 'long' ? 'Long efforts, fewer stops' : iv.id === 'emom' ? 'Every minute on the minute'
-      : iv.id === 'amrap' ? 'As many rounds as you can' : 'Sharp bursts',
+      : iv.id === 'amrap' ? 'As many rounds as you can'
+      : iv.id === 'fortime' ? 'Race the clock' : 'Sharp bursts',
     focus: focusFor(regions),
     blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()}, ${iv.sub}.`,
     format: 'tabata',

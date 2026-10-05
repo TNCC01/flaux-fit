@@ -97,7 +97,7 @@ const currentInterval = () => INTERVALS[state.intervalStyle] || INTERVALS[DEFAUL
 const intervalFor = (w) => (w && w.intervalId && INTERVALS[w.intervalId]) || currentInterval();
 const buildCtx = (w) => {
   const iv = intervalFor(w);
-  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, amrap: !!iv.amrap, hasEquip };
+  return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap, hasEquip };
 };
 
 // Classics carry no bookends of their own; derive them once at load.
@@ -207,13 +207,15 @@ function buildSequence(workout, people) {
     const total = workout.blocks.length;
     workout.blocks.forEach((block, blockIdx) => {
       const label = `Block ${blockIdx + 1} of ${total}: ${block.name}`;
-      if (iv.amrap) {
-        // one phase for the whole block; each person carries their lap
+      if (iv.lap) {
+        // one phase for the whole block; each person carries their lap, and
+        // in For Time how many laps of it to finish
         const c = amrapCircuits(block, ctx, isDuo);
-        seq.push({ kind: 'work', amrap: true, duration: iv.workSec, blockIdx, totalBlocks: total, name: label,
-                   a: { ...c.a[0], circuit: c.a }, b: c.b ? { ...c.b[0], circuit: c.b } : null });
+        const carry = (lap) => lap && { ...lap[0], circuit: lap, lapRounds: iv.forTime ? forTimeRounds(lap.length) : 0 };
+        seq.push({ kind: 'work', amrap: !!iv.amrap, forTime: !!iv.forTime, duration: iv.workSec,
+                   blockIdx, totalBlocks: total, name: label, a: carry(c.a), b: carry(c.b) });
       }
-      for (let round = 1; !iv.amrap && round <= iv.rounds; round++) {
+      for (let round = 1; !iv.lap && round <= iv.rounds; round++) {
         const w = isDuo ? block.duo(round, ctx) : { a: block.solo(round, ctx), b: null };
         seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round, emom: !!iv.reps,
                    totalBlocks: total, totalRounds: iv.rounds, name: label, a: w.a, b: w.b });
@@ -750,13 +752,17 @@ function namedCard(w) {
   return card;
 }
 
-// An AMRAP session's rounds, block by block: "Rounds 4 · 5 · 4".
+// An AMRAP session's rounds, block by block ("Rounds: 4 · 5 · 4"), or a
+// For Time one's finishing times ("Times: 3:12 · 2:58 · capped").
 function scoreLine(rec) {
   if (!rec.scores || !rec.scores.some(s => s.a || s.b)) return '';
-  const row = (w) => rec.scores.map(s => s[w] || 0).join(' · ');
+  const timed = rec.intervalId === 'fortime';
+  const one = (v) => timed ? (v ? fmt(v) : 'capped') : (v || 0);
+  const row = (w) => rec.scores.map(s => one(s[w])).join(' · ');
+  const what = timed ? 'Times' : 'Rounds';
   const text = rec.people === 2
-    ? `Rounds: ${personName('a')} ${row('a')}, ${personName('b')} ${row('b')}`
-    : `Rounds: ${row('a')}`;
+    ? `${what}: ${personName('a')} ${row('a')}, ${personName('b')} ${row('b')}`
+    : `${what}: ${row('a')}`;
   return `<div class="card-score">${esc(text)}</div>`;
 }
 
@@ -852,7 +858,8 @@ function openWorkout(workout) {
   // AMRAP rounds counted this session, and what this workout scored last time
   state.scores = {};
   state.pick = {};
-  const before = state.history.find(h => h.key === historyKey(workout) && h.scores);
+  const before = state.history.find(h => h.key === historyKey(workout) && h.scores
+    && h.intervalId === intervalFor(workout).id);       // a classic can be run in any style
   state.lastScores = before ? before.scores : null;
   state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
   seekTo(0);
@@ -919,7 +926,7 @@ function renderPreview() {
   w.blocks.forEach((b, i) => {
     const names = Array.from(new Set((b.ids || []).map(id => withReps(describeEx(id, ctx)))));
     add(`Block ${i + 1}: ${b.name}`,
-        `${iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
+        `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
   });
   add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownExercise.cue);
 }
@@ -965,10 +972,11 @@ window.addEventListener('fitdeck-ready', () => {
   for (const el of document.querySelectorAll('.next-thumb[data-move]')) showFigure(el, el.dataset.move, { thumb: true });
 });
 
-// ---------------------------------------------------------------- AMRAP
+// ----------------------------------------------------- AMRAP and For Time
 // The card lists the lap. Tapping an exercise in it shows that one's
-// figure and cue; the counter underneath keeps score, saved with the
-// session in history so the next go can be compared against it.
+// figure and cue; above it, AMRAP counts rounds and For Time has a Done
+// button that logs the time. Either score is saved with the session in
+// history, so the next go can be compared against it.
 function renderCircuit(w, ex, phase) {
   const W = w.toUpperCase();
   const list = els['circuit' + W], counter = els['counter' + W];
@@ -976,7 +984,7 @@ function renderCircuit(w, ex, phase) {
   const lap = ex && ex.circuit;
   card.classList.toggle('amrap', !!lap);
   list.hidden = !lap;
-  counter.hidden = !(lap && phase.amrap);
+  counter.hidden = !(lap && (phase.amrap || phase.forTime));
   if (!lap) return;
   const k = phase.blockIdx;
   const pickKey = lapKey(w, lap);
@@ -984,11 +992,12 @@ function renderCircuit(w, ex, phase) {
   const listKey = `${pickKey}#${pick}`;
   if (list.dataset.key !== listKey) {
     list.dataset.key = listKey;
-    list.innerHTML = lap.map((x, i) => `
+    list.innerHTML = (ex.lapRounds ? `<li class="lap-head">${ex.lapRounds} rounds of</li>` : '') + lap.map((x, i) => `
       <li class="${i === pick ? 'picked' : ''}" data-i="${i}" role="button" tabindex="0">
         <span class="lap-reps">${esc(x.reps)}</span><span class="lap-name">${esc(x.display || x.name)}</span>
       </li>`).join('');
   }
+  if (phase.forTime) return renderDone(w, counter, k);
   if (!phase.amrap) return;
   const n = (state.scores[k] && state.scores[k][w]) || 0;
   const last = state.lastScores && state.lastScores[k] && state.lastScores[k][w];
@@ -1000,6 +1009,28 @@ function renderCircuit(w, ex, phase) {
     <div class="count-now"><b>${n}</b> ${n === 1 ? 'round' : 'rounds'}${last != null ? `<span>Last time ${last}</span>` : ''}</div>
     <button class="count-more" data-step="1">+1 round</button>`;
 }
+// For Time: a Done button until it's tapped, then the time (and an undo).
+function renderDone(w, counter, k) {
+  const t = (state.scores[k] && state.scores[k][w]) || 0;
+  const last = state.lastScores && state.lastScores[k] && state.lastScores[k][w];
+  const key = `t${k}:${t}:${last ?? ''}`;
+  if (counter.dataset.key === key) return;
+  counter.dataset.key = key;
+  const lastLine = last ? `<span>Last time ${fmt(last)}</span>` : '';
+  counter.innerHTML = t
+    ? `<button class="secondary count-less" data-step="undo" aria-label="Not done yet">↺</button>
+       <div class="count-now"><b>${fmt(t)}</b> done, rest up${lastLine}</div>`
+    : `<div class="count-now"><b>Go</b> finish the rounds${lastLine}</div>
+       <button class="count-more" data-step="done">Done</button>`;
+}
+// Seconds into the current phase.
+const phaseElapsed = (phase) => Math.max(0, phase.duration - state.remainingInPhase);
+// Everyone on the card has logged a For Time finish.
+const allDone = (phase) => {
+  const s = state.scores[phase.blockIdx] || {};
+  return (state.people === 2 ? ['a', 'b'] : ['a']).every(w => s[w] > 0);
+};
+
 // Which exercise of an AMRAP lap the card is showing (the first, until
 // another is tapped). The figure, cue and alternative follow it.
 const lapKey = (w, lap) => `${w}:${lap.map(x => x.id).join(',')}`;
@@ -1019,9 +1050,12 @@ function onCounterTap(e) {
   if (!b) return;
   const w = e.currentTarget.dataset.who;
   const phase = state.sequence[state.currentIdx];
-  if (!phase || !phase.amrap) return;
+  if (!phase || !(phase.amrap || phase.forTime)) return;
   const s = state.scores[phase.blockIdx] || (state.scores[phase.blockIdx] = { a: 0, b: 0 });
-  s[w] = Math.max(0, s[w] + +b.dataset.step);
+  const step = b.dataset.step;
+  if (step === 'done') s[w] = Math.max(1, Math.round(phaseElapsed(phase)));
+  else if (step === 'undo') s[w] = 0;
+  else s[w] = Math.max(0, s[w] + +step);
   saveScores();
   render();
 }
@@ -1183,10 +1217,11 @@ function renderSegBar(current, total, kind, unit = 'Round') {
 
 function renderRoundDots(phase) {
   els.roundDots.innerHTML = '';
-  if (phase.amrap) {
+  if (phase.amrap || phase.forTime) {
     const label = document.createElement('div');
     label.className = 'round-count';
-    label.textContent = `As many rounds as you can in ${fmtMin(phase.duration)}`;
+    label.textContent = phase.forTime ? `Finish the rounds, ${fmtMin(phase.duration)} cap`
+      : `As many rounds as you can in ${fmtMin(phase.duration)}`;
     els.roundDots.appendChild(label);
   } else if (phase.totalRounds) renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
   else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind);
@@ -1271,6 +1306,13 @@ function render() {
   els.timerCard.className = 'timer-card ' + phase.kind;
   els.phaseLabel.textContent = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM' : (PHASE_LABEL[phase.kind] || '');
   els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
+  if (phase.forTime) {
+    // the clock counts up while you race it; once everyone's done it counts
+    // down the rest of the cap
+    const done = allDone(phase);
+    els.phaseLabel.textContent = done ? 'Rest' : 'For time';
+    if (!done) els.timeDisplay.textContent = fmt(Math.floor(phaseElapsed(phase)));
+  }
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
   els.blockName.textContent = phase.name;
   els.overallProgress.style.width =
@@ -1328,6 +1370,7 @@ function renderUpcoming() {
   let preview;
   if (next.kind === 'rest') preview = `Rest ${next.duration}s`;
   else if (next.amrap) preview = `AMRAP: ${next.a.circuit.map(x => x.name).join(', ')}`;
+  else if (next.forTime) preview = `For time, ${next.a.lapRounds} rounds: ${next.a.circuit.map(x => x.name).join(', ')}`;
   else if (next.kind === 'work') {
     preview = state.people === 2
       ? `${short('a', 'A')}: ${withReps(next.a)} · ` +

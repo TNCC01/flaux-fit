@@ -289,8 +289,32 @@ try {
     assert(await p.$eval('#animA', e => e.dataset.move) !== before, 'tapping an exercise in the lap shows its figure');
   }
   await p.click('#btnStart');                                   // pause
-  await st(() => { state.intervalStyle = 'short'; savePrefs(); });
   ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it`);
+
+  step = 'For Time: rounds of a lap against a cap, Done logs the time';
+  await p.click('#btnBack'); await pickInterval('For Time');
+  await p.click('#btnBuild');
+  const ft = await st(() => {
+    const work = state.sequence.filter(x => x.kind === 'work');
+    return work.every(x => x.forTime && x.duration === 240 && x.a.circuit.length && x.a.lapRounds >= 3);
+  });
+  assert(ft, 'each block is one 240s For Time phase with a lap and a number of rounds');
+  await p.click('#btnStart');
+  const ftBlk = await st(() => { const i = state.sequence.findIndex(x => x.forTime); seekTo(i); render(); return state.sequence[i].blockIdx; });
+  // hold the clock 70 seconds in
+  await st(() => { clearInterval(state.tickHandle); state.remainingInPhase = 170; render(); });
+  assert(await p.$eval('#phaseLabel', e => e.textContent) === 'For time', 'the timer says For time');
+  assert(await p.$eval('#timeDisplay', e => e.textContent) === '1:10', 'and counts up: ' + await p.$eval('#timeDisplay', e => e.textContent));
+  assert(/rounds of/i.test(await p.$eval('#circuitA', e => e.textContent)), 'the card says how many rounds');
+  await p.click('#counterA .count-more');
+  assert(await p.evaluate((b) => state.history[0].scores[b].a === 70, ftBlk), 'Done logs 1:10');
+  assert((await p.$eval('#counterA', e => e.textContent)).includes('1:10'), 'the card shows the time');
+  if (await st(() => state.people === 1)) {
+    assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Rest', 'once done, the rest of the cap is rest');
+  }
+  await p.click('#btnStart');                                   // pause
+  await st(() => { state.intervalStyle = 'short'; savePrefs(); });
+  ok('For Time: the clock counts up, Done logs the time to history and the cap turns to rest');
 
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathStretch');
