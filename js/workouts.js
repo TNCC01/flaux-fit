@@ -220,9 +220,11 @@ function blockSwapAlternating(name, heavyId, lightId) {
 // single-instance gear A's lap uses goes to its bodyweight version. A swap
 // block's two ids are one movement at two weights: A takes the first, B
 // the second.
-// For Time: laps to finish, so the work lands around three minutes for most
-// people, leaving the rest of the four-minute cap to recover.
-const forTimeRounds = (lapLength) => lapLength >= 3 ? 3 : lapLength === 2 ? 4 : 5;
+// For Time: laps to finish, so the work lands around three quarters of the
+// cap for most people (three minutes of a four-minute cap), leaving the rest
+// to recover. A longer cap in a mix gets proportionally more laps.
+const forTimeRounds = (lapLength, capSec = 240) =>
+  Math.max(2, Math.round((lapLength >= 3 ? 3 : lapLength === 2 ? 4 : 5) * capSec / 240));
 
 function amrapCircuits(block, ctx, duo) {
   const swap = block.shape === 'swap';
@@ -240,6 +242,32 @@ function amrapCircuits(block, ctx, duo) {
   }
   return { a, b };
 }
+
+// ---------------------------------------------------------------------
+// MIXED SESSIONS
+// A mix runs two or three styles back to back, each as a section of its
+// own. Short bursts and long efforts keep their four-minute blocks; EMOM,
+// AMRAP and For Time can run any whole number of minutes, so they take up
+// whatever's left once the blocks are in. The generator's planMix sizes
+// them; a section is { intervalId, start, count, minutes, blockRestSec }:
+// `count` exercise blocks from block `start`, and for the flexible styles
+// the minutes it runs.
+// ---------------------------------------------------------------------
+const CHANGEOVER_SEC = 75;      // between sections: longer than a block rest
+const FLEX_MIN_MINUTES = 4;     // shortest EMOM / AMRAP / For Time section
+const isFlexible = (id) => !!(INTERVALS[id] && INTERVALS[id].reps);
+
+// The interval a section runs at: the style's own, with the plan's minutes
+// as an EMOM's rounds or an AMRAP's or For Time's length.
+function sectionInterval(sec) {
+  const iv = INTERVALS[sec.intervalId] || INTERVALS[DEFAULT_INTERVAL];
+  if (!sec.minutes) return iv;
+  if (iv.lap) return { ...iv, workSec: sec.minutes * 60 };
+  if (iv.reps) return { ...iv, rounds: sec.minutes };
+  return iv;
+}
+const sectionSeconds = (sec) =>
+  sec.count * blockSeconds(sectionInterval(sec)) + Math.max(0, sec.count - 1) * (sec.blockRestSec || 0);
 
 const blockCleanPress = () =>
   blockSwapAlternating('KB clean & press (alt arms)', 'kbCleanPress15', 'kbCleanPress10');

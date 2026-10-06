@@ -56,6 +56,19 @@ in B's lap that needs a kettlebell, the barbell, the rope or the rings that
 A's lap also uses goes to its bodyweight version, because the two of you
 won't be in step.
 
+**Mix** runs two or three of these styles back to back in one session,
+in the order you tap them, and still fits the minutes you picked exactly,
+warm-up and cool-down included (one of each). Short bursts and long efforts
+keep their four-minute blocks; EMOM, AMRAP and For Time stretch or shrink in
+whole minutes to take up the rest, any spare minute going to the EMOM, and
+leftover seconds go on the cool-down. A 30-minute EMOM, short bursts and
+AMRAP mix is a 4-minute warm-up, a 6-minute EMOM, two short-burst blocks,
+a 6-minute AMRAP and a 3-minute cool-down, with a 75-second changeover
+between styles that says what's coming and how it works. Setup shows that
+breakdown as you pick, or the shortest session the mix fits in. All the
+exercises are picked in one pass, so muscle groups and gear are spread
+across the whole session, not chosen per section.
+
 For Time uses the same laps with a set amount of work: 3 rounds of a lap
 of three or more exercises, 4 of two, 5 of one, which lands around three
 minutes for most people. The clock counts up, each person taps Done when

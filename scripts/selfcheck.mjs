@@ -28,7 +28,8 @@ const A = loadApp();
 const {
   EXERCISES, EQUIPMENT, REGIONS, EXCLUSION_TAGS, SINGLE_INSTANCE, STRETCHES,
   INTERVALS, CLASSICS, STRETCH_ROUTINES, DEFAULT_EQUIPMENT,
-  describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits
+  describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits,
+  planMix, sectionSeconds, isFlexible, FLEX_MIN_MINUTES
 } = A;
 
 const failures = [];
@@ -308,6 +309,53 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
   }
 }
 
+// --------------------------------------------- 8b. mixed sessions
+// Every mix of two or three styles, in every order, at every length: it
+// either lands exactly on the minutes asked for, warm-up and cool-down
+// included (to within a minute when it's blocks only), with each style
+// true to itself, or it's refused as too short.
+const styleIds = Object.keys(INTERVALS);
+const mixes = [];
+for (const a of styleIds) for (const b of styleIds) {
+  if (b === a) continue;
+  mixes.push([a, b]);
+  for (const c of styleIds) if (c !== a && c !== b) mixes.push([a, b, c]);
+}
+let mixBuilt = 0, mixRefused = 0;
+mixes.forEach((mix, mi) => {
+  for (const minutes of minutesList) {
+    const plan = planMix(minutes, mix);
+    const w = generateWorkout({ minutes, people: 2, intervalId: 'mix', mix, regions: REGION_IDS,
+      equipment: EQUIP_CASES[mi % EQUIP_CASES.length][1], seed: 1000 + mi * 10 + minutes, recent: [] });
+    const label = `mix ${mix.join('/')} at ${minutes} min`;
+    if (plan.error) {
+      if (!w.error) fail(`${label}: built although the plan says it doesn't fit`);
+      mixRefused++;
+      continue;
+    }
+    if (w.error) { fail(`${label}: ${w.error}`); continue; }
+    mixBuilt++;
+    const real = w.warmupSec + w.cooldownSec + (w.sections.length - 1) * w.changeoverSec
+               + w.sections.reduce((t, x) => t + sectionSeconds(x), 0);
+    const flex = mix.some(isFlexible);
+    if (flex ? real !== minutes * 60 : Math.abs(real - minutes * 60) > 60) {
+      fail(`${label}: runs ${real}s, not ${minutes * 60}s`);
+    }
+    let next = 0;
+    w.sections.forEach((x, i) => {
+      if (x.intervalId !== mix[i]) fail(`${label}: section ${i + 1} is ${x.intervalId}, not ${mix[i]}`);
+      if (x.start !== next || x.count < 1) fail(`${label}: section ${i + 1} doesn't follow on from the last`);
+      next = x.start + x.count;
+      if (isFlexible(x.intervalId) ? (x.count !== 1 || x.minutes < FLEX_MIN_MINUTES) : x.minutes) {
+        fail(`${label}: section ${i + 1} (${x.intervalId}) isn't true to its style`);
+      }
+    });
+    if (next !== w.blocks.length) fail(`${label}: sections cover ${next} of ${w.blocks.length} blocks`);
+    if (w.warmupSec < 60 || w.cooldownSec < 60) fail(`${label}: bookends squeezed to nothing`);
+    checkBlocks(label, w, EQUIP_CASES[mi % EQUIP_CASES.length][1]);
+  }
+});
+
 // ---------------------------------- 9. exclusions are actually respected
 const someIds = ids.filter(id => !EXERCISES[id].equipment.length).slice(0, 40);
 const wEx = generateWorkout({
@@ -408,6 +456,7 @@ const reused = ids.filter(id => EXERCISES[id].equipment.length === 0).length;
 console.log(`exercises          ${ids.length} (${reused} bodyweight)`);
 console.log(`3D movements       ${Object.keys(MOVES).length}, ${need.length} files precached`);
 console.log(`classics           ${CLASSICS.length} + ${STRETCH_ROUTINES.length} stretch routines`);
+console.log(`mixed sessions     ${mixBuilt} built, ${mixRefused} correctly refused as too short`);
 console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 if (warnings.length) {

@@ -93,6 +93,67 @@ function planBlocks(minutes, iv) {
   return best;
 }
 
+// A mix, sized to land exactly on the minutes asked for, warm-up and
+// cool-down included. Each style stays true to itself: short bursts and long
+// efforts get whole four-minute blocks near their fair share, then the
+// flexible styles (EMOM, AMRAP, For Time) split what's left in whole
+// minutes, any spare minute going to the EMOM first. Seconds left over go
+// on the cool-down. Returns { warmupSec, cooldownSec, changeoverSec,
+// sections, totalSec } or { error }.
+const MIX_REST_SEC = 30;
+function planMix(minutes, styles) {
+  const bk = bookends(minutes);
+  let { warmupSec, cooldownSec } = bk;
+  const k = styles.length;
+  const avail = minutes * 60 - warmupSec - cooldownSec - (k - 1) * CHANGEOVER_SEC;
+  const share = avail / k;
+  const sections = styles.map(id => isFlexible(id)
+    ? { intervalId: id, count: 1, minutes: 0, blockRestSec: 0 }
+    : { intervalId: id, count: Math.max(1, Math.round((share + MIX_REST_SEC) / (240 + MIX_REST_SEC))),
+        minutes: 0, blockRestSec: MIX_REST_SEC });
+  const fixed = sections.filter(x => !isFlexible(x.intervalId));
+  const flex = sections.filter(x => isFlexible(x.intervalId));
+  const fixedSec = () => fixed.reduce((t, x) => t + sectionSeconds(x), 0);
+  const biggest = () => fixed.filter(x => x.count > 1).sort((a, b) => b.count - a.count)[0];
+  const tooShort = () => ({ error: `Not enough time for that mix in ${minutes} minutes. Pick more time or fewer styles.` });
+
+  if (flex.length) {
+    // make room for every flexible section's minimum
+    while (avail - fixedSec() < flex.length * FLEX_MIN_MINUTES * 60 && biggest()) biggest().count--;
+    const rem = avail - fixedSec();
+    const mins = Math.floor(rem / 60);
+    if (mins < flex.length * FLEX_MIN_MINUTES) return tooShort();
+    flex.forEach(x => { x.minutes = Math.floor(mins / flex.length); });
+    const order = ['emom', 'amrap', 'fortime'];
+    const byPriority = flex.slice().sort((a, b) => order.indexOf(a.intervalId) - order.indexOf(b.intervalId));
+    for (let i = 0; i < mins % flex.length; i++) byPriority[i].minutes++;
+    cooldownSec += rem - mins * 60;
+  } else {
+    // blocks only: get as close as whole blocks allow, then let the
+    // bookends take up the difference
+    const step = 240 + MIX_REST_SEC;
+    let slack = avail - fixedSec();
+    while (slack >= step / 2) {
+      fixed.slice().sort((a, b) => a.count - b.count)[0].count++;
+      slack = avail - fixedSec();
+    }
+    while (slack < -step / 2 && biggest()) { biggest().count--; slack = avail - fixedSec(); }
+    if (slack < -120) return tooShort();
+    warmupSec += Math.floor(slack / 2);
+    cooldownSec += slack - Math.floor(slack / 2);
+  }
+  let start = 0;
+  sections.forEach(x => { x.start = start; start += x.count; });
+  const totalSec = warmupSec + cooldownSec + (k - 1) * CHANGEOVER_SEC
+    + sections.reduce((t, x) => t + sectionSeconds(x), 0);
+  return { warmupSec, cooldownSec, changeoverSec: CHANGEOVER_SEC, sections, totalSec, blocks: start };
+}
+// The shortest session a mix fits in, for the setup screen's suggestion.
+function mixMinimumMinutes(styles) {
+  for (let m = 10; m <= 120; m += 5) if (!planMix(m, styles).error) return m;
+  return null;
+}
+
 // Region -> focus, for the card colour and the filter chips.
 function focusFor(regions) {
   const set = new Set(regions);
@@ -137,6 +198,10 @@ function titleFor(regions) {
 */
 function generateWorkout(opts) {
   const iv = INTERVALS[opts.intervalId] || INTERVALS[DEFAULT_INTERVAL];
+  // a mix: two or three different styles, in the order given
+  const mix = Array.isArray(opts.mix)
+    ? [...new Set(opts.mix.filter(id => INTERVALS[id]))].slice(0, 3) : [];
+  const isMix = mix.length >= 2;
   const rand = mulberry32(opts.seed || 1);
   const notes = [];
   const excluded = new Set(opts.excluded || []);
@@ -203,8 +268,8 @@ function generateWorkout(opts) {
     if (!eligible.length) eligible = GROUP_ORDER.filter(k => poolFor(k).length > 0);
   }
 
-  const plan = planBlocks(opts.minutes, iv);
-  const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap, hasEquip };
+  const plan = isMix ? planMix(opts.minutes, mix) : planBlocks(opts.minutes, iv);
+  if (plan.error) return { error: plan.error };
 
   // Score: unseen beats recently-used, with seeded jitter so two runs at
   // the same settings still differ.
@@ -322,18 +387,47 @@ function generateWorkout(opts) {
     return { error: 'Not enough movements left to build a workout. Loosen the filters a little.' };
   }
   if (blocks.length < plan.blocks) {
+    // a mix has to fill every section or it won't add up
+    if (isMix) return { error: 'Not enough movements left to fill that mix. Loosen the filters a little.' };
     notes.push(`Only ${blocks.length} of ${plan.blocks} blocks could be filled from what's left.`);
   }
 
   // Report the length this actually runs to, not the length that was
   // asked for, blocks come in fixed 4-minute lumps, so the two rarely
   // match exactly and the label must never lie about the timer.
-  const realSec = plan.warmupSec + plan.cooldownSec
+  const realSec = isMix ? plan.totalSec
+                : plan.warmupSec + plan.cooldownSec
                 + blocks.length * blockSeconds(iv)
                 + Math.max(0, blocks.length - 1) * plan.blockRestSec;
   const realMin = Math.round(realSec / 60);
 
   const title = titleFor(regions);
+  const mixNames = mix.map(id => INTERVALS[id].label);
+  if (isMix) return {
+    id: `gen-${opts.seed}`,
+    generated: true,
+    name: `${title} · ${realMin} min`,
+    tagline: 'Mixed styles',
+    focus: focusFor(regions),
+    blurb: `${mixNames.join(', then ')}, built for ${title.toLowerCase()}.`,
+    format: 'tabata',
+    intervalId: 'mix',
+    mix: mix.slice(),
+    sections: plan.sections.map(x => ({ ...x })),
+    changeoverSec: plan.changeoverSec,
+    warmupSec: plan.warmupSec,
+    cooldownSec: plan.cooldownSec,
+    blockRestSec: MIX_REST_SEC,
+    blocks,
+    notes,
+    seed: opts.seed,
+    request: {
+      minutes: opts.minutes, people: opts.people, intervalId: 'mix', mix: mix.slice(),
+      regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice(),
+      recent: [...recent]
+    },
+    exerciseIds: [...new Set(blocks.flatMap(b => b.ids))]
+  };
   return {
     id: `gen-${opts.seed}`,
     generated: true,

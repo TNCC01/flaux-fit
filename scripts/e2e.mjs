@@ -335,6 +335,39 @@ try {
   await st(() => { state.intervalStyle = 'short'; savePrefs(); });
   ok('For Time: the clock counts up, Done logs the time to history and the cap turns to rest');
 
+  step = 'Mix: EMOM, short bursts and AMRAP in exactly 30 minutes';
+  await p.click('#btnBack'); await p.click('#pathQuick');
+  await p.click('#timePicker .chip:text-is("30 min")');
+  await p.click('.interval-card:has-text("Two or three styles")');
+  // start from nothing, then tap the styles in order
+  for (const id of await st(() => state.mixStyles.slice())) {
+    await p.click(`.mix-chip:has-text("${await p.evaluate(i => INTERVALS[i].label, id)}")`);
+  }
+  for (const label of ['EMOM', 'Short bursts', 'AMRAP']) await p.click(`.mix-chip:has-text("${label}")`);
+  assert(await st(() => state.mixStyles.join(',')) === 'emom,short,amrap', 'styles picked in order: ' + await st(() => state.mixStyles.join(',')));
+  assert(/warm-up.*EMOM.*Short bursts.*AMRAP.*cool-down/.test(await p.$eval('#mixPicker', e => e.textContent)), 'setup shows how the time works out');
+  await p.click('#btnBuild');
+  const mixRun = await st(() => ({
+    total: state.totalDuration,
+    order: state.sequence.filter(x => x.kind === 'work').map(x => x.amrap ? 'amrap' : x.emom ? 'emom' : 'short')
+      .filter((k, i, all) => k !== all[i - 1]).join(','),
+    changeovers: state.sequence.filter(x => x.changeover).length,
+    first: state.sequence[0].kind, last: state.sequence[state.sequence.length - 1].kind
+  }));
+  assert(mixRun.total === 1800, `the whole session is 30:00, got ${mixRun.total}s`);
+  assert(mixRun.order === 'emom,short,amrap', `sections run in order: ${mixRun.order}`);
+  assert(mixRun.changeovers === 2, `a changeover between each style: ${mixRun.changeovers}`);
+  assert(mixRun.first === 'warmup' && mixRun.last === 'cooldown', 'one warm-up at the start, one cool-down at the end');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.changeover)); render(); });
+  assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Change over', 'the changeover says so');
+  assert((await p.$eval('#roundDots', e => e.textContent)).includes('Short bursts'), 'and explains the next style');
+  await p.click('#btnBack'); await p.click('#pathQuick');
+  await p.click('.interval-card:has-text("Short bursts")');
+  assert(await st(() => !state.mixOn), 'picking a single style turns the mix off');
+  await p.click('#timePicker .chip:text-is("20 min")');
+  await p.click('#btnBuild');
+  ok('Mix: 30:00 exactly, EMOM then short bursts then AMRAP, a changeover between each');
+
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathStretch');
   await p.click(card('Sunrise Stretch'));

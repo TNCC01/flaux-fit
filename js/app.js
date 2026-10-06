@@ -28,6 +28,9 @@ const state = {
   weights: { kb: [10, 15], db: [], bar: 10 },
   minutes: 20,
   intervalStyle: DEFAULT_INTERVAL,
+  // a mixed session: on, and the styles in order (see planMix)
+  mixOn: false,
+  mixStyles: ['emom', 'short', 'amrap'],
   regions: REGIONS.map(r => r.id),
   blockedTags: [],
   excluded: [],
@@ -57,7 +60,7 @@ const state = {
   excludeSearch: ''
 };
 
-const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle',
+const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus'];
 
@@ -72,6 +75,10 @@ function loadPrefs() {
     state.equipment = { ...DEFAULT_EQUIPMENT, kettlebells: true, ...(p.equipment || {}) };
     state.weights = cleanWeights(p.weights, p.equipment || {});
     if (!INTERVALS[state.intervalStyle]) state.intervalStyle = DEFAULT_INTERVAL;
+    state.mixOn = state.mixOn === true;
+    if (!Array.isArray(state.mixStyles)) state.mixStyles = ['emom', 'short', 'amrap'];
+    state.mixStyles = [...new Set(state.mixStyles.filter(id => INTERVALS[id]))].slice(0, 3);
+    if (state.mixStyles.length < 2) state.mixStyles = ['emom', 'short', 'amrap'];
     if (!Array.isArray(state.regions) || !state.regions.length) state.regions = REGIONS.map(r => r.id);
     if (!Array.isArray(state.excluded)) state.excluded = [];
     if (!Array.isArray(state.recent)) state.recent = [];
@@ -165,8 +172,16 @@ const currentInterval = () => INTERVALS[state.intervalStyle] || INTERVALS[DEFAUL
 // favourite replays as built without overwriting the interval chosen in
 // setup. The classics have none of their own and take whatever is selected.
 const intervalFor = (w) => (w && w.intervalId && INTERVALS[w.intervalId]) || currentInterval();
-const buildCtx = (w) => {
-  const iv = intervalFor(w);
+// The sections a workout runs as: a mix's own list, or one section of the
+// whole workout at its interval.
+function sectionsOf(w) {
+  if (w.sections) return w.sections;
+  return [{ intervalId: intervalFor(w).id, start: 0, count: w.blocks.length, minutes: 0, blockRestSec: w.blockRestSec }];
+}
+// A workout's style for history and comparisons: 'mix' or the interval's id.
+const styleIdOf = (w) => (w.sections ? 'mix' : intervalFor(w).id);
+const buildCtx = (w, ivOverride) => {
+  const iv = ivOverride || intervalFor(w);
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
            hasEquip, loads: loadsFor(state.weights) };
 };
@@ -191,6 +206,7 @@ const els = {
   peoplePicker: $('peoplePicker'), nameInputs: $('nameInputs'),
   nameA: $('nameA'), nameB: $('nameB'),
   equipmentPicker: $('equipmentPicker'), weightPicker: $('weightPicker'), timePicker: $('timePicker'),
+  mixPicker: $('mixPicker'),
   intervalPicker: $('intervalPicker'),
   bodyMap: $('bodyMap'), regionPicker: $('regionPicker'), tagPicker: $('tagPicker'),
   btnOpenExclude: $('btnOpenExclude'), excludeSummary: $('excludeSummary'),
@@ -254,8 +270,8 @@ function durationParts(w) {
     const total = stretchList(w).reduce((s, x) => s + x.hold, 0);
     return { totalMin: Math.round(total / 60), totalSec: total, workMin: null, bookendsMin: null };
   }
-  const iv = intervalFor(w);
-  const work = w.blocks.length * blockSeconds(iv) + (w.blocks.length - 1) * w.blockRestSec;
+  const secs = sectionsOf(w);
+  const work = secs.reduce((t, x) => t + sectionSeconds(x), 0) + (secs.length - 1) * (w.changeoverSec || 0);
   const bookend = w.warmupSec + w.cooldownSec;
   return {
     totalMin: Math.round((work + bookend) / 60), totalSec: work + bookend,
@@ -265,8 +281,6 @@ function durationParts(w) {
 
 function buildSequence(workout, people) {
   const seq = [];
-  const iv = intervalFor(workout);
-  const ctx = buildCtx(workout);
   const isDuo = people === 2;
   const pair = (ex) => isDuo ? { a: ex, b: ex } : { a: ex, b: null };
 
@@ -276,30 +290,44 @@ function buildSequence(workout, people) {
                  name: `Warm-up: ${fmtMin(workout.warmupSec)}`, ...pair(warmupExercise) });
     }
     const total = workout.blocks.length;
-    workout.blocks.forEach((block, blockIdx) => {
-      const label = `Block ${blockIdx + 1} of ${total}: ${block.name}`;
-      if (iv.lap) {
-        // one phase for the whole block; each person carries their lap, and
-        // in For Time how many laps of it to finish
-        const c = amrapCircuits(block, ctx, isDuo);
-        const carry = (lap) => lap && { ...lap[0], circuit: lap, lapRounds: iv.forTime ? forTimeRounds(lap.length) : 0 };
-        seq.push({ kind: 'work', amrap: !!iv.amrap, forTime: !!iv.forTime, duration: iv.workSec,
-                   blockIdx, totalBlocks: total, name: label, a: carry(c.a), b: carry(c.b) });
+    const secs = sectionsOf(workout);
+    secs.forEach((sec, secIdx) => {
+      const iv = sectionInterval(sec);
+      const ctx = buildCtx(workout, iv);
+      // between the sections of a mix: a longer break that says what's next
+      if (secIdx > 0) {
+        const first = workout.blocks[sec.start];
+        seq.push({ kind: 'blockrest', changeover: true, duration: workout.changeoverSec || CHANGEOVER_SEC,
+                   blockIdx: sec.start - 1, totalBlocks: total, howTo: `${iv.label}: ${iv.blurb}`,
+                   name: `Next: ${iv.label}${sec.minutes ? `, ${sec.minutes} min` : ''}. ${first.name}`,
+                   ...pair({ name: `Next: ${iv.label}`, display: `Next: ${iv.label}`, cue: iv.blurb, alt: '', img: null }) });
       }
-      for (let round = 1; !iv.lap && round <= iv.rounds; round++) {
-        const w = isDuo ? block.duo(round, ctx) : { a: block.solo(round, ctx), b: null };
-        seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round, emom: !!iv.reps,
-                   totalBlocks: total, totalRounds: iv.rounds, name: label, a: w.a, b: w.b });
-        // an EMOM's rest is whatever is left of the minute, not a phase of its own
-        if (iv.restSec > 0) seq.push({ kind: 'rest', duration: iv.restSec, blockIdx, round,
-                   totalBlocks: total, totalRounds: iv.rounds, name: label,
-                   ...pair({ name: 'Rest', display: 'Rest', cue: 'Breathe', alt: '', img: null }) });
-      }
-      if (blockIdx < total - 1) {
-        seq.push({ kind: 'blockrest', duration: workout.blockRestSec, blockIdx, totalBlocks: total,
-                   name: `Rest, then Block ${blockIdx + 2}: ${workout.blocks[blockIdx + 1].name}`,
-                   ...pair({ name: 'Block rest', display: 'Block rest', cue: 'Hydrate, reset, swap equipment if needed', alt: '', img: null }) });
-      }
+      workout.blocks.slice(sec.start, sec.start + sec.count).forEach((block, i) => {
+        const blockIdx = sec.start + i;
+        const label = `Block ${blockIdx + 1} of ${total}: ${block.name}`;
+        if (iv.lap) {
+          // one phase for the whole block; each person carries their lap, and
+          // in For Time how many laps of it to finish
+          const c = amrapCircuits(block, ctx, isDuo);
+          const carry = (lap) => lap && { ...lap[0], circuit: lap, lapRounds: iv.forTime ? forTimeRounds(lap.length, iv.workSec) : 0 };
+          seq.push({ kind: 'work', amrap: !!iv.amrap, forTime: !!iv.forTime, duration: iv.workSec,
+                     blockIdx, totalBlocks: total, name: label, a: carry(c.a), b: carry(c.b) });
+        }
+        for (let round = 1; !iv.lap && round <= iv.rounds; round++) {
+          const w = isDuo ? block.duo(round, ctx) : { a: block.solo(round, ctx), b: null };
+          seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round, emom: !!iv.reps,
+                     totalBlocks: total, totalRounds: iv.rounds, name: label, a: w.a, b: w.b });
+          // an EMOM's rest is whatever is left of the minute, not a phase of its own
+          if (iv.restSec > 0) seq.push({ kind: 'rest', duration: iv.restSec, blockIdx, round,
+                     totalBlocks: total, totalRounds: iv.rounds, name: label,
+                     ...pair({ name: 'Rest', display: 'Rest', cue: 'Breathe', alt: '', img: null }) });
+        }
+        if (i < sec.count - 1) {
+          seq.push({ kind: 'blockrest', duration: sec.blockRestSec, blockIdx, totalBlocks: total,
+                     name: `Rest, then Block ${blockIdx + 2}: ${workout.blocks[blockIdx + 1].name}`,
+                     ...pair({ name: 'Block rest', display: 'Block rest', cue: 'Hydrate, reset, swap equipment if needed', alt: '', img: null }) });
+        }
+      });
     });
     if (workout.cooldownSec > 0) {
       seq.push({ kind: 'cooldown', duration: workout.cooldownSec,
@@ -452,8 +480,10 @@ function goWelcome() {
 function renderWelcomeFoot() {
   const iv = currentInterval();
   const gear = GEAR.filter(g => state.equipment[g.id] !== false).length;
+  const style = state.mixOn ? `mix (${state.mixStyles.map(id => INTERVALS[id].label).join(', ')})`
+    : `${iv.label.toLowerCase()} (${iv.sub})`;
   els.welcomeFoot.textContent =
-    `${Object.keys(EXERCISES).length} movements · ${iv.label.toLowerCase()} (${iv.sub}) · ` +
+    `${Object.keys(EXERCISES).length} movements · ${style} · ` +
     `${gear}/${GEAR.length} kit items on · ` +
     `${state.people === 1 ? 'solo' : 'two people'}`;
 }
@@ -560,6 +590,7 @@ function renderTimePicker() {
       state.minutes = m;
       savePrefs();
       renderTimePicker();
+      renderMixPicker();
     });
     b.textContent = `${m} min`;
     b.setAttribute('aria-pressed', String(state.minutes === m));
@@ -569,20 +600,65 @@ function renderTimePicker() {
 
 function renderIntervalPicker() {
   els.intervalPicker.innerHTML = '';
+  const card = (on, name, sub, blurb, pick) => {
+    const b = tappable('interval-card' + (on ? ' active' : ''), () => { pick(); savePrefs(); renderIntervalPicker(); });
+    b.innerHTML = `
+      <div class="interval-name">${esc(name)}</div>
+      <div class="interval-sub">${esc(sub)}</div>
+      <div class="interval-blurb">${esc(blurb)}</div>`;
+    b.setAttribute('aria-pressed', String(on));
+    els.intervalPicker.appendChild(b);
+  };
   Object.keys(INTERVALS).forEach(id => {
     const iv = INTERVALS[id];
-    const b = tappable('interval-card' + (state.intervalStyle === id ? ' active' : ''), () => {
-      state.intervalStyle = id;
-      savePrefs();
-      renderIntervalPicker();
-    });
-    b.innerHTML = `
-      <div class="interval-name">${esc(iv.label)}</div>
-      <div class="interval-sub">${esc(iv.sub)}${iv.reps ? '' : ` × ${iv.rounds} rounds`}</div>
-      <div class="interval-blurb">${esc(iv.blurb)}</div>`;
-    b.setAttribute('aria-pressed', String(state.intervalStyle === id));
-    els.intervalPicker.appendChild(b);
+    card(!state.mixOn && state.intervalStyle === id, iv.label, `${iv.sub}${iv.reps ? '' : ` × ${iv.rounds} rounds`}`,
+         iv.blurb, () => { state.intervalStyle = id; state.mixOn = false; });
   });
+  card(state.mixOn, 'Mix', 'Two or three styles in one session',
+       'Pick the styles in the order you want them. The time is shared out so the whole session fits.',
+       () => { state.mixOn = true; });
+  renderMixPicker();
+}
+
+// The styles in a mix, tapped in order (1, 2, 3), and how the time works out.
+function renderMixPicker() {
+  els.mixPicker.hidden = !state.mixOn;
+  if (!state.mixOn) return;
+  els.mixPicker.innerHTML = '<div class="weight-label">Styles, in order</div>';
+  const chips = document.createElement('div');
+  chips.className = 'chip-row';
+  Object.keys(INTERVALS).forEach(id => {
+    const at = state.mixStyles.indexOf(id);
+    const c = tappable('chip mix-chip' + (at >= 0 ? ' active' : ''), () => {
+      if (at >= 0) state.mixStyles = state.mixStyles.filter(x => x !== id);
+      else if (state.mixStyles.length < 3) state.mixStyles = [...state.mixStyles, id];
+      savePrefs();
+      renderMixPicker();
+    });
+    c.innerHTML = at >= 0 ? `<b>${at + 1}</b> ${esc(INTERVALS[id].label)}` : esc(INTERVALS[id].label);
+    c.setAttribute('aria-pressed', String(at >= 0));
+    chips.appendChild(c);
+  });
+  els.mixPicker.appendChild(chips);
+  const note = document.createElement('div');
+  note.className = 'picker-hint mix-plan';
+  note.textContent = mixPlanText();
+  els.mixPicker.appendChild(note);
+}
+function mixPlanText() {
+  const s = state.mixStyles;
+  if (s.length < 2) return 'Pick at least two styles.';
+  const plan = planMix(state.minutes, s);
+  if (plan.error) {
+    const min = mixMinimumMinutes(s);
+    return min ? `That mix needs at least ${min} minutes.` : plan.error;
+  }
+  const part = (x) => {
+    const iv = INTERVALS[x.intervalId];
+    return x.minutes ? `${iv.label} ${x.minutes} min` : `${iv.label} ${x.count} × 4 min`;
+  };
+  return `${fmtMin(plan.warmupSec)} warm-up · ${plan.sections.map(part).join(' · ')} · ` +
+         `${fmtMin(plan.cooldownSec)} cool-down, with a short changeover between styles.`;
 }
 
 function renderRegionPicker() {
@@ -707,7 +783,8 @@ function requestFromState() {
   return {
     minutes: state.minutes,
     people: state.people,
-    intervalId: state.intervalStyle,
+    intervalId: state.mixOn ? 'mix' : state.intervalStyle,
+    mix: state.mixOn ? state.mixStyles.slice() : undefined,
     regions: custom ? state.regions.slice() : REGIONS.map(r => r.id),
     blockedTags: custom ? state.blockedTags.slice() : []
   };
@@ -869,14 +946,31 @@ function namedCard(w) {
   return card;
 }
 
+// How a history entry's style reads: "Every minute on the minute", or for
+// a mix "Mix: EMOM, Short bursts, AMRAP".
+function styleLabel(rec) {
+  if (rec.intervalId === 'mix') {
+    const list = (rec.request && rec.request.mix) || [];
+    return `Mix: ${list.map(id => (INTERVALS[id] || {}).label).filter(Boolean).join(', ')}`;
+  }
+  return (INTERVALS[rec.intervalId] || {}).sub || '';
+}
+
 // An AMRAP session's rounds, block by block ("Rounds: 4 · 5 · 4"), or a
 // For Time one's finishing times ("Times: 3:12 · 2:58 · capped").
 function scoreLine(rec) {
   if (!rec.scores || !rec.scores.some(s => s.a || s.b)) return '';
-  const timed = rec.intervalId === 'fortime';
-  const one = (v) => timed ? (v ? fmt(v) : 'capped') : (v || 0);
-  const row = (w) => rec.scores.map(s => one(s[w])).join(' · ');
-  const what = timed ? 'Times' : 'Rounds';
+  // each block knows its kind of score; older entries go by the style
+  const kind = (s) => s.t || (rec.intervalId === 'fortime' ? 'fortime' : 'amrap');
+  const scored = rec.scores.filter(s => s.t !== null);
+  const mixed = new Set(scored.map(kind)).size > 1;
+  const one = (s, w) => {
+    const v = s[w];
+    const val = kind(s) === 'fortime' ? (v ? fmt(v) : 'capped') : (v || 0);
+    return mixed ? `${kind(s) === 'fortime' ? 'time' : 'rounds'} ${val}` : val;
+  };
+  const row = (w) => scored.map(s => one(s, w)).join(' · ');
+  const what = mixed ? 'Scores' : kind(scored[0]) === 'fortime' ? 'Times' : 'Rounds';
   const text = rec.people === 2
     ? `${what}: ${personName('a')} ${row('a')}, ${personName('b')} ${row('b')}`
     : `${what}: ${row('a')}`;
@@ -895,7 +989,7 @@ function historyCard(rec) {
       <span>·</span>
       <span>${rec.people === 1 ? 'solo' : '2 people'}</span>
       <span>·</span>
-      <span>${esc((INTERVALS[rec.intervalId] || {}).sub || '')}</span>
+      <span>${esc(styleLabel(rec))}</span>
     </div>
     <div class="card-blurb">${esc(rec.blurb || '')}</div>
     ${scoreLine(rec)}
@@ -976,7 +1070,7 @@ function openWorkout(workout) {
   state.scores = {};
   state.pick = {};
   const before = state.history.find(h => h.key === historyKey(workout) && h.scores
-    && h.intervalId === intervalFor(workout).id);       // a classic can be run in any style
+    && h.intervalId === styleIdOf(workout));       // a classic can be run in any style
   state.lastScores = before ? before.scores : null;
   state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
   seekTo(0);
@@ -1038,12 +1132,17 @@ function renderPreview() {
     stretchList(w).forEach((s, i) => add(`${i + 1}. ${s.name}`, `${s.hold}s hold`));
     return;
   }
-  const iv = intervalFor(w);
   add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupExercise.cue);
-  w.blocks.forEach((b, i) => {
-    const names = Array.from(new Set((b.ids || []).map(id => withReps(describeEx(id, ctx)))));
-    add(`Block ${i + 1}: ${b.name}`,
-        `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
+  sectionsOf(w).forEach((sec, si) => {
+    const iv = sectionInterval(sec);
+    const sctx = buildCtx(w, iv);
+    if (si > 0) add(`Change over: ${fmtMin(w.changeoverSec || CHANGEOVER_SEC)}`, `Next up, ${iv.label}: ${iv.blurb}`);
+    w.blocks.slice(sec.start, sec.start + sec.count).forEach((b, j) => {
+      const i = sec.start + j;
+      const names = Array.from(new Set((b.ids || []).map(id => withReps(describeEx(id, sctx)))));
+      add(`Block ${i + 1}: ${b.name}`,
+          `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.label}, ${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
+    });
   });
   add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownExercise.cue);
 }
@@ -1186,8 +1285,11 @@ function saveScores() {
   const w = state.workout;
   const entry = w && state.history.find(h => h.key === historyKey(w));
   if (!entry) return;
+  const kinds = {};
+  state.sequence.forEach(p => { if (p.amrap) kinds[p.blockIdx] = 'amrap'; if (p.forTime) kinds[p.blockIdx] = 'fortime'; });
   const blocks = (w.blocks || []).length;
-  entry.scores = Array.from({ length: blocks }, (_, i) => state.scores[i] ? { ...state.scores[i] } : { a: 0, b: 0 });
+  entry.scores = Array.from({ length: blocks }, (_, i) =>
+    ({ ...(state.scores[i] || { a: 0, b: 0 }), t: kinds[i] || null }));
   savePrefs();
 }
 
@@ -1345,7 +1447,8 @@ function renderRoundDots(phase) {
   else if (phase.totalBlocks) {
     const label = document.createElement('div');
     label.className = 'round-count';
-    label.textContent = `Between blocks: ${phase.blockIdx + 1} to ${phase.blockIdx + 2} of ${phase.totalBlocks}`;
+    label.textContent = phase.changeover ? phase.howTo
+      : `Between blocks: ${phase.blockIdx + 1} to ${phase.blockIdx + 2} of ${phase.totalBlocks}`;
     els.roundDots.appendChild(label);
   }
 }
@@ -1421,7 +1524,8 @@ function render() {
   if (!phase) return;
 
   els.timerCard.className = 'timer-card ' + phase.kind;
-  els.phaseLabel.textContent = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM' : (PHASE_LABEL[phase.kind] || '');
+  els.phaseLabel.textContent = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
+    : phase.changeover ? 'Change over' : (PHASE_LABEL[phase.kind] || '');
   els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
   if (phase.forTime) {
     // the clock counts up while you race it; once everyone's done it counts
@@ -1705,7 +1809,7 @@ function recordHistory() {
     focus: w.focus || 'whole-body',
     minutes: durationParts(w).totalMin,
     people: state.people,
-    intervalId: intervalFor(w).id,
+    intervalId: styleIdOf(w),
     generated: !!w.generated,
     // Enough to rebuild it exactly: a seed and a request for generated
     // workouts, an id for the named ones.
