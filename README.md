@@ -56,6 +56,18 @@ in B's lap that needs a kettlebell, the barbell, the rope or the rings that
 A's lap also uses goes to its bodyweight version, because the two of you
 won't be in step.
 
+**Surf fitness** is a goal you pick at the top of setup, alongside General
+fitness. It builds from exercises tagged with what they do for surfing
+(`surf` in `js/exercises.js`: pop-up, paddle, legs, rotation, shoulders) in
+a set rhythm: pop-up power while you're fresh, then paddling, legs and
+balance, shoulder care, pop-ups again, paddling, rotation. It works with
+every style, Mix, two people and any gear. Twelve exercises are surf
+specific (pop-ups, sprawl to pop-up, pop-up to bottom turn, prone paddling,
+prone swimmers, band paddle pulls, duck-dive and scap push-ups, band
+external rotations, surf stance holds, deep squat holds, open-book
+rotations), and Surf Mobility in the stretch library covers hips, upper
+back, shoulders and ankles.
+
 **Mix** runs two or three of these styles back to back in one session,
 in the order you tap them, and still fits the minutes you picked exactly,
 warm-up and cool-down included (one of each). Short bursts and long efforts

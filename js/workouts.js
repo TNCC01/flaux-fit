@@ -487,6 +487,13 @@ const STRETCH_ROUTINES = [
           'hip9090L', 'hip9090R', 'frog', 'bridgeHold', 'happyBaby', 'savasana']
   },
   {
+    id: 'surf-mobility', name: 'Surf Mobility', tagline: 'Hips, upper back, shoulders, ankles',
+    focus: 'stretching', blurb: 'What paddling and a low stance need: open hips and shoulders, a turning upper back and ankles that bend. Good after a surf too.',
+    format: 'stretch', hold: 45,
+    ids: ['catCow', 'threadNeedleL', 'threadNeedleR', 'chestOpener', 'cobra', 'lowLungeL', 'lowLungeR',
+          'hip9090L', 'hip9090R', 'pigeonL', 'pigeonR', 'calfWall', 'quadKneel', 'childsPose']
+  },
+  {
     id: 'post-session', name: 'Post-Session Reset', tagline: 'Ten minutes, straight after',
     focus: 'stretching', blurb: 'Short and targeted: the bits that tighten up after a hard session.',
     format: 'stretch', hold: 45,

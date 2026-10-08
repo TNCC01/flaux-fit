@@ -16,5 +16,6 @@ import core from './core.js';
 import abs from './abs.js';
 import cardio from './cardio.js';
 import gear from './gear.js';
+import surf from './surf.js';
 
-export const MOVES = { ...legs, ...lunge, ...hinge, ...push, ...press, ...pull, ...core, ...abs, ...cardio, ...gear };
+export const MOVES = { ...legs, ...lunge, ...hinge, ...push, ...press, ...pull, ...core, ...abs, ...cardio, ...gear, ...surf };

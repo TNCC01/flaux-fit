@@ -28,6 +28,8 @@ const state = {
   weights: { kb: [10, 15], db: [], bar: 10 },
   minutes: 20,
   intervalStyle: DEFAULT_INTERVAL,
+  // what the session is for: general fitness, or surfing (see SURF_GROUPS)
+  goal: 'general',
   // a mixed session: on, and the styles in order (see planMix)
   mixOn: false,
   mixStyles: ['emom', 'short', 'amrap'],
@@ -60,7 +62,7 @@ const state = {
   excludeSearch: ''
 };
 
-const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles',
+const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus'];
 
@@ -76,6 +78,7 @@ function loadPrefs() {
     state.weights = cleanWeights(p.weights, p.equipment || {});
     if (!INTERVALS[state.intervalStyle]) state.intervalStyle = DEFAULT_INTERVAL;
     state.mixOn = state.mixOn === true;
+    if (!GOALS.some(g => g.id === state.goal)) state.goal = 'general';
     if (!Array.isArray(state.mixStyles)) state.mixStyles = ['emom', 'short', 'amrap'];
     state.mixStyles = [...new Set(state.mixStyles.filter(id => INTERVALS[id]))].slice(0, 3);
     if (state.mixStyles.length < 2) state.mixStyles = ['emom', 'short', 'amrap'];
@@ -99,6 +102,14 @@ function savePrefs() {
     localStorage.setItem(PREFS_KEY, JSON.stringify(out));
   } catch (e) { /* private mode / quota: preferences just won't stick */ }
 }
+
+// What a session is for. Surf fitness builds around paddling, pop-ups,
+// stance and shoulder care instead of target areas.
+const GOALS = [
+  { id: 'general', label: 'General fitness', hint: '' },
+  { id: 'surf', label: 'Surf fitness',
+    hint: 'Built around what surfing asks of you: paddle strength, a fast pop-up, legs and balance for turns, and shoulder care. Target areas don\'t apply.' }
+];
 
 // ---------------------------------------------------------------- gear
 // What setup shows. Kettlebells are one item with the bells you own ticked
@@ -206,7 +217,7 @@ const els = {
   peoplePicker: $('peoplePicker'), nameInputs: $('nameInputs'),
   nameA: $('nameA'), nameB: $('nameB'),
   equipmentPicker: $('equipmentPicker'), weightPicker: $('weightPicker'), timePicker: $('timePicker'),
-  mixPicker: $('mixPicker'),
+  mixPicker: $('mixPicker'), goalPicker: $('goalPicker'), goalHint: $('goalHint'), rowRegions: $('rowRegions'),
   intervalPicker: $('intervalPicker'),
   bodyMap: $('bodyMap'), regionPicker: $('regionPicker'), tagPicker: $('tagPicker'),
   btnOpenExclude: $('btnOpenExclude'), excludeSummary: $('excludeSummary'),
@@ -504,6 +515,7 @@ function openSetup(mode) {
 // SETUP RENDERERS
 // =====================================================================
 function renderSetup() {
+  renderGoalPicker();
   renderPeoplePicker();
   renderEquipmentPicker();
   renderTimePicker();
@@ -512,6 +524,22 @@ function renderSetup() {
   renderTagPicker();
   renderExcludeSummary();
   if (!els.excludePanel.hidden) renderExcludeList();
+}
+
+function renderGoalPicker() {
+  els.goalPicker.innerHTML = '';
+  GOALS.forEach(g => {
+    const on = state.goal === g.id;
+    const b = tappable('chip' + (on ? ' active' : ''), () => { state.goal = g.id; savePrefs(); renderSetup(); });
+    b.textContent = g.label;
+    b.setAttribute('aria-pressed', String(on));
+    els.goalPicker.appendChild(b);
+  });
+  const goal = GOALS.find(g => g.id === state.goal);
+  els.goalHint.textContent = goal.hint;
+  els.goalHint.hidden = !goal.hint;
+  // target areas mean nothing to a surf session
+  if (state.mode === 'custom') els.rowRegions.style.display = state.goal === 'surf' ? 'none' : '';
 }
 
 function renderPeoplePicker() {
@@ -785,6 +813,7 @@ function requestFromState() {
     people: state.people,
     intervalId: state.mixOn ? 'mix' : state.intervalStyle,
     mix: state.mixOn ? state.mixStyles.slice() : undefined,
+    goal: state.goal === 'surf' ? 'surf' : undefined,
     regions: custom ? state.regions.slice() : REGIONS.map(r => r.id),
     blockedTags: custom ? state.blockedTags.slice() : []
   };

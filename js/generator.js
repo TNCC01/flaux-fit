@@ -42,6 +42,19 @@ const GROUPS = {
   carry:   { label: 'Carries & holds',    patterns: ['carry'] }
 };
 
+// The Surf fitness goal schedules against what surfing asks of you instead
+// (each exercise's `surf` list): pop-up power while you're fresh, then
+// paddling, stance and balance, and shoulder care, with pop-ups and
+// paddling coming round most because they're what goes first.
+const SURF_GROUPS = {
+  popup:     { label: 'Pop-up power' },
+  paddle:    { label: 'Paddle strength' },
+  legs:      { label: 'Legs & balance' },
+  shoulders: { label: 'Shoulder care' },
+  rotation:  { label: 'Turns & rotation' }
+};
+const SURF_ORDER = ['popup', 'paddle', 'legs', 'shoulders', 'popup', 'paddle', 'rotation', 'legs'];
+
 // Scheduling order: open with a big compound, alternate push against
 // pull, put core and conditioning later, finish on a carry or a burner.
 const GROUP_ORDER = ['legsBig', 'push', 'pull', 'legsUni', 'core', 'cardio', 'carry'];
@@ -202,6 +215,9 @@ function generateWorkout(opts) {
   const mix = Array.isArray(opts.mix)
     ? [...new Set(opts.mix.filter(id => INTERVALS[id]))].slice(0, 3) : [];
   const isMix = mix.length >= 2;
+  const surf = opts.goal === 'surf';
+  const groups = surf ? SURF_GROUPS : GROUPS;
+  const groupOrder = surf ? Object.keys(SURF_GROUPS) : GROUP_ORDER;
   const rand = mulberry32(opts.seed || 1);
   const notes = [];
   const excluded = new Set(opts.excluded || []);
@@ -220,11 +236,13 @@ function generateWorkout(opts) {
     return ex.equipment.every(hasEquip);
   };
 
-  let regions = (opts.regions && opts.regions.length)
+  // surfing uses the whole body, so the surf goal ignores target areas
+  let regions = (!surf && opts.regions && opts.regions.length)
     ? opts.regions.slice() : REGIONS.map(r => r.id);
 
   // Which groups can actually be filled under these constraints.
   const poolFor = (groupKey) => {
+    if (surf) return Object.keys(EXERCISES).filter(id => usable(id) && (EXERCISES[id].surf || []).includes(groupKey));
     const g = GROUPS[groupKey];
     return Object.keys(EXERCISES).filter(id =>
       usable(id) &&
@@ -241,12 +259,12 @@ function generateWorkout(opts) {
   // a whole 4-minute block of one exercise is what "limited range" felt
   // like in the first place. Only fall back to thin groups if that would
   // otherwise leave nothing at all.
-  let eligible = GROUP_ORDER.filter(k => poolFor(k).length >= 2);
-  if (!eligible.length) eligible = GROUP_ORDER.filter(k => poolFor(k).length > 0);
+  let eligible = groupOrder.filter(k => poolFor(k).length >= 2);
+  if (!eligible.length) eligible = groupOrder.filter(k => poolFor(k).length > 0);
 
   // Nothing left: work out which constraint did it so the message is useful.
   if (!eligible.length) {
-    const anyRegion = GROUP_ORDER.some(k => {
+    const anyRegion = surf || GROUP_ORDER.some(k => {
       const g = GROUPS[k];
       return Object.keys(EXERCISES).some(id => usable(id) && g.patterns.includes(EXERCISES[id].pattern));
     });
@@ -264,8 +282,8 @@ function generateWorkout(opts) {
     const labels = dead.map(r => (REGIONS.find(x => x.id === r) || {}).label || r);
     notes.push(`Nothing available for ${labels.join(' or ')}, so it was skipped.`);
     regions = regions.filter(r => covered.has(r));
-    eligible = GROUP_ORDER.filter(k => poolFor(k).length >= 2);
-    if (!eligible.length) eligible = GROUP_ORDER.filter(k => poolFor(k).length > 0);
+    eligible = groupOrder.filter(k => poolFor(k).length >= 2);
+    if (!eligible.length) eligible = groupOrder.filter(k => poolFor(k).length > 0);
   }
 
   const plan = isMix ? planMix(opts.minutes, mix) : planBlocks(opts.minutes, iv);
@@ -331,6 +349,14 @@ function generateWorkout(opts) {
   // count only breaks ties, which is what keeps a drained group from
   // being handed a block it can't fill.
   function nextGroup(prev, i, total) {
+    if (surf) {
+      // the surf rhythm, skipping anything the gear and exclusions can't fill
+      for (let k = 0; k < SURF_ORDER.length; k++) {
+        const g = SURF_ORDER[(i + k) % SURF_ORDER.length];
+        if (eligible.includes(g) && (g !== prev || eligible.length === 1)) return g;
+      }
+      return eligible[0];
+    }
     if (i === 0 && opener) return opener;
     if (i === total - 1 && finisher) return finisher;
     const options = eligible.filter(k => k !== prev);
@@ -347,7 +373,7 @@ function generateWorkout(opts) {
     const groupKey = nextGroup(prevGroup, i, plan.blocks);
     prevGroup = groupKey;
     timesUsed.set(groupKey, (timesUsed.get(groupKey) || 0) + 1);
-    const group = GROUPS[groupKey];
+    const group = groups[groupKey];
     const pool = poolFor(groupKey).sort((a, b) => score(a) - score(b));
 
     // Sometimes build the block around a two-weight pair.
@@ -401,7 +427,7 @@ function generateWorkout(opts) {
                 + Math.max(0, blocks.length - 1) * plan.blockRestSec;
   const realMin = Math.round(realSec / 60);
 
-  const title = titleFor(regions);
+  const title = surf ? 'Surf fitness' : titleFor(regions);
   const mixNames = mix.map(id => INTERVALS[id].label);
   if (isMix) return {
     id: `gen-${opts.seed}`,
@@ -422,7 +448,7 @@ function generateWorkout(opts) {
     notes,
     seed: opts.seed,
     request: {
-      minutes: opts.minutes, people: opts.people, intervalId: 'mix', mix: mix.slice(),
+      minutes: opts.minutes, people: opts.people, intervalId: 'mix', mix: mix.slice(), goal: surf ? 'surf' : undefined,
       regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice(),
       recent: [...recent]
     },
@@ -450,7 +476,7 @@ function generateWorkout(opts) {
     // kept: it weights the picks, so replaying the seed without it would
     // rebuild a different workout from the one that was saved.
     request: {
-      minutes: opts.minutes, people: opts.people, intervalId: iv.id,
+      minutes: opts.minutes, people: opts.people, intervalId: iv.id, goal: surf ? 'surf' : undefined,
       regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice(),
       recent: [...recent]
     },

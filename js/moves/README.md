@@ -32,6 +32,7 @@ figure. When in doubt, pick the textbook version of the movement.
 | `abs.js` | crunches, sit-up family, leg raises, twists, woodchops |
 | `cardio.js` | jumps, jacks, burpees, climbers, running drills, skipping |
 | `gear.js` | pull-up bar, resistance bands, medicine ball |
+| `surf.js` | surf fitness: pop-ups, prone paddling, band paddle, shoulder care, surf stance, mobility |
 
 `bwSquat` (legs.js), `pushup` (push.js) and `barbellPress` (press.js) are worked
 examples: read them first.
