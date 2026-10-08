@@ -375,8 +375,8 @@ try {
   assert((await p.$eval('#goalHint', e => e.textContent)).includes('paddle'), 'the goal says what it trains');
   await p.click('#btnBuild');
   const surfIds = await st(() => state.workout.exerciseIds);
-  assert(surfIds.every(id => (EXERCISES[id].surf || []).length), 'every exercise trains something for surfing');
-  assert(surfIds.some(id => EXERCISES[id].surf.includes('popup')), 'pop-up work is in');
+  assert(await st(() => state.workout.exerciseIds.every(id => (EXERCISES[id].surf || []).length)), 'every exercise trains something for surfing');
+  assert(await st(() => state.workout.exerciseIds.some(id => EXERCISES[id].surf.includes('popup'))), 'pop-up work is in');
   assert(await st(() => state.workout.name.startsWith('Surf fitness')), 'named for it');
   await p.click('#btnBack'); await p.click('#pathCustom');
   await p.click('#goalPicker .chip:has-text("General fitness")');
