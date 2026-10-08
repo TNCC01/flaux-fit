@@ -68,6 +68,17 @@ external rotations, surf stance holds, deep squat holds, open-book
 rotations), and Surf Mobility in the stretch library covers hips, upper
 back, shoulders and ankles.
 
+**Programs** (a fifth path on the home screen) run a session a day that
+builds week by week. The first is **Surf Fit**, six weeks on a weekly
+rhythm: paddle power, pop-ups and legs, mobility, an engine mix (EMOM then
+AMRAP), paddle and shoulders, pop-ups and turns, and an easy day. Reps start
+at 80% and build each fortnight to 110% (`repScale`). Each day builds
+through the generator with the day's style and focus, at whatever length you
+pick, with today's people, gear and weights. Progress moves on when a day is
+done, not by the calendar, so a missed day waits; "I surfed today" counts a
+surf instead. The screen shows the week, the day, a streak and a strip of
+this week's days. Programs are defined in `PROGRAMS` in `js/workouts.js`.
+
 **Mix** runs two or three of these styles back to back in one session,
 in the order you tap them, and still fits the minutes you picked exactly,
 warm-up and cool-down included (one of each). Short bursts and long efforts

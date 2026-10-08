@@ -54,6 +54,11 @@ const SURF_GROUPS = {
   rotation:  { label: 'Turns & rotation' }
 };
 const SURF_ORDER = ['popup', 'paddle', 'legs', 'shoulders', 'popup', 'paddle', 'rotation', 'legs'];
+// A program day can lean one way: a paddle day or a pop-up day.
+const SURF_FOCUS_ORDER = {
+  paddle: ['paddle', 'shoulders', 'paddle', 'popup', 'paddle', 'rotation', 'shoulders', 'legs'],
+  popup:  ['popup', 'legs', 'popup', 'rotation', 'popup', 'legs', 'paddle', 'shoulders']
+};
 
 // Scheduling order: open with a big compound, alternate push against
 // pull, put core and conditioning later, finish on a carry or a burner.
@@ -216,6 +221,9 @@ function generateWorkout(opts) {
     ? [...new Set(opts.mix.filter(id => INTERVALS[id]))].slice(0, 3) : [];
   const isMix = mix.length >= 2;
   const surf = opts.goal === 'surf';
+  const surfOrder = (surf && SURF_FOCUS_ORDER[opts.surfFocus]) || SURF_ORDER;
+  // a program's build-up, kept on the workout for the cards (see scaleTarget)
+  const repScale = typeof opts.repScale === 'number' && opts.repScale > 0 ? opts.repScale : undefined;
   const groups = surf ? SURF_GROUPS : GROUPS;
   const groupOrder = surf ? Object.keys(SURF_GROUPS) : GROUP_ORDER;
   const rand = mulberry32(opts.seed || 1);
@@ -351,8 +359,8 @@ function generateWorkout(opts) {
   function nextGroup(prev, i, total) {
     if (surf) {
       // the surf rhythm, skipping anything the gear and exclusions can't fill
-      for (let k = 0; k < SURF_ORDER.length; k++) {
-        const g = SURF_ORDER[(i + k) % SURF_ORDER.length];
+      for (let k = 0; k < surfOrder.length; k++) {
+        const g = surfOrder[(i + k) % surfOrder.length];
         if (eligible.includes(g) && (g !== prev || eligible.length === 1)) return g;
       }
       return eligible[0];
@@ -439,6 +447,7 @@ function generateWorkout(opts) {
     format: 'tabata',
     intervalId: 'mix',
     mix: mix.slice(),
+    repScale,
     sections: plan.sections.map(x => ({ ...x })),
     changeoverSec: plan.changeoverSec,
     warmupSec: plan.warmupSec,
@@ -449,6 +458,7 @@ function generateWorkout(opts) {
     seed: opts.seed,
     request: {
       minutes: opts.minutes, people: opts.people, intervalId: 'mix', mix: mix.slice(), goal: surf ? 'surf' : undefined,
+      surfFocus: surf ? opts.surfFocus : undefined, repScale,
       regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice(),
       recent: [...recent]
     },
@@ -465,6 +475,7 @@ function generateWorkout(opts) {
     blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()}, ${iv.sub}.`,
     format: 'tabata',
     intervalId: iv.id,
+    repScale,
     warmupSec: plan.warmupSec,
     cooldownSec: plan.cooldownSec,
     blockRestSec: plan.blockRestSec,
@@ -477,6 +488,7 @@ function generateWorkout(opts) {
     // rebuild a different workout from the one that was saved.
     request: {
       minutes: opts.minutes, people: opts.people, intervalId: iv.id, goal: surf ? 'surf' : undefined,
+      surfFocus: surf ? opts.surfFocus : undefined, repScale,
       regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice(),
       recent: [...recent]
     },

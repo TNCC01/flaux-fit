@@ -30,6 +30,8 @@ const state = {
   intervalStyle: DEFAULT_INTERVAL,
   // what the session is for: general fitness, or surfing (see SURF_GROUPS)
   goal: 'general',
+  // programs started: { [id]: { startedAt, done: [{ n, at, surfed }] } }
+  programs: {},
   // a mixed session: on, and the styles in order (see planMix)
   mixOn: false,
   mixStyles: ['emom', 'short', 'amrap'],
@@ -62,7 +64,7 @@ const state = {
   excludeSearch: ''
 };
 
-const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal',
+const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus'];
 
@@ -79,6 +81,11 @@ function loadPrefs() {
     if (!INTERVALS[state.intervalStyle]) state.intervalStyle = DEFAULT_INTERVAL;
     state.mixOn = state.mixOn === true;
     if (!GOALS.some(g => g.id === state.goal)) state.goal = 'general';
+    if (!state.programs || typeof state.programs !== 'object' || Array.isArray(state.programs)) state.programs = {};
+    Object.keys(state.programs).forEach(id => {
+      const p = state.programs[id];
+      if (!PROGRAMS.some(x => x.id === id) || !p || !Array.isArray(p.done)) delete state.programs[id];
+    });
     if (!Array.isArray(state.mixStyles)) state.mixStyles = ['emom', 'short', 'amrap'];
     state.mixStyles = [...new Set(state.mixStyles.filter(id => INTERVALS[id]))].slice(0, 3);
     if (state.mixStyles.length < 2) state.mixStyles = ['emom', 'short', 'amrap'];
@@ -194,7 +201,7 @@ const styleIdOf = (w) => (w.sections ? 'mix' : intervalFor(w).id);
 const buildCtx = (w, ivOverride) => {
   const iv = ivOverride || intervalFor(w);
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
-           hasEquip, loads: loadsFor(state.weights) };
+           hasEquip, loads: loadsFor(state.weights), repScale: (w && w.repScale) || undefined };
 };
 
 // Classics carry no bookends of their own; derive them once at load.
@@ -206,7 +213,9 @@ CLASSICS.forEach(w => Object.assign(w, classicBookends(w)));
 const $ = (id) => document.getElementById(id);
 const els = {
   welcomeView: $('welcomeView'), setupView: $('setupView'),
-  libraryView: $('libraryView'), workoutView: $('workoutView'),
+  libraryView: $('libraryView'), workoutView: $('workoutView'), programView: $('programView'),
+  pathProgram: $('pathProgram'), programBody: $('programBody'), programNote: $('programNote'),
+  btnProgramBack: $('btnProgramBack'), programTitle: $('programTitle'),
   pathQuick: $('pathQuick'), pathCustom: $('pathCustom'),
   pathStretch: $('pathStretch'), pathClassics: $('pathClassics'),
   scroller: $('scroller'),
@@ -439,7 +448,7 @@ function releaseWakeLock() {
 // =====================================================================
 function setView(v) {
   state.view = v;
-  ['welcome', 'setup', 'library', 'workout'].forEach(name => {
+  ['welcome', 'setup', 'library', 'program', 'workout'].forEach(name => {
     els[name + 'View'].classList.toggle('active', v === name);
   });
   els.scroller.scrollTop = 0;
@@ -482,6 +491,7 @@ function esc(s) {
 
 function goWelcome() {
   stopTimer();
+  state.programRun = null;
   state.workout = null;
   els.welcomeNote.textContent = '';
   setView('welcome');
@@ -1234,7 +1244,7 @@ function renderCircuit(w, ex, phase) {
   const k = phase.blockIdx;
   const pickKey = lapKey(w, lap);
   const pick = state.pick[pickKey] || 0;
-  const listKey = `${pickKey}#${pick}`;
+  const listKey = `${pickKey}#${pick}#${ex.lapRounds || 0}`;
   if (list.dataset.key !== listKey) {
     list.dataset.key = listKey;
     list.innerHTML = (ex.lapRounds ? `<li class="lap-head">${ex.lapRounds} rounds of</li>` : '') + lap.map((x, i) => `
@@ -1748,6 +1758,7 @@ function resetWorkout() {
 function finish() {
   stopTimer();
   markHistoryComplete();
+  completeProgramDay();
   bigBell();
   clearBleed();
   els.workoutView.classList.remove('resting');
@@ -1958,6 +1969,190 @@ function openLinkFromHash() {
 }
 
 // =====================================================================
+// PROGRAMS
+// One screen: what today is, the week so far, and the streak. Starting a
+// day builds it through the generator like any other session (today's
+// people, gear and weights); finishing it ticks the day off. A missed day
+// waits, and "I surfed today" counts a surf in its place.
+// =====================================================================
+const dayKey = (t) => new Date(t).toLocaleDateString('en-CA');
+function openProgram() {
+  stopTimer();
+  state.programRun = null;
+  state.programMinutes = null;
+  state.programAhead = false;      // "do the next one now anyway", for this visit
+  els.programNote.textContent = '';
+  renderProgram();
+  setView('program');
+}
+// Days in a row with something done, up to today (or yesterday, if today
+// isn't done yet).
+function programStreak(st) {
+  const days = new Set(st.done.map(d => dayKey(d.at)));
+  const d = new Date();
+  if (!days.has(dayKey(d))) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (days.has(dayKey(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function renderProgram() {
+  const prog = PROGRAMS[0];
+  const st = state.programs[prog.id];
+  const total = prog.weeks * prog.days.length;
+  els.programTitle.textContent = prog.name;
+  const body = els.programBody;
+  body.innerHTML = '';
+  const add = (html, cls = 'workout-card program-card') => {
+    const el = document.createElement('div');
+    el.className = cls;
+    el.innerHTML = html;
+    body.appendChild(el);
+    return el;
+  };
+  const rhythm = `<ol class="program-rhythm">${prog.days.map(d =>
+    `<li><b>${esc(d.name)}</b> <span>${esc(d.about)}</span></li>`).join('')}</ol>`;
+
+  if (!st) {
+    const c = add(`<div class="card-name">${esc(prog.name)}</div>
+      <div class="card-tagline">${esc(prog.tagline)}</div>
+      <div class="card-blurb">${esc(prog.blurb)}</div>
+      <div class="picker-label">Each week</div>${rhythm}
+      <div class="card-blurb">Reps start a little lighter and build every fortnight. Pick how long you've got each day.</div>`);
+    const go = document.createElement('button');
+    go.textContent = `Start ${prog.name}`;
+    go.addEventListener('click', () => {
+      state.programs[prog.id] = { startedAt: Date.now(), done: [] };
+      savePrefs();
+      renderProgram();
+    });
+    c.appendChild(go);
+    return;
+  }
+
+  const n = st.done.length;
+  if (n >= total) {
+    const c = add(`<div class="card-name">${prog.weeks} weeks done</div>
+      <div class="card-blurb">That's the whole of ${esc(prog.name)}. Go again from the start, or keep using Surf fitness in Quick and Custom.</div>`);
+    c.appendChild(restartButton(prog));
+    return;
+  }
+  const day = programDay(prog, n);
+  const last = st.done[st.done.length - 1];
+  const doneToday = last && dayKey(last.at) === dayKey(Date.now());
+  const streak = programStreak(st);
+  add(`<div class="program-progress">
+      <div><b>Week ${day.week}</b> of ${prog.weeks}</div>
+      <div><b>Day ${n + 1}</b> of ${total}</div>
+      <div><b>${streak}</b> day${streak === 1 ? '' : 's'} in a row</div>
+    </div>
+    <div class="program-week">${prog.days.map((d, i) => {
+      const at = (day.week - 1) * prog.days.length + i;
+      const rec = st.done.find(x => x.n === at);
+      const cls = rec ? 'done' : at === n ? 'now' : '';
+      return `<div class="program-dot ${cls}" title="Day ${at + 1}: ${esc(d.name)}" aria-label="Day ${at + 1}, ${esc(d.name)}${rec ? (rec.surfed ? ', surfed' : ', done') : ''}">
+        <b>${at + 1}</b><span>${esc(d.short || d.name)}</span><i>${rec ? (rec.surfed ? 'Surf' : '✓') : at === n ? 'Today' : ''}</i></div>`;
+    }).join('')}</div>`, 'program-status');
+
+  if (doneToday && !state.programAhead) {
+    const c = add(`<div class="card-name">Today's done</div>
+      <div class="card-blurb">${last.surfed ? 'A surf counts. ' : ''}Next up: <b>${esc(day.name)}</b>. ${esc(day.about)}</div>`);
+    const again = document.createElement('button');
+    again.className = 'secondary';
+    again.textContent = 'Do the next one now anyway';
+    again.addEventListener('click', () => { state.programAhead = true; renderProgram(); });
+    c.appendChild(again);
+  } else {
+    renderProgramToday(prog, st, day);
+  }
+  const foot = add(`<div class="picker-label">Each week</div>${rhythm}`, 'program-foot');
+  foot.appendChild(restartButton(prog));
+}
+function restartButton(prog) {
+  const b = document.createElement('button');
+  b.className = 'card-remove';
+  b.textContent = 'Start the program again';
+  b.addEventListener('click', () => {
+    if (b.dataset.sure) {
+      state.programs[prog.id] = { startedAt: Date.now(), done: [] };
+      savePrefs();
+      renderProgram();
+    } else {
+      b.dataset.sure = '1';
+      b.textContent = 'Tap again to start over from day 1';
+    }
+  });
+  return b;
+}
+// Today's session: what it's for, how long you've got, and go.
+function renderProgramToday(prog, st, day) {
+  const c = document.createElement('div');
+  c.className = 'workout-card program-card program-today';
+  c.innerHTML = `<div class="card-tagline">Today · week ${day.week}</div>
+    <div class="card-name">${esc(day.name)}</div>
+    <div class="card-blurb">${esc(day.about)}</div>`;
+  if (!day.stretch) {
+    const min = day.mix ? (mixMinimumMinutes(day.mix) || 25) : 10;
+    const options = TIME_OPTIONS.filter(m => m >= min);
+    if (!options.includes(state.programMinutes)) state.programMinutes = options.includes(day.minutes) ? day.minutes : options[0];
+    const row = document.createElement('div');
+    row.className = 'chip-row';
+    options.forEach(m => {
+      const chip = tappable('chip' + (m === state.programMinutes ? ' active' : ''), () => { state.programMinutes = m; renderProgram(); });
+      chip.textContent = `${m} min`;
+      chip.setAttribute('aria-pressed', String(m === state.programMinutes));
+      row.appendChild(chip);
+    });
+    const label = document.createElement('div');
+    label.className = 'picker-label';
+    label.textContent = 'How long have you got?';
+    c.append(label, row);
+  }
+  const go = document.createElement('button');
+  go.className = 'program-go';
+  go.textContent = "Start today's session";
+  go.addEventListener('click', () => startProgramDay(prog, day));
+  const surfed = document.createElement('button');
+  surfed.className = 'secondary';
+  surfed.textContent = 'I surfed today';
+  surfed.addEventListener('click', () => {
+    st.done.push({ n: day.n, at: Date.now(), surfed: true });
+    savePrefs();
+    renderProgram();
+    els.programNote.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Stretch & mobility is good after a session.';
+  });
+  c.append(go, surfed);
+  els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
+}
+function startProgramDay(prog, day) {
+  state.programRun = { id: prog.id, n: day.n };
+  if (day.stretch) {
+    const w = STRETCH_ROUTINES.find(x => x.id === day.stretch);
+    openWorkout(w);
+    return;
+  }
+  const request = {
+    minutes: state.programMinutes || day.minutes,
+    people: state.people,
+    intervalId: day.mix ? 'mix' : day.style,
+    mix: day.mix ? day.mix.slice() : undefined,
+    goal: prog.goal, surfFocus: day.focus, repScale: day.repScale,
+    regions: REGIONS.map(r => r.id), blockedTags: []
+  };
+  const err = buildAndOpen(request);
+  if (err) { state.programRun = null; els.programNote.textContent = err; }
+}
+// Called when a session finishes: tick off the program day it was.
+function completeProgramDay() {
+  const run = state.programRun;
+  if (!run) return;
+  const st = state.programs[run.id];
+  if (st && !st.done.some(d => d.n === run.n)) {
+    st.done.push({ n: run.n, at: Date.now() });
+    savePrefs();
+  }
+}
+
+// =====================================================================
 // EVENT WIRING
 // =====================================================================
 els.pathQuick.addEventListener('click', () => openSetup('quick'));
@@ -1972,7 +2167,10 @@ els.pathClassics.addEventListener('click', () => {
 });
 els.btnSetupBack.addEventListener('click', goWelcome);
 els.btnLibraryBack.addEventListener('click', goWelcome);
-els.btnBack.addEventListener('click', goWelcome);
+// a program's session goes back to the program, anything else to the menu
+els.btnBack.addEventListener('click', () => (state.programRun ? openProgram() : goWelcome()));
+els.btnProgramBack.addEventListener('click', goWelcome);
+els.pathProgram.addEventListener('click', openProgram);
 
 els.peoplePicker.querySelectorAll('.chip').forEach(chip => {
   chip.addEventListener('click', () => {

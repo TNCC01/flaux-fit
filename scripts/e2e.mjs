@@ -83,7 +83,7 @@ try {
   await p.goto(URL); await st(() => localStorage.clear()); await p.goto(URL);
 
   step = 'welcome';
-  assert((await p.$$('.path-card')).length === 4, 'four path cards');
+  assert((await p.$$('.path-card')).length === 5, 'five path cards');
   assert(await p.$eval('#installHint', e => e.hidden), 'install hint is hidden on a desktop UA');
   ok('welcome shows four paths, no iOS install hint on desktop');
 
@@ -384,6 +384,35 @@ try {
   await p.click('#btnBuild');
   ok(`Surf fitness: ${surfIds.length} surf exercises, pop-ups included; target areas return for general fitness`);
 
+  step = 'Programs: Surf Fit day by day';
+  await p.click('#btnBack');
+  await p.click('#pathProgram');
+  assert(await activeView() === 'programView', 'programs open');
+  await p.click('#programBody button:has-text("Start Surf Fit")');
+  assert((await p.$eval('#programBody', e => e.textContent)).includes('Day 1'), 'day 1 of the program');
+  assert((await p.$$('.program-dot')).length === 7, 'the week strip has seven days');
+  await p.click('.program-today .chip:text-is("15 min")');
+  await p.click('.program-go');
+  assert(await activeView() === 'workoutView', "today's session opens");
+  const day1 = await st(() => ({ goal: state.workout.request.goal, focus: state.workout.request.surfFocus,
+    scale: state.workout.repScale, style: state.workout.request.intervalId, min: state.workout.request.minutes }));
+  assert(day1.goal === 'surf' && day1.focus === 'paddle' && day1.style === 'long' && day1.min === 15,
+         'day 1 is a 15-minute surf paddle session: ' + JSON.stringify(day1));
+  assert(day1.scale === 0.8, 'week 1 starts lighter: ' + day1.scale);
+  await st(() => { state.elapsedTotal = state.totalDuration; state.currentIdx = state.sequence.length; finish(); });
+  await p.click('#btnBack');
+  assert(await activeView() === 'programView', 'back goes to the program');
+  const after = await p.$eval('#programBody', e => e.textContent);
+  assert(after.includes("Today's done") && after.includes('Pop-ups & legs'), 'day 1 ticked, day 2 next');
+  await p.click('#programBody button:has-text("Do the next one now anyway")');
+  await p.click('#programBody button:has-text("I surfed today")');
+  const prog = await st(() => state.programs['surf-fit'].done.map(d => `${d.n}${d.surfed ? 's' : ''}`).join(','));
+  assert(prog === '0,1s', 'a surf counts as day 2: ' + prog);
+  assert((await p.$eval('.program-progress', e => e.textContent)).includes('Day 3'), 'on to day 3');
+  await p.click('#btnProgramBack');
+  await p.click('#pathQuick'); await p.click('#btnBuild');     // the next step starts from a workout
+  ok('Programs: Surf Fit day 1 builds lighter for week 1, finishing ticks it off, a surf counts as a day');
+
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathStretch');
   await p.click(card('Sunrise Stretch'));
@@ -473,7 +502,7 @@ try {
   assert(await st(() => !!navigator.serviceWorker.controller), 'page is controlled by the worker');
   await context.setOffline(true);
   await p.reload();
-  assert((await p.$$('.path-card')).length === 4, 'welcome renders with no network');
+  assert((await p.$$('.path-card')).length === 5, 'welcome renders with no network');
   await p.click('#pathQuick'); await p.click('#btnBuild');
   assert(await activeView() === 'workoutView', 'a workout builds with no network');
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });

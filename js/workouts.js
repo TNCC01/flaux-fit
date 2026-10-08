@@ -43,7 +43,7 @@ const blockSeconds = (iv) => iv.rounds * (iv.workSec + iv.restSec);
 
 // ---------------------------------------------------------------------
 // EXERCISE RESOLUTION
-// ctx = { rounds, workSec, restSec, reps, lap, hasEquip }, where
+// ctx = { rounds, workSec, restSec, reps, lap, repScale, hasEquip }, where
 // hasEquip(id) => bool, reps is true for the styles that count reps rather
 // than seconds (EMOM, AMRAP, For Time) and lap for the two that work
 // through the block as one list (AMRAP, For Time)
@@ -90,6 +90,17 @@ function amrapTarget(v) {
   return `${n}${m[2]}${m[3] || ''}`;
 }
 
+// A program's build-up: the same targets, lighter early and heavier late
+// (0.8 is four fifths of the reps). Timed efforts move in 5-second steps.
+function scaleTarget(v, k) {
+  if (!k || k === 1) return v;
+  if (typeof v === 'number') return Math.max(2, Math.round(v * k));
+  const m = /^(\d+)(s?)(\/side)?$/.exec(v || '');
+  if (!m) return v;
+  const n = m[2] ? Math.max(10, Math.round(+m[1] * k / 5) * 5) : Math.max(2, Math.round(+m[1] * k));
+  return `${n}${m[2]}${m[3] || ''}`;
+}
+
 // Seconds of work in a timed EMOM target ('40s', '20s/side'), else 0.
 function timedSec(v) {
   const m = /^(\d+)s(\/side)?$/.exec(typeof v === 'string' ? v : '');
@@ -117,7 +128,7 @@ function loadFor(ex, ctx) {
 function describeEx(id, ctx) {
   const ex = resolveEx(id, ctx);
   const emom = !!(ctx && ctx.reps);
-  const target = ctx && ctx.lap ? amrapTarget(ex.emom) : ex.emom;
+  const target = scaleTarget(ctx && ctx.lap ? amrapTarget(ex.emom) : ex.emom, ctx && ctx.repScale);
   // when counting reps the effort is the reps (or the timed hold), not the clock
   const workSec = (emom && timedSec(target)) || (ctx && ctx.workSec) || INTERVALS[DEFAULT_INTERVAL].workSec;
   let cue = ex.cue || '';
@@ -511,3 +522,45 @@ function stretchList(routine) {
              : { name: id, alt: '', hold: routine.hold };
   });
 }
+
+// ---------------------------------------------------------------------
+// PROGRAMS
+// A program is a run of daily sessions planned ahead: a week of day
+// templates repeated, with the reps building fortnight by fortnight. Each
+// day builds through the same generator as everything else, so it fits the
+// time, gear and number of people on the day. Progress moves on when a day
+// is done, not by the calendar, so a missed day waits for you.
+//   day: { name, short (for the week strip), about, style | mix, focus (the surf rhythm to lean on),
+//          minutes (the suggestion) }  or  { name, about, stretch: id }
+// ---------------------------------------------------------------------
+const PROGRAMS = [
+  {
+    id: 'surf-fit', name: 'Surf Fit', weeks: 6, goal: 'surf',
+    tagline: 'Six weeks back to paddle fitness',
+    blurb: 'A session a day for surfers whose fitness has slipped: paddling stamina, a pop-up that beats the wave, and legs that hold a turn. Hard days, easy days and mobility, so every day is doable.',
+    // reps start lighter and build: weeks 1 to 6
+    repScale: [0.8, 0.9, 1, 1, 1.1, 1.1],
+    days: [
+      { name: 'Paddle power', short: 'Paddle', style: 'long', focus: 'paddle', minutes: 20,
+        about: 'Long efforts on paddling strength and stamina: rows, swimmers, prone paddling. The muscles that get you out the back.' },
+      { name: 'Pop-ups & legs', short: 'Pop-ups', style: 'short', focus: 'popup', minutes: 20,
+        about: 'Short, sharp bursts on getting to your feet fast and staying low: pop-ups, jumps, stance work.' },
+      { name: 'Mobility', short: 'Mobility', stretch: 'surf-mobility',
+        about: 'Hips, upper back, shoulders and ankles. Easy holds, no timer pressure.' },
+      { name: 'Engine', short: 'Engine', mix: ['emom', 'amrap'], minutes: 25,
+        about: 'An EMOM then an AMRAP finisher. Fitness for a long session and the paddle back out after a set.' },
+      { name: 'Paddle & shoulders', short: 'Paddle', style: 'emom', focus: 'paddle', minutes: 20,
+        about: 'Paddling strength with shoulder care built in, every minute on the minute.' },
+      { name: 'Pop-ups & turns', short: 'Turns', style: 'fortime', focus: 'popup', minutes: 20,
+        about: 'Race the clock through pop-ups, turns and rotation. Fast feet when you\'re tired, like the end of a ride.' },
+      { name: 'Easy day', short: 'Easy', stretch: 'cool-mobile',
+        about: 'Recovery and a long stretch. Or go for a surf.' }
+    ]
+  }
+];
+// The template, week (1-based) and rep scale for day n (0-based) of a program.
+function programDay(prog, n) {
+  const week = Math.min(prog.weeks, Math.floor(n / prog.days.length) + 1);
+  return { ...prog.days[n % prog.days.length], n, week, repScale: prog.repScale[week - 1] || 1 };
+}
+
