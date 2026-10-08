@@ -804,3 +804,28 @@ body.show-alternatives .alternative.has-alt { display: block; }
   .controls button:first-child { grid-column: 1 / -1; }
   .pre-actions button { flex-basis: 100%; }
 }
+
+/* ============== Programs ============== */
+#programBody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.9rem; }
+.program-card button { margin-top: 0.4rem; }
+.program-card .chip-row { margin-top: 0.2rem; }
+.program-today { border-left-color: var(--teal); }
+.program-go { width: 100%; }
+.program-status { display: grid; gap: 0.7rem; }
+.program-progress { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; color: var(--muted); font-size: 0.95rem; }
+.program-progress b { color: var(--text); font-size: 1.15rem; }
+.program-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.25rem; }
+.program-dot {
+  display: grid; justify-items: center; align-content: start; gap: 0.05rem; min-width: 0; overflow: hidden;
+  padding: 0.35rem 0.1rem; border: 2px solid var(--border); border-radius: 0.6rem; background: var(--card); text-align: center;
+}
+.program-dot b { font-size: 1.05rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.program-dot span { font-size: 0.6rem; color: var(--muted); font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.program-dot i { font-style: normal; font-size: 0.62rem; font-weight: 800; color: var(--teal-bright); text-transform: uppercase; min-height: 0.8rem; }
+.program-dot.done { background: rgba(20,184,166,0.14); border-color: rgba(20,184,166,0.5); }
+.program-dot.now { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(20,184,166,0.25); }
+.program-rhythm { margin: 0.2rem 0 0.4rem; padding-left: 1.2rem; display: grid; gap: 0.35rem; }
+.program-rhythm li { color: var(--muted); font-size: 0.9rem; line-height: 1.35; }
+.program-rhythm b { color: var(--text); }
+.program-foot { padding: 0 0.2rem; }
+
