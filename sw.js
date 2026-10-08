@@ -28,7 +28,7 @@ const MOVE_3D = [
   '/js/move/body.js', '/js/move/motion.js', '/js/move/scene.js', '/js/move/deck.js', '/js/move/viewer.js',
   '/js/moves/index.js', '/js/moves/legs.js', '/js/moves/lunge.js', '/js/moves/hinge.js', '/js/moves/push.js',
   '/js/moves/press.js', '/js/moves/pull.js', '/js/moves/core.js', '/js/moves/abs.js', '/js/moves/cardio.js',
-  '/js/moves/gear.js'
+  '/js/moves/gear.js', '/js/moves/surf.js'
 ];
 
 self.addEventListener('install', (event) => {
