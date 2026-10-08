@@ -356,6 +356,36 @@ mixes.forEach((mix, mi) => {
   }
 });
 
+// ------------------------------------------------- 8c. surf fitness
+// The Surf goal builds only from surf exercises, gets pop-up and paddle
+// work in as soon as there's room for two blocks, keeps two people off
+// shared gear, and fits a mix as well as a single style.
+let surfBuilt = 0;
+for (const [equipLabel, equipment] of EQUIP_CASES) {
+  for (const minutes of minutesList) {
+    for (const ivId of [...Object.keys(INTERVALS), 'mix']) {
+      const mix = ivId === 'mix' ? ['emom', 'short', 'amrap'] : undefined;
+      const w = generateWorkout({ minutes, people: 2, intervalId: ivId, mix, goal: 'surf', equipment,
+        regions: ['legs'], seed: 5000 + minutes + surfBuilt, recent: [] });
+      const label = `surf, ${equipLabel}, ${minutes} min, ${ivId}`;
+      if (w.error) {
+        if (!(ivId === 'mix' && planMix(minutes, mix).error)) fail(`${label}: ${w.error}`);
+        continue;
+      }
+      surfBuilt++;
+      const ids = w.blocks.flatMap(b => b.ids);
+      ids.forEach(id => { if (!(EXERCISES[id].surf || []).length) fail(`${label}: ${id} isn't a surf exercise`); });
+      if (w.blocks.length >= 2) {
+        for (const need of ['popup', 'paddle']) {
+          if (!ids.some(id => EXERCISES[id].surf.includes(need))) fail(`${label}: no ${need} work`);
+        }
+      }
+      if (w.request.goal !== 'surf') fail(`${label}: the request doesn't remember the surf goal`);
+      checkBlocks(label, w, equipment);
+    }
+  }
+}
+
 // ---------------------------------- 9. exclusions are actually respected
 const someIds = ids.filter(id => !EXERCISES[id].equipment.length).slice(0, 40);
 const wEx = generateWorkout({
@@ -457,6 +487,7 @@ console.log(`exercises          ${ids.length} (${reused} bodyweight)`);
 console.log(`3D movements       ${Object.keys(MOVES).length}, ${need.length} files precached`);
 console.log(`classics           ${CLASSICS.length} + ${STRETCH_ROUTINES.length} stretch routines`);
 console.log(`mixed sessions     ${mixBuilt} built, ${mixRefused} correctly refused as too short`);
+console.log(`surf fitness       ${surfBuilt} sessions, surf exercises only, pop-ups and paddling in each`);
 console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 if (warnings.length) {

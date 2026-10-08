@@ -368,6 +368,22 @@ try {
   await p.click('#btnBuild');
   ok('Mix: 30:00 exactly, EMOM then short bursts then AMRAP, a changeover between each');
 
+  step = 'Surf fitness: a session built from surf exercises';
+  await p.click('#btnBack'); await p.click('#pathCustom');
+  await p.click('#goalPicker .chip:has-text("Surf fitness")');
+  assert(await p.$eval('#rowRegions', e => e.style.display === 'none'), 'target areas step aside for the surf goal');
+  assert((await p.$eval('#goalHint', e => e.textContent)).includes('paddle'), 'the goal says what it trains');
+  await p.click('#btnBuild');
+  const surfIds = await st(() => state.workout.exerciseIds);
+  assert(surfIds.every(id => (EXERCISES[id].surf || []).length), 'every exercise trains something for surfing');
+  assert(surfIds.some(id => EXERCISES[id].surf.includes('popup')), 'pop-up work is in');
+  assert(await st(() => state.workout.name.startsWith('Surf fitness')), 'named for it');
+  await p.click('#btnBack'); await p.click('#pathCustom');
+  await p.click('#goalPicker .chip:has-text("General fitness")');
+  assert(await p.$eval('#rowRegions', e => e.style.display !== 'none'), 'target areas come back');
+  await p.click('#btnBuild');
+  ok(`Surf fitness: ${surfIds.length} surf exercises, pop-ups included; target areas return for general fitness`);
+
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathStretch');
   await p.click(card('Sunrise Stretch'));
