@@ -325,6 +325,13 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
 
 /* Interval choice, two explanatory cards, not a bare toggle, because
    neither option is "easier": they run the same total work. */
+/* gear sets: one tap to switch everything for where you're training */
+.gear-sets { display: grid; gap: 0.35rem; margin-bottom: 0.9rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--border); }
+.gear-set { border-style: dashed; }
+.gear-set.active { border-style: solid; }
+.gear-set-add { color: var(--muted); background: transparent; }
+.gear-sets .card-remove { justify-self: start; }
+
 /* the weights you own, under each weighted item that's switched on */
 .weight-picker { display: grid; gap: 0.8rem; margin-top: 0.8rem; }
 .weight-row { display: grid; gap: 0.4rem; }

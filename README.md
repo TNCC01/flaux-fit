@@ -126,6 +126,9 @@ rather than hardcoded.
   presses and single-arm work, likewise for dumbbell pairs, and every card
   shows the real weight. Exercises name roles ("the heavier bell"), not
   weights, so favourites and share links keep working whatever you own
+- Gear sets: save the gear and weights for each place you train ("Home",
+  "Mate's place") and switch between them with one tap. Changes made in
+  setup go into the selected set
 - Target-area picker: a tappable body diagram and matching labels, both
   driving the same selection
 - Exclusions: four quick constraint filters (no jumping / floor work /

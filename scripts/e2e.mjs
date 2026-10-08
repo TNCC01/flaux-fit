@@ -145,6 +145,20 @@ try {
   ok('shuffle after a favourite stayed bodyweight-only');
   await p.click('#btnBack'); await p.click('#pathQuick'); await toggleAllGear();
 
+  step = 'gear sets: Home and a mate\'s place, one tap apart';
+  p.once('dialog', d => d.accept("Mate's place"));
+  await p.click('.gear-set-add');
+  assert(await st(() => state.gearSets.map(g => g.name).join('|')) === "Home|Mate's place", 'a second set, named');
+  await p.click('#equipmentPicker .chip:has-text("Kettlebells")');          // no bells at the mate's
+  assert(await st(() => !effectiveEquip().kb15), "kettlebells off at the mate's place");
+  await p.click('.gear-set:has-text("Home")');
+  assert(await st(() => effectiveEquip().kb15 && state.gearSetId === 'home'), 'back home, the bells are back');
+  await p.click(`.gear-set:has-text("Mate's place")`);
+  assert(await st(() => !effectiveEquip().kb15), "and the mate's place remembered");
+  await p.click('.gear-sets .card-remove');
+  assert(await st(() => state.gearSets.length === 1 && effectiveEquip().kb15), 'removing it falls back to Home');
+  ok("gear sets: a mate's place without kettlebells, Home with them, one tap apart");
+
   step = 'the weights you own fill the heavier and lighter bell';
   const kbChip = (kg) => `.weight-row:has-text("Kettlebells you have") .chip:text-is("${kg}kg")`;
   await p.click(kbChip(10)); await p.click(kbChip(15));           // off

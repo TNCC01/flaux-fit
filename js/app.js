@@ -26,6 +26,10 @@ const state = {
   // the weights you own: kettlebells and dumbbell pairs in kg, and what the
   // bar is loaded to (see GEAR and loadsFor)
   weights: { kb: [10, 15], db: [], bar: 10 },
+  // named gear and weights for each place you train ("Home", "Mate's
+  // place"); the selected one follows every change made in setup
+  gearSets: [],
+  gearSetId: null,
   minutes: 20,
   intervalStyle: DEFAULT_INTERVAL,
   // what the session is for: general fitness, or surfing (see SURF_GROUPS)
@@ -64,7 +68,7 @@ const state = {
   excludeSearch: ''
 };
 
-const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs',
+const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'gearSets', 'gearSetId',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus'];
 
@@ -78,6 +82,10 @@ function loadPrefs() {
     PERSISTED.forEach(k => { if (p[k] !== undefined) state[k] = p[k]; });
     state.equipment = { ...DEFAULT_EQUIPMENT, kettlebells: true, ...(p.equipment || {}) };
     state.weights = cleanWeights(p.weights, p.equipment || {});
+    state.gearSets = (Array.isArray(p.gearSets) ? p.gearSets : []).filter(g =>
+      g && typeof g.id === 'string' && typeof g.name === 'string' && g.equipment && typeof g.equipment === 'object')
+      .map(g => ({ id: g.id, name: g.name.slice(0, 24), equipment: { ...g.equipment },
+                   weights: cleanWeights(g.weights, g.equipment) }));
     if (!INTERVALS[state.intervalStyle]) state.intervalStyle = DEFAULT_INTERVAL;
     state.mixOn = state.mixOn === true;
     if (!GOALS.some(g => g.id === state.goal)) state.goal = 'general';
@@ -226,7 +234,7 @@ const els = {
   peoplePicker: $('peoplePicker'), nameInputs: $('nameInputs'),
   nameA: $('nameA'), nameB: $('nameB'),
   equipmentPicker: $('equipmentPicker'), weightPicker: $('weightPicker'), timePicker: $('timePicker'),
-  mixPicker: $('mixPicker'), goalPicker: $('goalPicker'), goalHint: $('goalHint'), rowRegions: $('rowRegions'),
+  mixPicker: $('mixPicker'), gearSetPicker: $('gearSetPicker'), goalPicker: $('goalPicker'), goalHint: $('goalHint'), rowRegions: $('rowRegions'),
   intervalPicker: $('intervalPicker'),
   bodyMap: $('bodyMap'), regionPicker: $('regionPicker'), tagPicker: $('tagPicker'),
   btnOpenExclude: $('btnOpenExclude'), excludeSummary: $('excludeSummary'),
@@ -561,7 +569,70 @@ function renderPeoplePicker() {
   els.nameInputs.classList.toggle('hidden', state.people !== 2);
 }
 
+// ------------------------------------------------------------ gear sets
+// Every change to the gear or weights is saved into the selected set, so a
+// set is simply "what I ticked last time I was here".
+function ensureGearSets() {
+  if (!state.gearSets.length) {
+    state.gearSets = [{ id: 'home', name: 'Home', equipment: { ...state.equipment }, weights: structuredClone(state.weights) }];
+  }
+  if (!state.gearSets.some(g => g.id === state.gearSetId)) state.gearSetId = state.gearSets[0].id;
+  return state.gearSets.find(g => g.id === state.gearSetId);
+}
+function saveIntoGearSet() {
+  const set = ensureGearSets();
+  set.equipment = { ...state.equipment };
+  set.weights = structuredClone(state.weights);
+}
+function useGearSet(id) {
+  const set = state.gearSets.find(g => g.id === id);
+  if (!set) return;
+  state.gearSetId = id;
+  state.equipment = { ...DEFAULT_EQUIPMENT, kettlebells: true, ...set.equipment };
+  state.weights = structuredClone(set.weights);
+  savePrefs();
+  renderEquipmentPicker();
+}
+function renderGearSets() {
+  const box = els.gearSetPicker;
+  box.innerHTML = '<div class="weight-label">Training at</div>';
+  const row = document.createElement('div');
+  row.className = 'chip-row';
+  state.gearSets.forEach(g => {
+    const on = g.id === state.gearSetId;
+    const c = tappable('chip gear-set' + (on ? ' active' : ''), () => { if (!on) useGearSet(g.id); });
+    c.textContent = g.name;
+    c.setAttribute('aria-pressed', String(on));
+    row.appendChild(c);
+  });
+  const add = tappable('chip gear-set-add', () => {
+    const name = (window.prompt('Name this gear set, for example "Mate\'s place".', '') || '').trim().slice(0, 24);
+    if (!name) return;
+    const id = `set-${Date.now().toString(36)}`;
+    // starts as a copy of what's ticked now; change it from there
+    state.gearSets.push({ id, name, equipment: { ...state.equipment }, weights: structuredClone(state.weights) });
+    state.gearSetId = id;
+    savePrefs();
+    renderEquipmentPicker();
+  });
+  add.textContent = '+ New set';
+  row.appendChild(add);
+  box.appendChild(row);
+  if (state.gearSets.length > 1) {
+    const rm = document.createElement('button');
+    rm.className = 'card-remove';
+    rm.textContent = `Remove "${ensureGearSets().name}"`;
+    rm.addEventListener('click', () => {
+      state.gearSets = state.gearSets.filter(g => g.id !== state.gearSetId);
+      useGearSet(state.gearSets[0].id);
+    });
+    box.appendChild(rm);
+  }
+}
+
 function renderEquipmentPicker() {
+  saveIntoGearSet();
+  renderGearSets();
   els.equipmentPicker.innerHTML = '';
   els.weightPicker.innerHTML = '';
   GEAR.forEach(g => {
