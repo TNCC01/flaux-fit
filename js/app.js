@@ -17,7 +17,6 @@ const PREFS_KEY = 'fit-prefs-2';
 // =====================================================================
 const state = {
   view: 'welcome',
-  mode: 'quick',                // which setup flow is on screen
 
   // Preferences (persisted, see PERSISTED below)
   people: 2,
@@ -50,6 +49,8 @@ const state = {
   saved: [],
   history: [],
   filterFocus: 'all',
+  // the first-visit gear question has been answered (see openGearQuestion)
+  gearAsked: false,
 
   // Per-workout runtime
   workout: null,
@@ -70,7 +71,7 @@ const state = {
 
 const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'gearSets', 'gearSetId',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
-  'textScale', 'recent', 'saved', 'history', 'filterFocus'];
+  'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked'];
 
 function loadPrefs() {
   try {
@@ -108,6 +109,8 @@ function loadPrefs() {
     if (typeof state.textScale !== 'number' || !(state.textScale > 0)) state.textScale = 1;
     if (typeof state.nameA !== 'string') state.nameA = '';
     if (typeof state.nameB !== 'string') state.nameB = '';
+    // stored prefs from before the gear question means it's not a first visit
+    state.gearAsked = p.gearAsked !== false;
   } catch (e) { /* corrupt store: fall back to defaults */ }
 }
 function savePrefs() {
@@ -224,8 +227,9 @@ const els = {
   libraryView: $('libraryView'), workoutView: $('workoutView'), programView: $('programView'),
   pathProgram: $('pathProgram'), programBody: $('programBody'), programNote: $('programNote'),
   btnProgramBack: $('btnProgramBack'), programTitle: $('programTitle'),
-  pathQuick: $('pathQuick'), pathCustom: $('pathCustom'),
-  pathStretch: $('pathStretch'), pathClassics: $('pathClassics'),
+  pathBuild: $('pathBuild'), pathLibrary: $('pathLibrary'),
+  gearView: $('gearView'), onboardGear: $('onboardGear'), btnGearDone: $('btnGearDone'),
+  btnMoreOptions: $('btnMoreOptions'), moreOptions: $('moreOptions'), moreSummary: $('moreSummary'),
   scroller: $('scroller'),
   welcomeFoot: $('welcomeFoot'), welcomeNote: $('welcomeNote'),
   btnFullscreen: $('btnFullscreen'), installHint: $('installHint'),
@@ -456,7 +460,7 @@ function releaseWakeLock() {
 // =====================================================================
 function setView(v) {
   state.view = v;
-  ['welcome', 'setup', 'library', 'program', 'workout'].forEach(name => {
+  ['welcome', 'gear', 'setup', 'library', 'program', 'workout'].forEach(name => {
     els[name + 'View'].classList.toggle('active', v === name);
   });
   els.scroller.scrollTop = 0;
@@ -517,12 +521,8 @@ function renderWelcomeFoot() {
     `${state.people === 1 ? 'solo' : 'two people'}`;
 }
 
-function openSetup(mode) {
-  state.mode = mode;
-  els.setupTitle.textContent = mode === 'custom' ? 'Customise your workout' : 'Quick start';
-  els.setupView.querySelectorAll('.custom-only').forEach(el => {
-    el.style.display = mode === 'custom' ? '' : 'none';
-  });
+function openSetup() {
+  setMoreOptions(false);
   els.btnBuild.textContent = 'Build my workout';
   els.buildNote.textContent = '';
   renderSetup();
@@ -544,6 +544,23 @@ function renderSetup() {
   if (!els.excludePanel.hidden) renderExcludeList();
 }
 
+// ------------------------------------------------------- more options
+// Target areas and things to leave out sit behind "More options", closed
+// by default. They still apply when closed, so the link says what's set.
+function setMoreOptions(open) {
+  els.moreOptions.hidden = !open;
+  els.btnMoreOptions.setAttribute('aria-expanded', String(open));
+  els.btnMoreOptions.querySelector('.more-label').textContent = open ? 'Fewer options' : 'More options';
+}
+function renderMoreSummary() {
+  const all = state.regions.length === REGIONS.length;
+  const areas = state.goal === 'surf' ? 'Surf picks the areas'
+    : all ? 'Whole body'
+    : REGIONS.filter(r => state.regions.includes(r.id)).map(r => r.label).join(', ');
+  const n = state.blockedTags.length + state.excluded.length;
+  els.moreSummary.textContent = `${areas} · ${n ? `${n} thing${n === 1 ? '' : 's'} left out` : 'nothing left out'}`;
+}
+
 function renderGoalPicker() {
   els.goalPicker.innerHTML = '';
   GOALS.forEach(g => {
@@ -557,7 +574,7 @@ function renderGoalPicker() {
   els.goalHint.textContent = goal.hint;
   els.goalHint.hidden = !goal.hint;
   // target areas mean nothing to a surf session
-  if (state.mode === 'custom') els.rowRegions.style.display = state.goal === 'surf' ? 'none' : '';
+  els.rowRegions.style.display = state.goal === 'surf' ? 'none' : '';
 }
 
 function renderPeoplePicker() {
@@ -771,6 +788,7 @@ function mixPlanText() {
 }
 
 function renderRegionPicker() {
+  renderMoreSummary();
   els.regionPicker.innerHTML = '';
   REGIONS.forEach(r => {
     const on = state.regions.includes(r.id);
@@ -798,6 +816,7 @@ function toggleRegion(id) {
 }
 
 function renderTagPicker() {
+  renderMoreSummary();
   els.tagPicker.innerHTML = '';
   EXCLUSION_TAGS.forEach(t => {
     const on = state.blockedTags.includes(t.id);
@@ -815,6 +834,7 @@ function renderTagPicker() {
 }
 
 function renderExcludeSummary() {
+  renderMoreSummary();
   const n = state.excluded.length;
   els.excludeSummary.textContent = n
     ? `${n} movement${n === 1 ? '' : 's'} left out (tap to edit)`
@@ -888,15 +908,14 @@ function renderExcludeCount() {
 // BUILDING A WORKOUT
 // =====================================================================
 function requestFromState() {
-  const custom = state.mode === 'custom';
   return {
     minutes: state.minutes,
     people: state.people,
     intervalId: state.mixOn ? 'mix' : state.intervalStyle,
     mix: state.mixOn ? state.mixStyles.slice() : undefined,
     goal: state.goal === 'surf' ? 'surf' : undefined,
-    regions: custom ? state.regions.slice() : REGIONS.map(r => r.id),
-    blockedTags: custom ? state.blockedTags.slice() : []
+    regions: state.regions.slice(),
+    blockedTags: state.blockedTags.slice()
   };
 }
 
@@ -933,12 +952,6 @@ function openLibrary() {
   renderFocusFilter();
   renderLibrary();
   setView('library');
-}
-
-function openStretchLibrary() {
-  state.filterFocus = 'stretching';
-  openLibrary();
-  els.libraryTitle.textContent = 'Stretch & mobility';
 }
 
 // True when anything in the workout would fall back to a bodyweight
@@ -995,14 +1008,17 @@ function librarySection(title, subtitle, cards, action) {
 }
 
 function renderLibrary() {
-  els.libraryTitle.textContent = 'Workouts';
+  els.libraryTitle.textContent = 'Saved & ready-made';
   els.libraryNote.textContent = '';
   els.librarySections.innerHTML = '';
 
   const sections = [];
 
-  // Recent first, so a generated session you liked but didn't save is
-  // still findable afterwards.
+  // Saved first, then recent, so a generated session you liked but didn't
+  // save is still findable afterwards.
+  sections.push(librarySection('Saved', null,
+    state.saved.filter(s => inFocus(s.focus || 'whole-body')).map(savedCard)));
+
   const history = state.history.filter(h => inFocus(h.focus));
   if (history.length) {
     const clear = document.createElement('button');
@@ -1017,8 +1033,6 @@ function renderLibrary() {
       'Recent', 'Kept on this device only', history.map(historyCard), clear));
   }
 
-  sections.push(librarySection('Saved', null,
-    state.saved.filter(s => inFocus(s.focus || 'whole-body')).map(savedCard)));
   sections.push(librarySection('The classics', null,
     CLASSICS.filter(w => inFocus(w.focus)).map(namedCard)));
   sections.push(librarySection('Stretch & mobility', null,
@@ -2190,7 +2204,7 @@ function renderProgramToday(prog, st, day) {
     st.done.push({ n: day.n, at: Date.now(), surfed: true });
     savePrefs();
     renderProgram();
-    els.programNote.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Stretch & mobility is good after a session.';
+    els.programNote.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Saved & ready-made is good after a session.';
   });
   c.append(go, surfed);
   els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
@@ -2226,7 +2240,7 @@ function programSetupRows(withGear) {
     })));
     const note = document.createElement('div');
     note.className = 'program-hint';
-    note.textContent = 'To add a place or change its gear, use Let me choose on the home screen.';
+    note.textContent = 'To add a place or change its gear, use Build a workout on the home screen.';
     rows.push(note);
   }
   return rows;
@@ -2261,18 +2275,50 @@ function completeProgramDay() {
 }
 
 // =====================================================================
+// FIRST VISIT
+// Before anything else, a new visitor says what gear they've got, so the
+// first workout doesn't hand them kettlebell swings with no kettlebell.
+// Everything starts off; whatever's ticked becomes the Home gear set.
+// =====================================================================
+function openGearQuestion() {
+  GEAR.forEach(g => { state.equipment[g.id] = false; });
+  renderGearQuestion();
+  setView('gear');
+}
+function renderGearQuestion() {
+  els.onboardGear.innerHTML = '';
+  GEAR.forEach(g => {
+    const on = state.equipment[g.id] !== false;
+    const b = tappable('chip' + (on ? ' active' : ''), () => {
+      state.equipment[g.id] = !on;
+      renderGearQuestion();
+    });
+    b.textContent = g.label;
+    b.setAttribute('aria-pressed', String(on));
+    els.onboardGear.appendChild(b);
+  });
+  const any = GEAR.some(g => state.equipment[g.id] !== false);
+  els.btnGearDone.textContent = any ? 'Done' : 'Just bodyweight for now';
+}
+function finishGearQuestion() {
+  state.gearAsked = true;
+  saveIntoGearSet();
+  savePrefs();
+  goWelcome();
+}
+
+// =====================================================================
 // EVENT WIRING
 // =====================================================================
-els.pathQuick.addEventListener('click', () => openSetup('quick'));
-els.pathCustom.addEventListener('click', () => openSetup('custom'));
-els.pathStretch.addEventListener('click', openStretchLibrary);
-// The Stretch path narrows the library to stretching; the Workouts path is
-// the whole library, so it must not inherit that filter from a previous visit.
-els.pathClassics.addEventListener('click', () => {
+els.pathBuild.addEventListener('click', openSetup);
+// the library always opens on everything, whatever focus was picked last time
+els.pathLibrary.addEventListener('click', () => {
   state.filterFocus = 'all';
   savePrefs();
   openLibrary();
 });
+els.btnMoreOptions.addEventListener('click', () => setMoreOptions(els.moreOptions.hidden));
+els.btnGearDone.addEventListener('click', finishGearQuestion);
 els.btnSetupBack.addEventListener('click', goWelcome);
 els.btnLibraryBack.addEventListener('click', goWelcome);
 // a program's session goes back to the program, anything else to the menu
@@ -2497,7 +2543,9 @@ applyTextScale();
 setupFullscreen();
 renderWelcomeFoot();
 updateScrollHint();
-openLinkFromHash();
+// a shared link opens straight away; the gear question waits for a plain visit
+if (location.hash.startsWith('#w=')) openLinkFromHash();
+else if (!state.gearAsked) openGearQuestion();
 window.addEventListener('hashchange', openLinkFromHash);
 
 // =====================================================================

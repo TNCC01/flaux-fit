@@ -57,25 +57,11 @@
     <div class="build-note" id="welcomeNote"></div>
 
     <div class="path-grid">
-      <div class="path-card primary" id="pathQuick" role="button" tabindex="0">
+      <div class="path-card primary" id="pathBuild" role="button" tabindex="0">
         <div class="path-icon" aria-hidden="true">⚡</div>
-        <div class="path-name">Just pick for me</div>
-        <div class="path-blurb">Tell me your gear, how long you've got, and how many of you. That's it, and I'll build the workout.</div>
+        <div class="path-name">Build a workout</div>
+        <div class="path-blurb">Tell me how long you've got, how many of you and the style, and I'll build a session around your gear.</div>
         <div class="path-go">Start here →</div>
-      </div>
-
-      <div class="path-card" id="pathCustom" role="button" tabindex="0">
-        <div class="path-icon" aria-hidden="true">◎</div>
-        <div class="path-name">Let me choose</div>
-        <div class="path-blurb">Same again, plus the areas you want to target and any movements to leave out.</div>
-        <div class="path-go">Customise →</div>
-      </div>
-
-      <div class="path-card" id="pathStretch" role="button" tabindex="0">
-        <div class="path-icon" aria-hidden="true">◡</div>
-        <div class="path-name">Stretch &amp; mobility</div>
-        <div class="path-blurb">Slow holds, no gear, no timer pressure. Before bed or straight after a session.</div>
-        <div class="path-go">Loosen up →</div>
       </div>
 
       <div class="path-card" id="pathProgram" role="button" tabindex="0">
@@ -85,10 +71,10 @@
         <div class="path-go">Today's session →</div>
       </div>
 
-      <div class="path-card" id="pathClassics" role="button" tabindex="0">
+      <div class="path-card" id="pathLibrary" role="button" tabindex="0">
         <div class="path-icon" aria-hidden="true">★</div>
-        <div class="path-name">Workouts</div>
-        <div class="path-blurb">What you did recently, anything you've saved, and the named classics like Power Hour.</div>
+        <div class="path-name">Saved &amp; ready-made</div>
+        <div class="path-blurb">Your favourites and recent sessions, named classics like Power Hour, and stretch routines.</div>
         <div class="path-go">Browse →</div>
       </div>
     </div>
@@ -102,6 +88,17 @@
     </div>
 
     <p class="welcome-foot" id="welcomeFoot"></p>
+  </div>
+
+  <!-- ============== FIRST VISIT: GEAR ============== -->
+  <div class="view" id="gearView">
+    <div class="menu-header">
+      <h1 class="menu-title">First up, what gear have you got?</h1>
+    </div>
+    <p class="gear-intro">Tick what you can use. Anything that needs gear you haven't got is swapped for a bodyweight move.</p>
+    <div class="chip-row" id="onboardGear"></div>
+    <p class="picker-hint">You can change this and set your weights any time in Build a workout.</p>
+    <button class="build-btn" id="btnGearDone">Just bodyweight for now</button>
   </div>
 
   <!-- ============== SETUP VIEW ============== -->
@@ -149,8 +146,15 @@
       <div class="mix-picker" id="mixPicker" hidden></div>
     </div>
 
-    <!-- custom-only ------------------------------------------------ -->
-    <div class="picker-row custom-only" id="rowRegions">
+    <!-- More options: closed by default, with a line saying what's set -->
+    <div class="picker-row more-toggle">
+      <button class="link-btn" id="btnMoreOptions" aria-expanded="false" aria-controls="moreOptions">
+        <span class="more-label">More options</span>
+        <span class="more-summary" id="moreSummary"></span>
+      </button>
+    </div>
+    <div class="more-options" id="moreOptions" hidden>
+    <div class="picker-row" id="rowRegions">
       <div class="picker-label">What do you want to work?</div>
       <div class="bodymap-wrap">
         <!-- Each zone carries an invisible .hit rect as well as the shapes
@@ -192,7 +196,7 @@
       </div>
     </div>
 
-    <div class="picker-row custom-only" id="rowExclude">
+    <div class="picker-row" id="rowExclude">
       <div class="picker-label">Anything you'd rather not do?</div>
       <div class="chip-row" id="tagPicker"></div>
       <button class="link-btn" id="btnOpenExclude">
@@ -207,6 +211,7 @@
         <div class="exclude-list" id="excludeList"></div>
       </div>
     </div>
+    </div><!-- /#moreOptions -->
     </div><!-- /.setup-grid -->
 
     <!-- Sticky, so the primary action is reachable without scrolling at all. -->

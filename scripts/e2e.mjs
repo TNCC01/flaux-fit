@@ -74,7 +74,7 @@ const activeView = () => st(() => document.querySelector('.view.active').id);
 const previewText = () => p.$$eval('#previewList li', els => els.map(e => e.textContent.trim()).join('|'));
 // Rounds in the first block of the built sequence: 8 for short bursts, 4 for long efforts.
 const rounds = () => st(() => state.sequence.filter(x => x.kind === 'work' && x.blockIdx === 0).length);
-const pickInterval = async (label) => { await p.click('#pathQuick'); await p.click(`.interval-card:has-text("${label}")`); };
+const pickInterval = async (label) => { await p.click('#pathBuild'); await p.click(`.interval-card:has-text("${label}")`); };
 // Exact name match: "Power Hour" also appears in Half Power's tagline.
 const card = (name) => `.workout-card:not(.history-card):has(.card-name:text-is("${name}"))`;
 const toggleAllGear = async () => { for (const g of GEAR) await p.click(`#equipmentPicker .chip:has-text("${g}")`); };
@@ -82,10 +82,25 @@ const toggleAllGear = async () => { for (const g of GEAR) await p.click(`#equipm
 try {
   await p.goto(URL); await st(() => localStorage.clear()); await p.goto(URL);
 
+  step = 'first visit asks what gear you have';
+  assert(await activeView() === 'gearView', 'a first visit opens on the gear question');
+  assert(await p.$$eval('#onboardGear .chip.active', els => els.length) === 0, 'nothing ticked to start');
+  assert((await p.$eval('#btnGearDone', e => e.textContent)) === 'Just bodyweight for now', 'no gear reads as bodyweight');
+  for (const g of GEAR) await p.click(`#onboardGear .chip:has-text("${g}")`);
+  assert(await p.$$eval('#onboardGear .chip.active', els => els.length) === GEAR.length, 'everything ticked');
+  assert((await p.$eval('#btnGearDone', e => e.textContent)) === 'Done', 'with gear it says Done');
+  await p.click('#btnGearDone');
+  assert(await activeView() === 'welcomeView', 'then the home screen');
+  assert(await st(() => state.gearAsked && state.gearSets[0].name === 'Home' && state.gearSets[0].equipment.rings === true),
+         'the answer is saved as the Home gear set');
+  await p.goto(URL);
+  assert(await activeView() === 'welcomeView', 'and not asked again');
+  ok('first visit: the gear question, saved as Home, asked once');
+
   step = 'welcome';
-  assert((await p.$$('.path-card')).length === 5, 'five path cards');
+  assert((await p.$$('.path-card')).length === 3, 'three path cards');
   assert(await p.$eval('#installHint', e => e.hidden), 'install hint is hidden on a desktop UA');
-  ok('welcome shows four paths, no iOS install hint on desktop');
+  ok('welcome shows three paths, no iOS install hint on desktop');
 
   step = 'quick build, long efforts, save, start';
   await pickInterval('Long efforts');
@@ -103,7 +118,7 @@ try {
   ok('first workout built, saved, started and paused');
 
   step = 'second build is weighted by recency, then saved';
-  await p.click('#btnBack'); await p.click('#pathQuick'); await p.click('#btnBuild');
+  await p.click('#btnBack'); await p.click('#pathBuild'); await p.click('#btnBuild');
   const recentUsed = await st(() => state.workout.request.recent.length);
   assert(recentUsed > 0, 'second build carried a recency list, got ' + recentUsed);
   const previewB = await previewText();
@@ -113,7 +128,7 @@ try {
 
   step = 'switch preference to short, reopen the long favourite';
   await p.click('#btnBack'); await pickInterval('Short bursts');
-  await p.click('#btnSetupBack'); await p.click('#pathClassics');
+  await p.click('#btnSetupBack'); await p.click('#pathLibrary');
   const savedCards = await p.$$('.workout-card:has-text("☆")');
   assert(savedCards.length === 2, 'two saved cards, got ' + savedCards.length);
   await savedCards[1].click();                       // the older one, A
@@ -127,23 +142,23 @@ try {
   ok('favourite A replays identically, keeps its interval, leaves the preference alone');
 
   step = 'reopen favourite B, the one built with a recency list';
-  await p.click('#btnBack'); await p.click('#pathClassics');
+  await p.click('#btnBack'); await p.click('#pathLibrary');
   await (await p.$$('.workout-card:has-text("☆")'))[0].click();
   assert(await st(() => state.workout.exerciseIds.join(',')) === idsB, 'favourite B rebuilt with identical movements');
   assert(await previewText() === previewB, 'preview B identical');
   ok('favourite B replays identically despite the recency weighting');
 
   step = 'shuffle after a favourite respects switched-off gear';
-  await p.click('#btnBack'); await p.click('#pathQuick'); await toggleAllGear();
+  await p.click('#btnBack'); await p.click('#pathBuild'); await toggleAllGear();
   assert(await st(() => Object.values(effectiveEquip()).every(v => v === false)), 'all gear off');
-  await p.click('#btnSetupBack'); await p.click('#pathClassics');
+  await p.click('#btnSetupBack'); await p.click('#pathLibrary');
   await (await p.$$('.workout-card:has-text("☆")'))[0].click();
   await p.click('#btnShuffle');
   assert(await st(() => state.workout.exerciseIds.every(id => EXERCISES[id].equipment.length === 0)),
          'shuffle after a favourite picked gear that is switched off');
   assert(await p.$eval('#workoutNote', e => e.textContent === ''), 'no error note after a good shuffle');
   ok('shuffle after a favourite stayed bodyweight-only');
-  await p.click('#btnBack'); await p.click('#pathQuick'); await toggleAllGear();
+  await p.click('#btnBack'); await p.click('#pathBuild'); await toggleAllGear();
 
   step = 'gear sets: Home and a mate\'s place, one tap apart';
   p.once('dialog', d => d.accept("Mate's place"));
@@ -179,7 +194,7 @@ try {
 
   step = 'classic under long efforts, then the timer survives a suspension';
   await p.click('.interval-card:has-text("Long efforts")');
-  await p.click('#btnSetupBack'); await p.click('#pathClassics');
+  await p.click('#btnSetupBack'); await p.click('#pathLibrary');
   await p.click(card('Power Hour'));
   assert(await rounds() === 4, 'classic takes the long preference');
   await p.click('#btnStart'); await p.click('#btnSkip');       // into block 1
@@ -249,10 +264,10 @@ try {
 
   step = 'history entry of a classic reopens at the interval it was run';
   await p.click('#btnBack'); await pickInterval('Short bursts');
-  await p.click('#btnSetupBack'); await p.click('#pathClassics');
+  await p.click('#btnSetupBack'); await p.click('#pathLibrary');
   await p.click(card('Power Hour'));
   assert(await rounds() === 8, 'fresh open of the classic uses today\'s short preference');
-  await p.click('#btnBack'); await p.click('#pathClassics');
+  await p.click('#btnBack'); await p.click('#pathLibrary');
   assert(await p.$('.section-title:has-text("Recent")'), 'Recent section present');
   await p.click('.history-card:has(.card-name:text-is("Power Hour"))');
   assert(await activeView() === 'workoutView', 'history entry reopens');
@@ -260,8 +275,11 @@ try {
   ok('history reopens a classic at the interval it was actually run');
 
   step = 'custom flow';
-  await p.click('#btnBack'); await p.click('#pathCustom');
-  assert(await p.$eval('#rowRegions', e => e.style.display !== 'none'), 'target areas visible');
+  await p.click('#btnBack'); await p.click('#pathBuild');
+  assert(await p.$eval('#moreOptions', e => e.hidden), 'more options start closed');
+  assert((await p.$eval('#moreSummary', e => e.textContent)) === 'Whole body · nothing left out', 'and say what is set');
+  await p.click('#btnMoreOptions');
+  assert(await p.$eval('#rowRegions', e => e.style.display !== 'none' && e.offsetParent !== null), 'target areas visible');
   await p.click('.zone[data-region="push"]');
   await p.click('.zone[data-region="pull"] .fill');
   await p.click('.zone[data-region="core"]');
@@ -273,7 +291,12 @@ try {
   assert(rows === 2, 'burpee search gives 2 rows, got ' + rows);
   await p.click('#btnBuild');
   assert(await st(() => state.workout.exerciseIds.every(id => EXERCISES[id].regions.includes('legs'))), 'custom build on target');
-  ok('custom flow: body map, search, and a legs-only build');
+  await p.click('#btnBack'); await p.click('#pathBuild');
+  assert(await p.$eval('#moreOptions', e => e.hidden), 'closed again next time');
+  assert((await p.$eval('#moreSummary', e => e.textContent)).startsWith('Legs & Glutes · '), 'the closed link still shows legs only');
+  await st(() => { state.regions = REGIONS.map(r => r.id); savePrefs(); });
+  await p.click('#btnBuild');
+  ok('more options: body map, search, a legs-only build, and the choice shows when closed');
 
   step = 'EMOM: a minute per round, reps on the card';
   await p.click('#btnBack'); await pickInterval('EMOM');
@@ -350,7 +373,7 @@ try {
   ok('For Time: the clock counts up, Done logs the time to history and the cap turns to rest');
 
   step = 'Mix: EMOM, short bursts and AMRAP in exactly 30 minutes';
-  await p.click('#btnBack'); await p.click('#pathQuick');
+  await p.click('#btnBack'); await p.click('#pathBuild');
   await p.click('#timePicker .chip:text-is("30 min")');
   await p.click('.interval-card:has-text("Two or three styles")');
   // start from nothing, then tap the styles in order
@@ -375,7 +398,7 @@ try {
   await st(() => { seekTo(state.sequence.findIndex(x => x.changeover)); render(); });
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Change over', 'the changeover says so');
   assert((await p.$eval('#roundDots', e => e.textContent)).includes('Short bursts'), 'and explains the next style');
-  await p.click('#btnBack'); await p.click('#pathQuick');
+  await p.click('#btnBack'); await p.click('#pathBuild');
   await p.click('.interval-card:has-text("Short bursts")');
   assert(await st(() => !state.mixOn), 'picking a single style turns the mix off');
   await p.click('#timePicker .chip:text-is("20 min")');
@@ -383,7 +406,7 @@ try {
   ok('Mix: 30:00 exactly, EMOM then short bursts then AMRAP, a changeover between each');
 
   step = 'Surf fitness: a session built from surf exercises';
-  await p.click('#btnBack'); await p.click('#pathCustom');
+  await p.click('#btnBack'); await p.click('#pathBuild');
   await p.click('#goalPicker .chip:has-text("Surf fitness")');
   assert(await p.$eval('#rowRegions', e => e.style.display === 'none'), 'target areas step aside for the surf goal');
   assert((await p.$eval('#goalHint', e => e.textContent)).includes('paddle'), 'the goal says what it trains');
@@ -392,7 +415,7 @@ try {
   assert(await st(() => state.workout.exerciseIds.every(id => (EXERCISES[id].surf || []).length)), 'every exercise trains something for surfing');
   assert(await st(() => state.workout.exerciseIds.some(id => EXERCISES[id].surf.includes('popup'))), 'pop-up work is in');
   assert(await st(() => state.workout.name.startsWith('Surf fitness')), 'named for it');
-  await p.click('#btnBack'); await p.click('#pathCustom');
+  await p.click('#btnBack'); await p.click('#pathBuild');
   await p.click('#goalPicker .chip:has-text("General fitness")');
   assert(await p.$eval('#rowRegions', e => e.style.display !== 'none'), 'target areas come back');
   await p.click('#btnBuild');
@@ -440,11 +463,13 @@ try {
   assert(prog === '0,1s', 'a surf counts as day 2: ' + prog);
   assert((await p.$eval('.program-progress', e => e.textContent)).includes('Day 3'), 'on to day 3');
   await p.click('#btnProgramBack');
-  await p.click('#pathQuick'); await p.click('#btnBuild');     // the next step starts from a workout
+  await p.click('#pathBuild'); await p.click('#btnBuild');     // the next step starts from a workout
   ok('Programs: who and where change on the day card; Surf Fit day 1 builds lighter for week 1, finishing ticks it off, a surf counts as a day');
 
   step = 'stretch';
-  await p.click('#btnBack'); await p.click('#pathStretch');
+  await p.click('#btnBack'); await p.click('#pathLibrary');
+  assert(await p.$('.section-title:text-is("Stretch & mobility")'), 'stretches have their own section');
+  await p.click('#focusFilter .chip:text-is("Stretching")');
   await p.click(card('Sunrise Stretch'));
   assert(await p.$eval('#exerciseA', e => e.textContent.length > 0), 'stretch shows a pose');
   ok('stretch routine opens');
@@ -458,7 +483,7 @@ try {
   ok('text size control works');
 
   step = 'share link rebuilds the same workout on another device';
-  await p.click('#btnBack'); await p.click('#pathQuick'); await p.click('#btnBuild');
+  await p.click('#btnBack'); await p.click('#pathBuild'); await p.click('#btnBuild');
   const sharedIds = await st(() => state.workout.exerciseIds.join(','));
   const sharedSeed = await st(() => state.workout.seed);
   const shareUrl = await st(() => shareUrlFor(state.workout));
@@ -482,8 +507,8 @@ try {
   assert(await q.evaluate(() => state.workout.seed) === sharedSeed, 'same seed');
   assert(await q.evaluate(() => location.hash) === '', 'hash cleared once opened');
   assert(await q.$eval('#workoutNote', e => /shared link/.test(e.textContent)), 'says it came from a link');
-  await p.click('#btnBack'); await p.click('#pathClassics');
-  assert(await st(() => state.filterFocus) === 'all', 'Workouts path shows the whole library after a Stretch visit');
+  await p.click('#btnBack'); await p.click('#pathLibrary');
+  assert(await st(() => state.filterFocus) === 'all', 'the library opens on everything after a Stretching filter');
   await p.click(card('Power Hour'));
   const classicUrl = await st(() => shareUrlFor(state.workout));
   await q.goto(classicUrl);
@@ -509,7 +534,7 @@ try {
 
   step = 'phone width';
   await p.setViewportSize({ width: 390, height: 844 });
-  await p.click('#pathQuick'); await p.click('#btnBuild');
+  await p.click('#pathBuild'); await p.click('#btnBuild');
   const overflow = await st(() => {
     const s = document.getElementById('scroller');
     return s.scrollWidth > s.clientWidth + 1;
@@ -532,8 +557,8 @@ try {
   assert(await st(() => !!navigator.serviceWorker.controller), 'page is controlled by the worker');
   await context.setOffline(true);
   await p.reload();
-  assert((await p.$$('.path-card')).length === 5, 'welcome renders with no network');
-  await p.click('#pathQuick'); await p.click('#btnBuild');
+  assert((await p.$$('.path-card')).length === 3, 'welcome renders with no network');
+  await p.click('#pathBuild'); await p.click('#btnBuild');
   assert(await activeView() === 'workoutView', 'a workout builds with no network');
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
   await figureDrawn('#animA');

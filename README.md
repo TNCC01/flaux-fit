@@ -7,16 +7,21 @@ Static files, no build step. Deploys to Vercel.
 
 ## How it works
 
-The home screen asks how you want to train:
+On a first visit FIT asks what gear you've got, with everything unticked,
+and saves the answer as the Home gear set. After that the home screen has
+three cards:
 
-- **Just pick for me**: equipment, how long you've got, how many of you. Go.
-- **Let me choose**: the same, plus which areas of the body to target and
-  anything you'd rather not do.
-- **Stretch & mobility**: three mobility routines, no gear, no pressure.
-- **Workouts**: what you did recently, anything you saved, and the 16
-  named classics.
+- **Build a workout**: what it's for, how many of you, your gear, how long
+  you've got and the style. Target areas and anything you'd rather not do
+  sit under **More options**, closed by default, with a line saying what's
+  set ("Whole body · nothing left out") so a choice from last time can't
+  catch you out.
+- **Programs**: a session a day that builds week by week (Surf Fit).
+- **Saved & ready-made**: your favourites and recent sessions, the 16 named
+  classics, and the stretch routines (the Stretching filter shows just
+  those).
 
-Workouts in the first two paths are **generated on the spot** rather than
+Built workouts are **generated on the spot** rather than
 pulled from a table of presets. The input space (10 equipment items × 8
 durations × 2 people × 5 workout styles × 31 region combinations ×
 arbitrary exclusions) is far too large for presets to cover, which is why
