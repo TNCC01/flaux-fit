@@ -405,6 +405,22 @@ try {
   await p.click('#programBody button:has-text("Start Surf Fit")');
   assert((await p.$eval('#programBody', e => e.textContent)).includes('Day 1'), 'day 1 of the program');
   assert((await p.$$('.program-dot')).length === 7, 'the week strip has seven days');
+  // who and where can be changed right on today's card
+  const peopleBefore = await st(() => state.people);
+  await st(() => {
+    state.gearSets.push({ id: 'mates', name: "Mate's place", equipment: { ...state.equipment, kettlebells: false }, weights: structuredClone(state.weights) });
+    renderProgram();
+  });
+  await p.click('.program-today .chip[data-pick="gear-mates"]');
+  await p.click('.program-today .chip[data-pick="people-1"]');
+  const picked = await st(() => ({ set: state.gearSetId, kb: !!effectiveEquip().kb15, people: state.people,
+    on: [...document.querySelectorAll('.program-today .chip.active')].map(c => c.dataset.pick).filter(Boolean).join(',') }));
+  assert(picked.set === 'mates' && !picked.kb && picked.people === 1 && picked.on === 'people-1,gear-mates',
+         "today's card switches to the mate's place, solo: " + JSON.stringify(picked));
+  await p.click('.program-today .chip[data-pick="gear-home"]');
+  await p.click(`.program-today .chip[data-pick="people-${peopleBefore}"]`);
+  assert(await st(() => state.gearSetId === 'home' && !!effectiveEquip().kb15), 'and back home with the bells');
+  await st(() => { state.gearSets = state.gearSets.filter(g => g.id !== 'mates'); renderProgram(); });
   await p.click('.program-today .chip:text-is("15 min")');
   await p.click('.program-go');
   assert(await activeView() === 'workoutView', "today's session opens");
@@ -425,7 +441,7 @@ try {
   assert((await p.$eval('.program-progress', e => e.textContent)).includes('Day 3'), 'on to day 3');
   await p.click('#btnProgramBack');
   await p.click('#pathQuick'); await p.click('#btnBuild');     // the next step starts from a workout
-  ok('Programs: Surf Fit day 1 builds lighter for week 1, finishing ticks it off, a surf counts as a day');
+  ok('Programs: who and where change on the day card; Surf Fit day 1 builds lighter for week 1, finishing ticks it off, a surf counts as a day');
 
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathStretch');

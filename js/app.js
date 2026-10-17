@@ -2178,6 +2178,7 @@ function renderProgramToday(prog, st, day) {
     label.textContent = 'How long have you got?';
     c.append(label, row);
   }
+  c.append(...programSetupRows(!day.stretch));
   const go = document.createElement('button');
   go.className = 'program-go';
   go.textContent = "Start today's session";
@@ -2193,6 +2194,42 @@ function renderProgramToday(prog, st, day) {
   });
   c.append(go, surfed);
   els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
+}
+// Who's training and where, so today's session can be checked and changed
+// without going back into setup. Stretch days don't use gear, so they only
+// get the people row.
+function programSetupRows(withGear) {
+  const rows = [];
+  const pick = (text, options) => {
+    const label = document.createElement('div');
+    label.className = 'picker-label';
+    label.textContent = text;
+    const row = document.createElement('div');
+    row.className = 'chip-row';
+    options.forEach(o => {
+      const chip = tappable('chip' + (o.on ? ' active' : ''), () => { if (!o.on) { o.pick(); savePrefs(); renderProgram(); } });
+      chip.textContent = o.text;
+      chip.setAttribute('aria-pressed', String(o.on));
+      chip.dataset.pick = o.key;
+      row.appendChild(chip);
+    });
+    rows.push(label, row);
+  };
+  pick('How many of you?', [1, 2].map(n => ({
+    key: `people-${n}`, text: n === 1 ? '1 person' : '2 people', on: state.people === n,
+    pick: () => { state.people = n; renderPeoplePicker(); }
+  })));
+  if (withGear) {
+    ensureGearSets();
+    pick('Training at', state.gearSets.map(g => ({
+      key: `gear-${g.id}`, text: g.name, on: g.id === state.gearSetId, pick: () => useGearSet(g.id)
+    })));
+    const note = document.createElement('div');
+    note.className = 'program-hint';
+    note.textContent = 'To add a place or change its gear, use Let me choose on the home screen.';
+    rows.push(note);
+  }
+  return rows;
 }
 function startProgramDay(prog, day) {
   state.programRun = { id: prog.id, n: day.n };
