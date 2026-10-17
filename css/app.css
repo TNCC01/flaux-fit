@@ -818,6 +818,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .program-card .chip-row { margin-top: 0.2rem; }
 .program-today { border-left-color: var(--teal); }
 .program-go { width: 100%; }
+.program-card .picker-label { margin-top: 0.7rem; }
+.program-hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem; }
 .program-status { display: grid; gap: 0.7rem; }
 .program-progress { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; color: var(--muted); font-size: 0.95rem; }
 .program-progress b { color: var(--text); font-size: 1.15rem; }
