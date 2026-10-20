@@ -332,12 +332,17 @@
         <input type="checkbox" id="muteAudio">
         Mute audio
       </label>
+      <label class="toggle" id="silentToggle" hidden>
+        <input type="checkbox" id="beepOnSilent" checked>
+        Beep even on silent
+      </label>
       <span class="toggle text-size">
         Text
         <button class="mini-btn" data-scale="1">A</button>
         <button class="mini-btn" data-scale="1.2">A</button>
         <button class="mini-btn" data-scale="1.45">A</button>
       </span>
+      <p class="toggle-hint" id="silentHint" hidden>"Beep even on silent" can pause Spotify or other music while you train. Turn it off to keep your music going; the beeps then need the ringer on.</p>
     </div>
   </div>
 

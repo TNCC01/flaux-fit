@@ -43,6 +43,8 @@ const state = {
   blockedTags: [],
   excluded: [],
   muteAudio: false,
+  // on an iPhone, beep with the silent switch on (see applyAudioSession)
+  beepOnSilent: true,
   showAlts: false,
   showPhotos: true,
   textScale: 1,
@@ -74,7 +76,7 @@ const state = {
 };
 
 const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'gearSets', 'gearSetId',
-  'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
+  'regions', 'blockedTags', 'excluded', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked'];
 
 function loadPrefs() {
@@ -113,6 +115,7 @@ function loadPrefs() {
     if (typeof state.textScale !== 'number' || !(state.textScale > 0)) state.textScale = 1;
     if (typeof state.nameA !== 'string') state.nameA = '';
     if (typeof state.nameB !== 'string') state.nameB = '';
+    state.beepOnSilent = state.beepOnSilent !== false;
     // stored prefs from before the gear question means it's not a first visit
     state.gearAsked = p.gearAsked !== false;
   } catch (e) { /* corrupt store: fall back to defaults */ }
@@ -271,7 +274,8 @@ const els = {
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'), btnShare: $('btnShare'),
   btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'),
   workoutNote: $('workoutNote'),
-  showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio')
+  showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio'),
+  beepOnSilent: $('beepOnSilent'), silentToggle: $('silentToggle'), silentHint: $('silentHint')
 };
 
 const PHASE_COLOR = {
@@ -383,11 +387,34 @@ function buildSequence(workout, people) {
 
 // =====================================================================
 // AUDIO
+// An iPhone plays Web Audio on the ringer channel unless told otherwise,
+// so the silent switch mutes every beep. Telling Safari the sound is
+// 'playback' (the AudioSession API, iOS 16.4 and later) moves it onto the
+// media channel with videos and music, which the switch leaves alone. The
+// catch: playback takes over from other apps, so Spotify pauses while FIT
+// has sound, hence the setting. Only Safari has navigator.audioSession,
+// so desktop and Android are untouched. The older trick of looping a
+// silent <audio> element is left out: it puts a player on the lock screen
+// and later Safaris broke it.
 // =====================================================================
 let audioCtx = null;
+function applyAudioSession() {
+  if (!('audioSession' in navigator)) return;
+  const want = state.beepOnSilent && !state.muteAudio ? 'playback' : 'auto';
+  try {
+    if (navigator.audioSession.type !== want) navigator.audioSession.type = want;
+  } catch (e) { /* a Safari that only half has it */ }
+}
+// Safari parks the context as 'interrupted' after a phone call or Siri,
+// and 'suspended' after time away, so anything short of running gets a
+// resume. It can refuse outside a tap; the next beep, tap or return to
+// the app tries again.
 function ensureAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  try {
+    applyAudioSession();
+    if (!audioCtx || audioCtx.state === 'closed') audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state !== 'running') Promise.resolve(audioCtx.resume()).catch(() => {});
+  } catch (e) { /* no Web Audio: the timer runs silent */ }
 }
 function beep(freq, duration, volume = 0.4) {
   if (state.muteAudio) return;
@@ -445,15 +472,26 @@ function chimeFor(kind) {
 
 // =====================================================================
 // WAKE LOCK
+// Held from Start until the workout stops or you leave it, pauses
+// included, so a water break doesn't let the phone lock. The browser lets
+// go of it whenever the page is hidden; keepAwake says to ask again when
+// it's back (see the visibilitychange handler).
 // =====================================================================
+let keepAwake = false, wakeLockAsked = false;
 async function requestWakeLock() {
-  if (!('wakeLock' in navigator) || state.wakeLock) return;
+  keepAwake = true;
+  if (!('wakeLock' in navigator) || state.wakeLock || wakeLockAsked) return;
+  wakeLockAsked = true;
   try {
-    state.wakeLock = await navigator.wakeLock.request('screen');
-    state.wakeLock.addEventListener('release', () => { state.wakeLock = null; });
+    const lock = await navigator.wakeLock.request('screen');
+    lock.addEventListener('release', () => { if (state.wakeLock === lock) state.wakeLock = null; });
+    state.wakeLock = lock;
   } catch (e) { /* denied or unsupported, the timer is still correct */ }
+  wakeLockAsked = false;
+  if (!keepAwake) releaseWakeLock();      // stopped while the request was out
 }
 function releaseWakeLock() {
+  keepAwake = false;
   if (!state.wakeLock) return;
   const lock = state.wakeLock;
   state.wakeLock = null;
@@ -1897,8 +1935,7 @@ function pauseTimer() {
   freezeBleed();
   state.running = false;
   clearTick();
-  releaseWakeLock();
-  render();
+  render();                                // the wake lock stays on through a pause
 }
 
 function clearTick() {
@@ -2552,8 +2589,21 @@ els.showAlts.addEventListener('change', (e) => {
 });
 els.muteAudio.addEventListener('change', (e) => {
   state.muteAudio = e.target.checked;
+  if (audioCtx) applyAudioSession();      // muted, FIT has no reason to pause your music
   savePrefs();
 });
+// Takes effect from the next sound, never before FIT has made one, so just
+// opening the app leaves someone's music alone.
+els.beepOnSilent.addEventListener('change', (e) => {
+  state.beepOnSilent = e.target.checked;
+  if (audioCtx) applyAudioSession();
+  savePrefs();
+});
+// A tap is the one moment Safari always lets audio restart, so a context
+// still stuck after a call comes back on the next touch of the screen.
+document.addEventListener('touchend', () => {
+  if (state.running && audioCtx && audioCtx.state !== 'running') ensureAudio();
+}, { passive: true });
 
 document.querySelectorAll('.text-size .mini-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -2640,11 +2690,15 @@ function setupFullscreen() {
 }
 
 // Coming back to the app re-derives the position from the clock, so a
-// spell in the background can't leave the workout behind.
+// spell in the background can't leave the workout behind. The browser let
+// go of the wake lock while the page was hidden, so a started workout,
+// paused or not, asks for it again, and a running one wakes its audio
+// (Safari leaves it 'interrupted' after a call).
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
+  if (keepAwake) requestWakeLock();
   if (!state.running) return;
-  requestWakeLock();
+  ensureAudio();
   tickClock();
 });
 
@@ -2656,6 +2710,9 @@ els.nameA.value = state.nameA || '';
 els.nameB.value = state.nameB || '';
 els.showAlts.checked = state.showAlts;
 els.muteAudio.checked = state.muteAudio;
+els.beepOnSilent.checked = state.beepOnSilent;
+// only Safari can play through the silent switch, so only Safari asks
+els.silentToggle.hidden = els.silentHint.hidden = !('audioSession' in navigator);
 els.showPhotos.checked = state.showPhotos !== false;
 document.body.classList.toggle('show-alternatives', state.showAlts);
 document.body.classList.toggle('hide-photos', state.showPhotos === false);

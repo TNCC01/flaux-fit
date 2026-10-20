@@ -265,6 +265,106 @@ try {
   await p.click('#btnStart');                                   // pause
   ok('classic opens with 4 rounds, skip works, timer recovers a 3s suspension');
 
+  step = 'iPhone sound: beeps on silent, back after a call; the wake lock outlasts a pause';
+  assert(await p.$eval('#silentToggle', e => e.hidden) && await p.$eval('#silentHint', e => e.hidden),
+         'Chromium has no audioSession, so no silent-switch setting');
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    // What the page sees of an iPhone: a session type to set, a context Safari
+    // can leave 'interrupted' (and refuse to resume outside a tap), a wake lock.
+    await phone.addInitScript(() => {
+      window.__audio = { contexts: [], resumes: 0, refuse: false, typeAtCreate: null };
+      window.AudioContext = class {
+        constructor() {
+          this.state = 'running'; this.currentTime = 0; this.destination = {};
+          __audio.contexts.push(this); __audio.typeAtCreate = navigator.audioSession.type;
+        }
+        resume() {
+          __audio.resumes++;
+          if (__audio.refuse) return Promise.reject(new DOMException('not now', 'InvalidStateError'));
+          this.state = 'running'; return Promise.resolve();
+        }
+        createOscillator() { return { frequency: {}, connect() {}, start() {}, stop() {} }; }
+        createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
+      };
+      Object.defineProperty(navigator, 'audioSession', { configurable: true, value: { type: 'auto' } });
+      window.__locks = { asked: 0, held: 0, last: null };
+      Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => {
+        __locks.asked++; __locks.held++;
+        const fns = [];
+        __locks.last = { addEventListener: (t, f) => fns.push(f),
+                         release() { __locks.held--; fns.forEach(f => f()); return Promise.resolve(); } };
+        return __locks.last;
+      } } });
+    });
+    const s = await phone.newPage();
+    s.on('pageerror', e => errors.push('iPhone sound: ' + e));
+    s.on('console', m => { if (m.type() === 'error') errors.push('iPhone sound: ' + m.text()); });
+    const ev = (fn) => s.evaluate(fn);
+    const ctx = () => ev(() => __audio.contexts[0] && __audio.contexts[0].state);
+    const visible = () => ev(() => document.dispatchEvent(new Event('visibilitychange')));
+    await s.goto(URL);
+    await s.click('#btnGearDone');
+    await s.click('#todayCard .today-go');
+    assert(await s.$eval('#silentToggle', e => !e.hidden && e.offsetParent !== null), 'the setting shows where audioSession exists');
+    assert(await s.$eval('#silentHint', e => !e.hidden && /Spotify/.test(e.textContent)), 'with a hint that other music can pause');
+    assert(await s.$eval('#beepOnSilent', e => e.checked) && await ev(() => state.beepOnSilent), 'and it starts on');
+    assert(await ev(() => __audio.contexts.length === 0 && navigator.audioSession.type === 'auto'),
+           'opening a workout makes no sound and leaves the session alone');
+
+    await s.click('#btnStart');
+    assert(await ev(() => __audio.contexts.length === 1 && __audio.typeAtCreate === 'playback'),
+           'Start sets the session to playback before the first sound: ' + await ev(() => __audio.typeAtCreate));
+    assert(await ev(() => __locks.held === 1), 'and takes the wake lock');
+
+    await ev(() => { __audio.contexts[0].state = 'interrupted'; });  // a phone call
+    await ev(() => tickBeep());
+    assert(await ctx() === 'running' && await ev(() => __audio.resumes) === 1, 'the next beep resumes an interrupted context');
+    await ev(() => { __audio.contexts[0].state = 'interrupted'; });
+    await visible();
+    assert(await ctx() === 'running' && await ev(() => __audio.resumes) === 2, 'so does coming back to the app');
+    await ev(() => { __audio.refuse = true; __audio.contexts[0].state = 'interrupted'; });
+    await ev(() => tickBeep());
+    await s.waitForTimeout(50);                                 // let a rejected resume surface, if it would
+    assert(await ctx() === 'interrupted', 'Safari refusing outside a tap is caught, not thrown');
+    await ev(() => { __audio.refuse = false; document.dispatchEvent(new Event('touchend')); });
+    assert(await ctx() === 'running', 'and the next touch of the screen brings it back');
+
+    await s.click('#btnStart');                                 // pause for a drink
+    assert(await ev(() => !state.running && __locks.held === 1 && !!state.wakeLock), 'a pause keeps the wake lock');
+    await ev(() => { __locks.last.release(); __audio.contexts[0].state = 'interrupted'; });  // the browser drops it while hidden
+    assert(await ev(() => state.wakeLock === null), 'the app notices the browser letting go');
+    const resumesBefore = await ev(() => __audio.resumes);
+    await visible();
+    assert(await ev(() => __locks.asked === 2 && __locks.held === 1 && !!state.wakeLock), 'coming back to a paused workout asks again');
+    assert(await ev(() => __audio.resumes) === resumesBefore, 'but a paused workout leaves the audio (and your music) alone');
+
+    await s.click('#muteAudio');
+    assert(await ev(() => navigator.audioSession.type === 'auto'), 'muted, FIT gives the session back');
+    await s.click('#muteAudio');
+    assert(await ev(() => navigator.audioSession.type === 'playback'), 'unmuted, playback again');
+    await s.click('#beepOnSilent');
+    assert(await ev(() => !state.beepOnSilent && navigator.audioSession.type === 'auto'), 'turning the setting off goes back to auto');
+
+    await s.click('#btnBack');
+    assert(await ev(() => __locks.held === 0 && !state.wakeLock), 'leaving the workout lets the wake lock go');
+    await visible();
+    assert(await ev(() => __locks.asked === 2), 'and nothing asks for it on the home screen');
+
+    await s.reload();
+    await s.click('#todayCard .today-go');
+    assert(await ev(() => state.beepOnSilent === false) && !(await s.$eval('#beepOnSilent', e => e.checked)), 'off survives a reload');
+    await ev(() => {
+      const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      delete prefs.beepOnSilent;
+      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+    });
+    await s.reload();
+    assert(await ev(() => state.beepOnSilent === true), 'prefs saved before the setting existed start it on');
+    await phone.close();
+  }
+  ok('iPhone: playback from the first beep, resumes after a call or a return, a refusal is caught; wake lock kept through a pause, asked again on return, let go on leaving; the setting persists');
+
   step = 'the card shows the exercise as a 3D figure; drag turns it, a tap opens the full view';
   // the full viewer is checked by move-check; here it's the app's side of the tap
   await p.route('**/move.html*', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>3D</title>' }));

@@ -154,7 +154,9 @@ rather than hardcoded.
   Deliberately browser-only: it sits in localStorage with the other
   preferences, there is no account and no server, and clearing the browser
   clears it too
-- Wall-clock timer, wake lock, audio cues, two-tap reset
+- Wall-clock timer, wake lock (kept through a pause), audio cues that still
+  play with an iPhone on silent (a setting, since it pauses other music),
+  two-tap reset
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
   tablet, with no account and no server involved
