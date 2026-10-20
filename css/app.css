@@ -554,6 +554,44 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .card-actions { display: flex; gap: 0.9rem; margin-top: 0.35rem; flex-wrap: wrap; }
 .card-actions .card-remove { margin-top: 0; }
 .card-remove[disabled] { opacity: 0.5; text-decoration: none; cursor: default; }
+/* Your data, at the bottom of Saved & ready-made (YOUR DATA in js/app.js) */
+.data-section { padding-top: 0.9rem; border-top: 1px solid var(--border); }
+.data-about { color: var(--muted); font-size: 0.95rem; line-height: 1.45; padding: 0 0.25rem; max-width: 40rem; }
+.data-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.data-actions button { font-size: 1rem; padding: 0.75rem 1rem; }
+.data-section .build-note { text-align: left; padding: 0 0.25rem; }
+.restore-panel {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; max-width: 40rem;
+  background: var(--card); border: 2px solid var(--border); border-radius: 1rem; padding: 0.9rem 1rem;
+}
+.restore-panel[hidden] { display: none; }
+.restore-panel .picker-hint { margin-top: 0; }
+.restore-panel > button { font-size: 1rem; padding: 0.75rem 1rem; }
+.file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.data-text {
+  width: 100%; max-width: 40rem; resize: vertical;
+  background: var(--bg); color: var(--text);
+  border: 2px solid var(--border); border-radius: 0.85rem;
+  padding: 0.6rem 0.8rem; font-size: 1rem; font-family: inherit;
+}
+.data-text:focus { outline: none; border-color: var(--teal); }
+.data-copy { font-size: 0.8rem; color: var(--muted); }
+.restore-check { display: grid; gap: 0.5rem; width: 100%; }
+.restore-check:empty { display: none; }
+.restore-found { font-size: 1.05rem; font-weight: 700; line-height: 1.4; }
+.restore-check .picker-hint { margin-top: 0; }
+.data-undo { color: var(--muted); font-size: 0.95rem; line-height: 1.45; padding: 0 0.25rem; }
+.data-undo .link-btn { display: inline; padding: 0.6rem 0; font-size: inherit; }
+
+/* a new release is waiting (OFFLINE AND UPDATES in js/app.js); never over a workout */
+.update-bar {
+  display: block; width: 100%; margin-bottom: 0.6rem;
+  background: var(--card-hi); color: var(--teal-bright);
+  border: 2px solid var(--teal); box-shadow: none;
+  padding: 0.55rem 1rem; font-size: 0.95rem; font-weight: 800;
+}
+.update-bar[hidden], body.view-workout .update-bar { display: none; }
+
 .card-done { color: var(--teal-bright); font-size: 0.85rem; font-weight: 700; }
 .card-done::before { content: '✓ '; }
 .card-part { color: var(--muted); font-size: 0.85rem; font-weight: 700; }
@@ -1042,6 +1080,7 @@ body.show-alternatives .alternative.has-alt { display: block; }
 
 /* ============== First visit: gear ============== */
 #gearView { gap: 1rem; padding-top: 1.25rem; }
+#gearView .gear-restore { align-self: flex-start; padding-top: 0; }
 #gearView .menu-sub { margin: 0 0 0.6rem; }
 .gear-ask { display: flex; flex-direction: column; gap: 0.6rem; }
 .gear-ask .picker-label { margin-bottom: 0; }

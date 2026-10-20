@@ -4,14 +4,23 @@
   APP SHELL: views, setup flows, rendering and the timer.
 */
 
-// This script with the page from the release before it (see the same
-// check in index.html): if it fails while the page loads, load again once
-// this release's offline copy takes over.
+// The same check as in index.html, for this script with the page from an
+// older release: if the scripts fail while the page loads, a release
+// waiting in the service worker takes over and the page loads again.
 window.addEventListener('error', function retry() {
   window.removeEventListener('error', retry);
-  if (document.readyState !== 'complete' && navigator.serviceWorker) {
-    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
-  }
+  const sw = navigator.serviceWorker;
+  if (document.readyState === 'complete' || !sw) return;
+  sw.addEventListener('controllerchange', () => location.reload());
+  // once the page has stopped loading, so the release it came from isn't
+  // still handing it files
+  window.addEventListener('load', () => sw.register('sw.js').then(reg => {
+    const next = reg.waiting || reg.installing;
+    if (!next) return;
+    const take = () => { if (next.state === 'installed') next.postMessage('update'); };
+    take();
+    next.addEventListener('statechange', take);
+  }).catch(() => { /* no offline copy to fall back on */ }));
 });
 
 const TIME_OPTIONS = [10, 15, 20, 25, 30, 40, 45, 60];
@@ -94,57 +103,87 @@ const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes'
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked', 'todayOther'];
 
+// What a new visitor starts with: the fallback for anything a store or a
+// backup leaves out or has the wrong shape.
+const PREF_DEFAULTS = JSON.parse(JSON.stringify(Object.fromEntries(PERSISTED.map(k => [k, state[k]]))));
+const TEXT_SCALES = [1, 1.2, 1.45];
+
 function loadPrefs() {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return;
-    const p = JSON.parse(raw);
-    // Only take keys we know about, a stale or hand-edited store must not
-    // be able to drop arbitrary values into runtime state.
-    PERSISTED.forEach(k => { if (p[k] !== undefined) state[k] = p[k]; });
-    state.equipment = { ...DEFAULT_EQUIPMENT, kettlebells: true, ...(p.equipment || {}) };
-    state.weights = cleanWeights(p.weights, p.equipment || {});
-    state.gearSets = (Array.isArray(p.gearSets) ? p.gearSets : []).filter(g =>
-      g && typeof g.id === 'string' && typeof g.name === 'string' && g.equipment && typeof g.equipment === 'object')
-      .map(g => ({ id: g.id, name: g.name.slice(0, 24), equipment: { ...g.equipment },
-                   weights: cleanWeights(g.weights, g.equipment) }));
-    if (!INTERVALS[state.intervalStyle]) state.intervalStyle = DEFAULT_INTERVAL;
-    state.mixOn = state.mixOn === true;
-    if (!GOALS.some(g => g.id === state.goal)) state.goal = 'general';
-    if (!state.programs || typeof state.programs !== 'object' || Array.isArray(state.programs)) state.programs = {};
-    Object.keys(state.programs).forEach(id => {
-      const p = state.programs[id];
-      if (!PROGRAMS.some(x => x.id === id) || !p || !Array.isArray(p.done)) delete state.programs[id];
-    });
-    if (!Array.isArray(state.mixStyles)) state.mixStyles = ['emom', 'short', 'amrap'];
-    state.mixStyles = [...new Set(state.mixStyles.filter(id => INTERVALS[id]))].slice(0, 3);
-    if (state.mixStyles.length < 2) state.mixStyles = ['emom', 'short', 'amrap'];
-    if (!Array.isArray(state.regions) || !state.regions.length) state.regions = REGIONS.map(r => r.id);
-    if (!Array.isArray(state.excluded)) state.excluded = [];
-    if (!Array.isArray(state.recent)) state.recent = [];
-    if (!Array.isArray(state.saved)) state.saved = [];
-    if (!Array.isArray(state.history)) state.history = [];
-    if (!Array.isArray(state.blockedTags)) state.blockedTags = [];
-    if (state.people !== 1 && state.people !== 2) state.people = 1;
-    if (!TIME_OPTIONS.includes(state.minutes)) state.minutes = 20;
-    fitMixMinutes();
-    if (typeof state.textScale !== 'number' || !(state.textScale > 0)) state.textScale = 1;
-    if (typeof state.nameA !== 'string') state.nameA = '';
-    if (typeof state.nameB !== 'string') state.nameB = '';
-    state.beepOnSilent = state.beepOnSilent !== false;
-    // stored prefs from before the gear question means it's not a first visit
-    state.gearAsked = p.gearAsked !== false;
-    if (state.todayOther !== dayKey(Date.now())) state.todayOther = null;   // only lasts the day
+    Object.assign(state, cleanPrefs(JSON.parse(raw)));
   } catch (e) { /* corrupt store: fall back to defaults */ }
+}
+// Saved prefs (the store, another tab's save, or a backup being restored)
+// as a full set of PERSISTED keys, each checked. Only keys we know about
+// are taken, so a stale or hand-edited store must not be able to drop
+// arbitrary values into runtime state, and anything missing or the wrong
+// shape is the default. Throws if it isn't prefs at all.
+function cleanPrefs(p) {
+  const plain = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+  if (!plain(p)) throw new Error('not FIT prefs');
+  const s = JSON.parse(JSON.stringify(PREF_DEFAULTS));
+  PERSISTED.forEach(k => { if (p[k] !== undefined) s[k] = p[k]; });
+  const equip = plain(p.equipment) ? p.equipment : {};
+  s.equipment = { ...DEFAULT_EQUIPMENT, kettlebells: true, ...equip };
+  s.weights = cleanWeights(p.weights, equip, s.equipment);
+  s.gearSets = (Array.isArray(p.gearSets) ? p.gearSets : []).filter(g =>
+    plain(g) && typeof g.id === 'string' && typeof g.name === 'string' && plain(g.equipment))
+    .map(g => {
+      const equipment = { ...g.equipment };
+      return { id: g.id, name: g.name.slice(0, 24), equipment, weights: cleanWeights(g.weights, g.equipment, equipment) };
+    });
+  if (typeof s.gearSetId !== 'string') s.gearSetId = null;
+  if (!INTERVALS[s.intervalStyle]) s.intervalStyle = DEFAULT_INTERVAL;
+  s.mixOn = s.mixOn === true;
+  if (!GOALS.some(g => g.id === s.goal)) s.goal = 'general';
+  if (!plain(s.programs)) s.programs = {};
+  Object.keys(s.programs).forEach(id => {
+    const pr = s.programs[id];
+    if (!PROGRAMS.some(x => x.id === id) || !plain(pr) || !Array.isArray(pr.done)) delete s.programs[id];
+    else pr.done = pr.done.filter(d => plain(d) && Number.isInteger(d.n) && typeof d.at === 'number');
+  });
+  if (!Array.isArray(s.mixStyles)) s.mixStyles = ['emom', 'short', 'amrap'];
+  s.mixStyles = [...new Set(s.mixStyles.filter(id => INTERVALS[id]))].slice(0, 3);
+  if (s.mixStyles.length < 2) s.mixStyles = ['emom', 'short', 'amrap'];
+  if (!Array.isArray(s.regions) || !s.regions.length) s.regions = REGIONS.map(r => r.id);
+  if (!Array.isArray(s.excluded)) s.excluded = [];
+  if (!Array.isArray(s.recent)) s.recent = [];
+  // a favourite can't open without its seed and request, and a session in
+  // history is known by its key and when it was
+  if (!Array.isArray(s.saved)) s.saved = [];
+  s.saved = s.saved.filter(x => plain(x) && Number.isInteger(x.seed) && x.seed > 0 && plain(x.request));
+  if (!Array.isArray(s.history)) s.history = [];
+  s.history = s.history.filter(h => plain(h) && typeof h.key === 'string' && typeof h.at === 'number').slice(0, HISTORY_CAP);
+  if (!Array.isArray(s.blockedTags)) s.blockedTags = [];
+  if (s.people !== 1 && s.people !== 2) s.people = 1;
+  if (!TIME_OPTIONS.includes(s.minutes)) s.minutes = 20;
+  fitMixMinutes(s);
+  if (!TEXT_SCALES.includes(s.textScale)) s.textScale = 1;
+  if (typeof s.nameA !== 'string') s.nameA = '';
+  if (typeof s.nameB !== 'string') s.nameB = '';
+  s.muteAudio = s.muteAudio === true;
+  s.beepOnSilent = s.beepOnSilent !== false;
+  s.showAlts = s.showAlts === true;
+  s.showPhotos = s.showPhotos !== false;
+  if (s.filterFocus !== 'all' && !focusLabelMap[s.filterFocus]) s.filterFocus = 'all';
+  // stored prefs from before the gear question means it's not a first visit
+  s.gearAsked = p.gearAsked !== false;
+  if (s.todayOther !== dayKey(Date.now())) s.todayOther = null;   // only lasts the day
+  return s;
 }
 // Saved with the prefs, so another tab can tell a save from this version
 // (or a later one) from one made by a tab still running an older FIT.
 const PREFS_SCHEMA = 2;
+function currentPrefs() {
+  const out = { schema: PREFS_SCHEMA };
+  PERSISTED.forEach(k => { out[k] = state[k]; });
+  return out;
+}
 function savePrefs() {
   try {
-    const out = { schema: PREFS_SCHEMA };
-    PERSISTED.forEach(k => { out[k] = state[k]; });
-    localStorage.setItem(PREFS_KEY, JSON.stringify(out));
+    localStorage.setItem(PREFS_KEY, JSON.stringify(currentPrefs()));
   } catch (e) { /* private mode / quota: preferences just won't stick */ }
 }
 // Another tab saved (one left open from before, or the one a shared link
@@ -160,40 +199,32 @@ function savePrefs() {
 // a session or program day done here isn't lost to it.
 window.addEventListener('storage', (e) => {
   if (e.key !== PREFS_KEY || !e.newValue) return;
-  let p;
-  try { p = JSON.parse(e.newValue); } catch (err) { return; }
-  if (!p || typeof p !== 'object') return;
+  let p, theirs;
+  try { p = JSON.parse(e.newValue); theirs = cleanPrefs(p); } catch (err) { return; }
   const older = !(p.schema >= PREFS_SCHEMA);
-  const programs = p.programs && typeof p.programs === 'object' && !Array.isArray(p.programs)
-    ? Object.fromEntries(Object.entries(p.programs)
-        .filter(([id, x]) => PROGRAMS.some(q => q.id === id) && x && Array.isArray(x.done)))
-    : null;
   if (older) {
-    mergeOlderSave(p, programs);
+    mergeOlderSave(theirs);
     savePrefs();
   } else {
-    if (Array.isArray(p.history)) state.history = p.history;
-    if (Array.isArray(p.saved)) state.saved = p.saved;
-    if (programs) state.programs = programs;
+    state.history = theirs.history;
+    state.saved = theirs.saved;
+    state.programs = theirs.programs;
   }
   // redraw whatever lists them
   if (state.view === 'welcome') renderToday();
   else if (state.view === 'library') renderLibrary();
   else if (state.view === 'program') renderProgram();
 });
-// An older tab's lists added to this tab's: its sessions not already here
-// (the same session, reopened within the merge window, counts as here),
-// its favourites by seed, and its program days by day number.
-function mergeOlderSave(p, programs) {
-  if (Array.isArray(p.history)) {
-    const extra = p.history.filter(h => h && typeof h.at === 'number' && !state.history.some(x =>
-      x.key === h.key && Math.abs(x.at - h.at) < HISTORY_MERGE_MS));
-    state.history = [...state.history, ...extra].sort((a, b) => b.at - a.at).slice(0, HISTORY_CAP);
-  }
-  if (Array.isArray(p.saved)) {
-    state.saved = [...p.saved.filter(s => s && !state.saved.some(x => x.seed === s.seed)), ...state.saved];
-  }
-  Object.entries(programs || {}).forEach(([id, theirs]) => {
+// An older tab's lists (checked, see cleanPrefs) added to this tab's: its
+// sessions not already here (the same session, reopened within the merge
+// window, counts as here), its favourites by seed, and its program days by
+// day number.
+function mergeOlderSave(p) {
+  const extra = p.history.filter(h => !state.history.some(x =>
+    x.key === h.key && Math.abs(x.at - h.at) < HISTORY_MERGE_MS));
+  state.history = [...state.history, ...extra].sort((a, b) => b.at - a.at).slice(0, HISTORY_CAP);
+  state.saved = [...p.saved.filter(s => !state.saved.some(x => x.seed === s.seed)), ...state.saved];
+  Object.entries(p.programs).forEach(([id, theirs]) => {
     const ours = state.programs[id];
     if (!ours) { state.programs[id] = theirs; return; }
     const extra = theirs.done.filter(d => d && !ours.done.some(x => x.n === d.n));
@@ -231,8 +262,9 @@ const WEIGHT_CHOICES = {
   bar: { label: 'Barbell loaded to', many: false, kg: [10, 15, 20, 25, 30, 35, 40, 50, 60] }
 };
 // Saved weights, checked; or, from before weights existed, the two old
-// kettlebell switches turned into a list.
-function cleanWeights(w, oldEquip) {
+// kettlebell switches turned into a list (and with neither bell on,
+// kettlebells switched off in `equipment`).
+function cleanWeights(w, oldEquip, equipment) {
   const pick = (list, ok) => Array.isArray(list) ? [...new Set(list.filter(x => ok.includes(x)))].sort((a, b) => a - b) : null;
   if (w && typeof w === 'object') {
     return { kb: pick(w.kb, WEIGHT_CHOICES.kb.kg) || [10, 15],
@@ -240,7 +272,7 @@ function cleanWeights(w, oldEquip) {
              bar: WEIGHT_CHOICES.bar.kg.includes(w.bar) ? w.bar : 10 };
   }
   const kb = [10, 15].filter(kg => oldEquip[kg === 15 ? 'kb15' : 'kb10'] !== false);
-  if (!kb.length) state.equipment.kettlebells = false;
+  if (!kb.length) equipment.kettlebells = false;
   return { kb: kb.length ? kb : [10, 15], db: [], bar: 10 };
 }
 // The lighter role: the bell (or pair) nearest two thirds of the heaviest.
@@ -311,6 +343,7 @@ const els = {
   pathLibrary: $('pathLibrary'), pathProgramGo: $('pathProgramGo'), todayCard: $('todayCard'),
   gearView: $('gearView'), onboardGear: $('onboardGear'), btnGearDone: $('btnGearDone'),
   onboardPeople: $('onboardPeople'), onboardWeights: $('onboardWeights'), gearNote: $('gearNote'),
+  btnGearRestore: $('btnGearRestore'), updateBar: $('updateBar'),
   btnMoreOptions: $('btnMoreOptions'), moreOptions: $('moreOptions'), moreSummary: $('moreSummary'),
   scroller: $('scroller'), scrollHint: $('scrollHint'),
   welcomeNote: $('welcomeNote'), welcomeSub: $('welcomeSub'),
@@ -634,7 +667,11 @@ function releaseWakeLock() {
 // =====================================================================
 // VIEWS
 // =====================================================================
+// A new release took over during a workout here, so the page loads again
+// as you leave it (see OFFLINE AND UPDATES).
+let swReloadAfterWorkout = false;
 function setView(v) {
+  if (swReloadAfterWorkout && v !== 'workout') { location.reload(); return; }
   state.view = v;
   ['welcome', 'gear', 'setup', 'library', 'program', 'workout'].forEach(name => {
     els[name + 'View'].classList.toggle('active', v === name);
@@ -1049,14 +1086,14 @@ function renderMixPicker() {
 // With Mix on, the shortest time on offer the mix fits in. Shorter time
 // chips are dimmed, and turning Mix on or adding a style raises the minutes
 // to it, so a build can't fail for want of time.
-function mixFloor() {
-  if (!state.mixOn || state.mixStyles.length < 2) return 0;
-  const min = mixMinimumMinutes(state.mixStyles);
+function mixFloor(s = state) {
+  if (!s.mixOn || s.mixStyles.length < 2) return 0;
+  const min = mixMinimumMinutes(s.mixStyles);
   return (min && TIME_OPTIONS.find(m => m >= min)) || 0;
 }
-function fitMixMinutes() {
-  const floor = mixFloor();
-  if (floor && state.minutes < floor) state.minutes = floor;
+function fitMixMinutes(s = state) {
+  const floor = mixFloor(s);
+  if (floor && s.minutes < floor) s.minutes = floor;
 }
 // Said under the time chips while some are dimmed.
 function mixFloorText(floor) {
@@ -1353,9 +1390,10 @@ function renderLibrary() {
     empty.className = 'empty-state';
     empty.textContent = 'Nothing here with that focus.';
     els.librarySections.appendChild(empty);
-    return;
   }
   live.forEach(sec => els.librarySections.appendChild(sec));
+  // backing up and moving everything, whatever the focus (see YOUR DATA)
+  els.librarySections.appendChild(dataSection());
 }
 
 function namedCard(w) {
@@ -1466,7 +1504,7 @@ function historyCard(rec) {
       if (state.saved.some(x => x.seed === rec.seed)) return;
       state.saved.unshift({
         name: rec.name, blurb: rec.blurb, focus: rec.focus, seed: rec.seed,
-        request: rec.request, savedOn: new Date().toLocaleDateString()
+        request: rec.request, frozen: rec.frozen || undefined, savedOn: new Date().toLocaleDateString()
       });
       savePrefs();
       keepStorage();
@@ -2359,10 +2397,12 @@ function recordHistory() {
     people: state.people,
     intervalId: styleIdOf(w),
     generated: !!w.generated,
-    // Enough to rebuild it exactly: a seed and a request for generated
-    // workouts, an id for the named ones.
+    // Enough to rebuild it exactly: for a generated workout the exercises
+    // it was built with (see FROZEN WORKOUTS in js/workouts.js), and the
+    // seed and request it came from; an id for the named ones.
     seed: w.seed || null,
     request: w.request || null,
+    frozen: w.generated ? freezeWorkout(w) : undefined,
     workoutId: w.generated ? null : w.id,
     // who it was, so a score stays with the person who made it after a
     // rename, and which program day, so the card can say so
@@ -2408,9 +2448,26 @@ function keepStorage() {
 }
 
 // Rebuild a workout from a history entry (or a saved favourite: same shape).
+// A generated one opens as it was built. One kept before entries kept
+// their exercises, or with a move that has since left the library, is
+// built again from its seed, and a favourite then keeps that.
 function openFromRecord(rec) {
   if (rec.generated) {
-    return buildAndOpen(rec.request, rec.seed, { recent: (rec.request && rec.request.recent) || [] });
+    const w = rec.frozen ? thawWorkout(rec.frozen, rec.seed, rec.request) : null;
+    if (w) {
+      state.lastRequest = rec.request;
+      openWorkout(w);
+      return null;
+    }
+    const err = buildAndOpen(rec.request, rec.seed, { recent: (rec.request && rec.request.recent) || [] });
+    if (err) return err;
+    if (rec.frozen) els.workoutNote.textContent = 'Some of its moves have changed since it was saved, so it was built again.';
+    const fav = state.saved.find(s => s.seed === rec.seed);
+    if (fav && !(fav.frozen && thawWorkout(fav.frozen, fav.seed, fav.request))) {
+      fav.frozen = freezeWorkout(state.workout);
+      savePrefs();
+    }
+    return null;
   }
   const w = namedAsRun(rec.workoutId, rec.intervalId);
   if (!w) return 'That workout is no longer in the library.';
@@ -2485,6 +2542,7 @@ function saveRun() {
   const snap = {
     v: 1, savedAt: runSavedAt, sig: runSig(w, state.sequence),
     generated: !!w.generated, seed: w.seed || null, request: w.request || null, builtWith: w.builtWith || null,
+    frozen: w.generated ? freezeWorkout(w) : null,
     workoutId: w.generated ? null : w.id, intervalId: intervalFor(w).id,
     people: state.people, names: { a: state.nameA || '', b: state.nameB || '' },
     programRun: state.programRun || null,
@@ -2535,6 +2593,7 @@ function cleanRun(s) {
   return {
     savedAt: s.savedAt, sig: s.sig, elapsed: s.elapsed, idx: s.idx, people: s.people,
     generated: !!s.generated, seed: s.seed, request: s.request, builtWith: built,
+    frozen: plain(s.frozen) ? s.frozen : null,
     workoutId: s.workoutId, intervalId: typeof s.intervalId === 'string' ? s.intervalId : null,
     names: { a: name(names.a), b: name(names.b) },
     programRun: prog ? { id: s.programRun.id, n: s.programRun.n } : null,
@@ -2543,14 +2602,16 @@ function cleanRun(s) {
   };
 }
 
-// The saved session built again: a built one from its seed with the gear
-// and leave-outs it was first built with, a named one by its id at the
+// The saved session built again: a built one from the exercises it was
+// built with (or, saved before it kept them, from its seed with the gear
+// and leave-outs it was first built with), a named one by its id at the
 // style it ran in. Null if it no longer comes out the same.
 function rebuildRun(s) {
   try {
     let w;
     if (s.generated) {
-      w = buildWorkout(s.request, s.seed, { recent: Array.isArray(s.request.recent) ? s.request.recent : [], ...(s.builtWith || {}) });
+      w = (s.frozen && thawWorkout(s.frozen, s.seed, s.request))
+        || buildWorkout(s.request, s.seed, { recent: Array.isArray(s.request.recent) ? s.request.recent : [], ...(s.builtWith || {}) });
       if (w.error) return null;
     } else {
       w = namedAsRun(s.workoutId, s.intervalId);
@@ -2710,6 +2771,270 @@ function openLinkFromHash() {
   } else {
     els.workoutNote.textContent = 'Opened from a shared link.';
   }
+}
+
+// =====================================================================
+// YOUR DATA
+// Everything FIT keeps (the prefs, see PERSISTED) can go out as a file or
+// as text on the clipboard, and come back from either through the same
+// checks as the store itself (cleanPrefs). On an iPhone or iPad the
+// home-screen app and Safari keep separate storage, so this is how your
+// progress gets from one to the other, or to the other device. A restore
+// says what it found and asks first, and what it replaced is kept, so Put
+// it back can undo it until the next restore.
+// =====================================================================
+const BACKUP_KIND = 'fit-backup';
+const BEFORE_RESTORE_KEY = 'fit-prefs-2-before-restore';
+let restoreOpen = false;         // the Restore panel stays open across redraws
+let dataSaid = '';               // said under the buttons on the next redraw
+
+const backupText = () => JSON.stringify({ kind: BACKUP_KIND, v: 1, savedAt: new Date().toISOString(), prefs: currentPrefs() });
+
+// The data in a backup file or pasted text, checked: { prefs, savedAt },
+// or null when it isn't FIT's. Whatever a message or a note wrapped
+// around it is let go, and the bare store is taken too.
+function readBackup(text) {
+  const t = String(text || '');
+  const from = t.indexOf('{'), to = t.lastIndexOf('}');
+  if (from < 0 || to < from) return null;
+  try {
+    const o = JSON.parse(t.slice(from, to + 1));
+    const wrapped = !!o && o.kind === BACKUP_KIND;
+    const prefs = wrapped ? o.prefs : o && typeof o.schema === 'number' ? o : null;
+    if (!prefs) return null;
+    const at = wrapped ? Date.parse(o.savedAt) : NaN;
+    return { prefs: cleanPrefs(prefs), savedAt: Number.isFinite(at) ? at : null };
+  } catch (e) { return null; }
+}
+// What's in a set of prefs, to check before replacing anything: "12
+// sessions, 3 favourites, 2 places (Home, Mate's place) and Surf Fit week 3".
+function dataSummary(p) {
+  const count = (n, one) => `${n || 'no'} ${one}${n === 1 ? '' : 's'}`;
+  const parts = [count(p.history.length, 'session')];
+  if (p.saved.length) parts.push(count(p.saved.length, 'favourite'));
+  if (p.gearSets.length) parts.push(`${count(p.gearSets.length, 'place')} (${p.gearSets.map(g => g.name).join(', ')})`);
+  PROGRAMS.forEach(prog => {
+    const st = p.programs[prog.id];
+    if (!st) return;
+    const n = st.done.length;
+    parts.push(n >= prog.weeks * prog.days.length ? `${prog.name} finished` : `${prog.name} week ${programDay(prog, n).week}`);
+  });
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+}
+const shortDate = (t) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
+
+// Swap in a whole set of prefs. A restore keeps what was here first, for
+// Put it back; putting it back lets that copy go. False, with nothing
+// changed, if this device has no room for the copy.
+function replaceData(prefs, keepBefore) {
+  try {
+    if (keepBefore) localStorage.setItem(BEFORE_RESTORE_KEY, JSON.stringify({ at: Date.now(), prefs: currentPrefs() }));
+    else localStorage.removeItem(BEFORE_RESTORE_KEY);
+  } catch (e) { return false; }
+  Object.assign(state, prefs);
+  savePrefs();
+  keepStorage();
+  showSettings();
+  return true;
+}
+function dataBefore() {
+  try {
+    const b = JSON.parse(localStorage.getItem(BEFORE_RESTORE_KEY));
+    return b && typeof b.at === 'number' ? { at: b.at, prefs: cleanPrefs(b.prefs) } : null;
+  } catch (e) { return null; }
+}
+
+// A file to keep. An iPhone or iPad gets the share sheet (Save to Files,
+// or AirDrop it to the other device); anything else downloads it.
+async function saveBackup(say) {
+  const name = `FIT backup ${dayKey(Date.now())}.json`;
+  const file = new File([backupText()], name, { type: 'application/json' });
+  if (IS_IOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      say('Backup made. Keep the file somewhere safe, like Files or iCloud Drive.');
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;      // share sheet dismissed
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  say(`Saved "${name}" to your downloads. Keep it somewhere safe.`);
+}
+// The same data as text, for pasting into Restore on the other device or
+// in the home-screen app. Without a clipboard, it goes in a box to copy.
+function copyData(after, say) {
+  const text = backupText();
+  const byHand = () => {
+    let box = after.parentNode.querySelector('.data-copy');
+    if (!box) {
+      box = document.createElement('textarea');
+      box.className = 'data-text data-copy';
+      box.readOnly = true;
+      box.rows = 3;
+      box.setAttribute('aria-label', 'Your data, to copy');
+      after.after(box);
+    }
+    box.value = text;
+    box.focus();
+    box.select();
+    say('Copy all the text in the box, then paste it into Restore on the other device.');
+  };
+  try {
+    navigator.clipboard.writeText(text).then(
+      () => say('Copied. On the other device, or in the home-screen app, open Saved & ready-made, tap Restore and paste it in.'),
+      byHand);
+  } catch (e) { byHand(); }
+}
+
+// The bottom of Saved & ready-made.
+function dataSection() {
+  const wrap = document.createElement('section');
+  wrap.className = 'library-section data-section';
+  wrap.id = 'yourData';
+  wrap.innerHTML = `<div class="section-head"><div class="section-title">Your data</div></div>
+    <p class="data-about">The iPhone home-screen app and Safari keep separate data, so this is how you move yours between them, or to the iPad.</p>`;
+  const note = document.createElement('div');
+  note.className = 'build-note data-note';
+  note.setAttribute('role', 'status');
+  const say = (text) => { note.textContent = text; };
+  const actions = document.createElement('div');
+  actions.className = 'data-actions';
+  const button = (id, text, onClick) => {
+    const b = document.createElement('button');
+    b.className = 'secondary';
+    b.id = id;
+    b.textContent = text;
+    b.addEventListener('click', onClick);
+    actions.appendChild(b);
+    return b;
+  };
+  button('btnBackup', 'Save a backup', () => saveBackup(say));
+  button('btnCopyData', 'Copy to another device', () => copyData(actions, say));
+  const open = button('btnRestore', 'Restore', () => {
+    restoreOpen = !restoreOpen;
+    panel.hidden = !restoreOpen;
+    open.setAttribute('aria-expanded', String(restoreOpen));
+    check.innerHTML = '';
+    say('');
+  });
+  open.setAttribute('aria-expanded', String(restoreOpen));
+
+  // Restore: a file or pasted text, then what's in it, and a yes or no.
+  const panel = document.createElement('div');
+  panel.className = 'restore-panel';
+  panel.hidden = !restoreOpen;
+  panel.innerHTML = `<p class="picker-hint">Choose the backup file, or paste the text you copied.</p>`;
+  const fileBtn = document.createElement('button');
+  fileBtn.className = 'secondary';
+  fileBtn.id = 'btnRestoreFile';
+  fileBtn.textContent = 'Choose a backup file';
+  // out of sight rather than display: none, which some iPhones won't open
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.id = 'restoreFile';
+  file.className = 'file-input';
+  file.tabIndex = -1;
+  file.setAttribute('aria-hidden', 'true');
+  fileBtn.addEventListener('click', () => file.click());
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0];
+    file.value = '';
+    if (!f) return;
+    let text = '';
+    try { text = await f.text(); } catch (e) { /* unreadable: said below */ }
+    offer(readBackup(text));
+  });
+  const paste = document.createElement('textarea');
+  paste.className = 'data-text';
+  paste.id = 'restoreText';
+  paste.rows = 3;
+  paste.placeholder = 'Or paste the copied text here';
+  paste.setAttribute('aria-label', 'Paste your copied data');
+  const usePaste = document.createElement('button');
+  usePaste.className = 'secondary';
+  usePaste.id = 'btnRestoreText';
+  usePaste.textContent = 'Use the pasted text';
+  usePaste.addEventListener('click', () => offer(readBackup(paste.value)));
+  panel.append(fileBtn, file, paste, usePaste);
+
+  // What was found against what's here, and a yes or no, under whatever
+  // asked (the Restore panel, or Put it back).
+  const check = document.createElement('div');
+  check.className = 'restore-check';
+  const ask = (under, found, yes, onYes) => {
+    check.innerHTML = '';
+    under.after(check);
+    const p1 = document.createElement('p');
+    p1.className = 'restore-found';
+    p1.textContent = found;
+    const p2 = document.createElement('p');
+    p2.className = 'picker-hint';
+    p2.textContent = `It replaces everything here now: ${dataSummary(currentPrefs())}.`;
+    const row = document.createElement('div');
+    row.className = 'data-actions';
+    const go = document.createElement('button');
+    go.id = 'btnRestoreYes';
+    go.textContent = yes;
+    go.addEventListener('click', onYes);
+    const no = document.createElement('button');
+    no.className = 'secondary';
+    no.id = 'btnRestoreNo';
+    no.textContent = 'Cancel';
+    no.addEventListener('click', () => { check.innerHTML = ''; });
+    row.append(go, no);
+    check.append(p1, p2, row);
+    check.scrollIntoView({ block: 'nearest' });
+  };
+  // the page again, with what's here now and what was done
+  const done = (text) => {
+    restoreOpen = false;
+    dataSaid = text;
+    state.filterFocus = 'all';
+    renderFocusFilter();
+    renderLibrary();
+  };
+  const offer = (got) => {
+    say('');
+    if (!got) {
+      check.innerHTML = '';
+      say("That isn't a FIT backup. Check all of it was copied, or choose the file again.");
+      return;
+    }
+    const when = got.savedAt ? `, saved ${shortDate(got.savedAt)}` : '';
+    ask(panel, `This backup has ${dataSummary(got.prefs)}${when}.`, 'Replace my data', () => {
+      if (!replaceData(got.prefs, true)) { say("There isn't room on this device to keep a copy of what's here, so nothing was changed."); return; }
+      done(`Restored: ${dataSummary(state)}.`);
+    });
+  };
+
+  // Put it back, while there's a copy from before the last restore.
+  const before = dataBefore();
+  let undo = null;
+  if (before) {
+    undo = document.createElement('div');
+    undo.className = 'data-undo';
+    undo.textContent = `Restored from a backup on ${shortDate(before.at)}.`;
+    const back = linkButton('Put back what was here before', () => {
+      say('');
+      ask(undo, `Put back what was here before the restore: ${dataSummary(before.prefs)}.`, 'Put it back', () => {
+        replaceData(before.prefs, false);
+        done(`Put back: ${dataSummary(state)}.`);
+      });
+    });
+    back.id = 'btnPutBack';
+    undo.append(' ', back);
+  }
+
+  wrap.append(actions, note, panel, ...(undo ? [undo] : []));
+  if (dataSaid) { say(dataSaid); dataSaid = ''; }
+  return wrap;
 }
 
 // =====================================================================
@@ -3070,10 +3395,17 @@ function finishGearQuestion() {
 els.pathLibrary.addEventListener('click', () => {
   state.filterFocus = 'all';
   savePrefs();
+  restoreOpen = false;
   openLibrary();
 });
 els.btnMoreOptions.addEventListener('click', () => setMoreOptions(els.moreOptions.hidden));
 els.btnGearDone.addEventListener('click', finishGearQuestion);
+// straight to Restore, for the home-screen app or a new device
+els.btnGearRestore.addEventListener('click', () => {
+  restoreOpen = true;
+  openLibrary();
+  $('yourData').scrollIntoView({ block: 'start' });
+});
 els.btnSetupBack.addEventListener('click', () => (state.setupFrom === 'program' ? openProgram() : goWelcome()));
 els.btnLibraryBack.addEventListener('click', goWelcome);
 // a program's session goes back to the program, anything else to the menu
@@ -3154,9 +3486,11 @@ els.btnSave.addEventListener('click', () => {
   const w = state.workout;
   if (!w || !w.generated) return;
   if (state.saved.some(s => s.seed === w.seed)) return;
+  // the exercises it was built with, so an update can't change it (see
+  // FROZEN WORKOUTS in js/workouts.js)
   state.saved.unshift({
     name: w.name, blurb: w.blurb, focus: w.focus, seed: w.seed,
-    request: w.request,
+    request: w.request, frozen: freezeWorkout(w),
     savedOn: new Date().toLocaleDateString()
   });
   savePrefs();
@@ -3297,6 +3631,9 @@ if ('ResizeObserver' in window) {
 const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches ||
   window.navigator.standalone === true;
+// iPadOS reports itself as a Mac, hence the touch-points check.
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 function setupFullscreen() {
   const canFullscreen = !!(document.documentElement.requestFullscreen ||
@@ -3304,10 +3641,8 @@ function setupFullscreen() {
   // Already launched from the home screen: nothing left to hide.
   if (isStandalone()) return;
   // The hint describes the Safari share sheet, so only show it where that
-  // exists. iPadOS reports itself as a Mac, hence the touch-points check.
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  els.installHint.hidden = !isIOS;
+  // exists.
+  els.installHint.hidden = !IS_IOS;
   if (!canFullscreen) return;
   els.btnFullscreen.hidden = false;
   els.btnFullscreen.addEventListener('click', async () => {
@@ -3410,18 +3745,24 @@ window.addEventListener('pagehide', saveRun);
 // =====================================================================
 // INIT
 // =====================================================================
+// The settings into the controls that show them: on load, and after a
+// restore (see YOUR DATA).
+function showSettings() {
+  els.nameA.value = state.nameA || '';
+  els.nameB.value = state.nameB || '';
+  els.showAlts.checked = state.showAlts;
+  els.muteAudio.checked = state.muteAudio;
+  els.beepOnSilent.checked = state.beepOnSilent;
+  els.showPhotos.checked = state.showPhotos !== false;
+  document.body.classList.toggle('show-alternatives', state.showAlts);
+  document.body.classList.toggle('hide-photos', state.showPhotos === false);
+  applyTextScale();
+  renderPeoplePicker();
+}
 loadPrefs();
-els.nameA.value = state.nameA || '';
-els.nameB.value = state.nameB || '';
-els.showAlts.checked = state.showAlts;
-els.muteAudio.checked = state.muteAudio;
-els.beepOnSilent.checked = state.beepOnSilent;
+showSettings();
 // only an iPhone or iPad can play through the silent switch, so only they ask
 els.silentToggle.hidden = els.silentHint.hidden = !CAN_SILENT;
-els.showPhotos.checked = state.showPhotos !== false;
-document.body.classList.toggle('show-alternatives', state.showAlts);
-document.body.classList.toggle('hide-photos', state.showPhotos === false);
-applyTextScale();
 setupFullscreen();
 renderToday();
 updateScrollHint();
@@ -3431,14 +3772,58 @@ else if (!state.gearAsked) openGearQuestion();
 window.addEventListener('hashchange', openLinkFromHash);
 
 // =====================================================================
-// OFFLINE
-// sw.js caches the app and every animation on the first visit, so from
-// then on it opens with no network at all. The app files themselves are
-// fetched network-first, so online it is always the current version.
+// OFFLINE AND UPDATES
+// sw.js keeps every file of one release, fetched on the first visit, and
+// the app runs from that copy, so it opens at once on any signal or none.
+// A new release installs in the background and waits: the line at the top
+// says so (not during a workout), and a tap on it moves over and reloads.
 // =====================================================================
+const UPDATE_CHECK_MS = 30 * 60e3;
+let swReg = null, swUpdating = false, swCheckedAt = 0;
+function offerUpdate() {
+  els.updateBar.hidden = !(swReg && swReg.waiting && swReg.active);
+}
+function watchUpdates(reg) {
+  swReg = reg;
+  swCheckedAt = Date.now();
+  offerUpdate();
+  reg.addEventListener('updatefound', () => {
+    const next = reg.installing;
+    if (next) next.addEventListener('statechange', offerUpdate);
+  });
+}
+els.updateBar.addEventListener('click', () => {
+  const next = swReg && swReg.waiting;
+  if (!next) { offerUpdate(); return; }
+  swUpdating = true;
+  els.updateBar.textContent = 'Updating…';
+  next.postMessage('update');
+  // the browser can hold the new release back while the old one is busy
+  setTimeout(() => { els.updateBar.textContent = 'Close FIT and open it again to finish updating'; }, 8000);
+});
 if ('serviceWorker' in navigator) {
-  const register = () => navigator.serviceWorker.register('sw.js')
+  // A new release taking over: this page is the old one, and anything it
+  // loaded from now on would be the new one's, so it reloads. A tap here
+  // reloads at once; a tap in another tab waits for this one's workout to
+  // end. The first install taking over a page fresh from the network isn't
+  // an update, so that page carries on.
+  let wasControlled = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    const update = swUpdating || wasControlled;
+    wasControlled = true;
+    if (!update) return;
+    if (swUpdating || state.view !== 'workout') location.reload();
+    else swReloadAfterWorkout = true;
+  });
+  const register = () => navigator.serviceWorker.register('sw.js').then(watchUpdates)
     .catch(() => { /* offline support is a nicety; the app runs without it */ });
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register);
+  // The home-screen app can stay open for days without loading again, so
+  // it looks for a new release when it comes back to the front too.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !swReg || Date.now() - swCheckedAt < UPDATE_CHECK_MS) return;
+    swCheckedAt = Date.now();
+    Promise.resolve(swReg.update()).catch(() => { /* offline: next time */ });
+  });
 }

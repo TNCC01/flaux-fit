@@ -30,7 +30,8 @@ has three cards:
 - **Saved & ready-made**: your favourites and recent sessions, the 16 named
   classics, and the stretch routines (the Stretching filter shows just
   those). A classic runs in the style last picked in setup, and its card
-  says which.
+  says which. At the bottom, **Your data**: back it up, or move it to
+  another device or into the home-screen app.
 
 Built workouts are **generated on the spot** rather than
 pulled from a table of presets. The input space (10 equipment items × 8
@@ -179,7 +180,29 @@ rather than hardcoded.
   progress as they save, so neither writes over the other; a tab still on
   an older version has its stale copy merged in rather than taken. On an
   iPhone or iPad the home-screen app keeps its own storage, separate from
-  Safari's, and the Add to Home Screen hint says so
+  Safari's, and the Add to Home Screen hint says so and says how to bring
+  your data across
+- Favourites that never change. A favourite keeps the exercises it was
+  built with (each block's moves and how they're handed out, which also
+  says who does what with two people), and so does each built session in
+  history and a session saved part-way, so an update to the library or
+  the generator can't quietly swap them; the gear still adapts on the
+  cards, as for a classic. A favourite saved before this is built from
+  its seed the next time it's opened and keeps that from then on; one
+  naming a move that has since left the library is built from its seed
+  and says so. Share links are still the seed and the request
+- Your data, at the bottom of Saved & ready-made. **Save a backup** saves
+  a dated file of everything (`FIT backup 2026-10-20.json`; on an iPhone
+  or iPad through the share sheet, so Save to Files or AirDrop). **Copy to
+  another device** puts the same on the clipboard as text, or in a box to
+  copy by hand when there's no clipboard. **Restore** takes the file or
+  the pasted text, runs it through the same checks as the stored
+  settings, says what it found ("12 sessions, 2 favourites, 2 places
+  (Home, Mate's place) and Surf Fit week 3") against what's there now, and
+  asks before replacing anything. What it replaced is kept, so **Put back
+  what was here before** undoes it until the next restore. The first-visit
+  question links straight to Restore, for the home-screen app (which
+  starts empty) or a new iPad
 - Wall-clock timer, wake lock (kept through a pause), audio cues that still
   play with an iPhone on silent (a setting, since it pauses other music;
   FIT gives the sound back when you leave the workout, and after time in
@@ -212,8 +235,11 @@ rather than hardcoded.
   involved. The message says the minutes, style and people, and Share stays
   on screen once the workout is going. A link passed on keeps the gear it
   was first built with, so the third person gets the same session too
-- Works offline after the first visit. A service worker caches the app
-  and the 3D figures, so it opens in the gym with no wifi
+- Opens at once, signal or not. After the first visit a service worker
+  keeps a copy of the whole app and the 3D figures, and FIT runs from it,
+  so it opens in a garage on one bar of signal as fast as it does with no
+  wifi at all. A new release comes in the background and shows "New
+  version ready, tap to update" (never over a workout)
 
 Two people never get handed the same single-instance item (one 15kg KB, one
 10kg KB, one barbell, one rope, one set of rings) in the same round. That
@@ -241,20 +267,41 @@ scripts/export-sequence.mjs   expand a workout to timed steps as JSON
 .github/workflows/      runs every check on each pull request
 ```
 
-## Offline
+## Offline and updates
 
-`sw.js` caches the app shell and the 3D figures (three.js, the mannequin
-and every movement's data, about 300 KB over the wire) when it installs,
-on the first visit. Everything is served network-first with a four-second
-timeout, so online you always get the current version and a flaky
-connection falls back to the cache rather than hanging. A file that comes
-in after the timeout is still cached. Bump `VERSION` in `sw.js` with every
-release that changes the app's files: the cache is otherwise refreshed one
-file at a time, and a slow load could leave the new `index.html` cached
-beside the old `app.js`. A new `VERSION` installs the whole app into a
-fresh cache and deletes the old one. The one load that brings the update
-in can still pair the two; if the scripts fail on that load, the page
-loads again as soon as the new cache takes over.
+`sw.js` fetches every file of a release into a cache of its own when it
+installs (the app shell and the 3D figures: three.js, the mannequin and
+every movement's data, about 300 KB over the wire), all or nothing, past
+the browser's own cache. From then on every file is served from that
+copy, so the app opens at once on any connection, and the files it runs
+on always belong to one release: never a new `index.html` beside an old
+`app.js`.
+
+A release only reaches phones when `sw.js` changes. The browser checks it
+as the app loads, and the app asks again when it comes back to the front
+(at most every half hour, since the home-screen app can stay open for
+days). A new one installs the new release into a new cache and waits;
+the app shows "New version ready, tap to update" (hidden during a
+workout), and the tap has the waiting worker take over, delete the old
+cache and reload the page. A tab mid-workout when another tab taps
+reloads once you leave the workout. Untapped, the new release takes over
+the next time FIT is closed and opened.
+
+So every release that changes a file the worker lists has to bump
+`VERSION` in `sw.js` and set `FILES_HASH` to the fingerprint of those
+files. `scripts/selfcheck.mjs` computes it and fails until they match,
+printing the new value ("app files changed: bump VERSION in sw.js and
+update the hash to …"), and fails where git can see `origin/main` with
+the files changed under the same `VERSION`. The hash is part of the
+cache's name, so even a forgotten bump can't install new files over the
+copy that's running.
+
+A page whose scripts fail while it loads (only possible without the
+worker: the very first visit, or a phone still on the network-first
+worker from before this) has the waiting release, or the first one still
+installing, take over at once, since a broken page has nothing to lose,
+and loads again from it. A genuine bug fails once and stays put rather
+than reloading forever.
 
 ## 3D movements
 
@@ -300,7 +347,12 @@ or refuse for a good reason. It also proves a workout rebuilds exactly from
 its stored request and seed, and that a seed builds the same workout
 whatever sort algorithm the browser uses. Safari and Chrome sort
 differently, and a favourite saved on the iPad has to come back identical
-on the phone.
+on the phone. Every style comes back from a favourite's frozen copy
+exactly as built, a checked-in golden favourite (one block from each block
+helper) still runs the same rounds, and a frozen copy that's the wrong
+shape or names a move that's gone is refused. It also checks that every
+file the pages load is precached and that `FILES_HASH` in `sw.js` is
+current (see Offline and updates).
 
 `node scripts/e2e.mjs` serves the app itself and drives it in headless
 Chromium at iPad size: every path from the welcome screen, saving and
@@ -308,8 +360,13 @@ replaying a favourite, the interval preference surviving a replay, history,
 the timer recovering time after a suspension, exclusions, stretch, text
 size, a share link opened in a fresh browser context, corrupt preferences,
 picking a session back up after a reload and coming back after time away,
-a phone-width layout and a phone on its side, and the app opening with the
-network switched off.
+a phone-width layout and a phone on its side, favourites and history
+keeping their moves through a library change, backing up, copying and
+restoring your data on a second device (and putting it back), the app
+opening with the network switched off and at once with a six-second
+network, a new release waiting for its tap and never running beside the
+old one, and a page whose scripts fail handing over to the release
+waiting.
 It fails on any console error.
 
 Both run on every pull request through GitHub Actions, along with the 3D

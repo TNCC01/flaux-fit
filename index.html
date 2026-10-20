@@ -44,6 +44,8 @@
 -->
 <div id="scroller">
 <main class="app">
+  <!-- a new release has come in (OFFLINE AND UPDATES in js/app.js) -->
+  <button class="update-bar" id="updateBar" hidden>New version ready, tap to update</button>
 
   <!-- ============== WELCOME VIEW ============== -->
   <div class="view active" id="welcomeView">
@@ -91,7 +93,9 @@
         To lose the address bar and tabs for good: tap Share, then
         <strong>Add to Home Screen</strong>, and open FIT from the icon.
         Best done before you start: the home-screen app keeps its own
-        history, favourites and program, separate from Safari's.
+        history, favourites and program, separate from Safari's. Already
+        started? In Saved &amp; ready-made, tap <strong>Copy to another
+        device</strong>, then Restore in the new app.
       </p>
     </div>
   </div>
@@ -114,6 +118,8 @@
       <div class="weight-picker" id="onboardWeights"></div>
     </div>
     <p class="picker-hint">You can change any of this later: tap Change on the home screen.</p>
+    <!-- the home-screen app starts empty, so moving over starts here (YOUR DATA in js/app.js) -->
+    <button class="link-btn gear-restore" id="btnGearRestore">Used FIT in Safari or on another device? Restore your data</button>
     <button class="build-btn" id="btnGearDone">Just bodyweight for now</button>
   </div>
 
@@ -396,17 +402,29 @@
   </div>
 </div>
 
-<!-- The first load after an update can pair this page with the last
-     release's scripts: a file slow to come in gets the offline copy instead
-     (sw.js), and the two releases don't run together. So if the scripts
-     fail while the page loads, it loads again as soon as this release's
-     offline copy takes over. js/app.js does the same for an older page. -->
+<!-- sw.js hands out one release's files together, but a page loaded
+     another way (the very first visit, or a phone still on the service
+     worker from before that) can pair this page with another release's
+     scripts, and the two don't run together. So if the scripts fail while
+     the page loads, a release waiting in the service worker (or the first
+     one, still installing) takes over at once, since there's nothing on a
+     broken page to lose, and the page loads again from it. js/app.js does
+     the same for an older page. -->
 <script>
   window.addEventListener('error', function retry() {
     window.removeEventListener('error', retry);
-    if (document.readyState !== 'complete' && navigator.serviceWorker) {
-      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
-    }
+    const sw = navigator.serviceWorker;
+    if (document.readyState === 'complete' || !sw) return;
+    sw.addEventListener('controllerchange', () => location.reload());
+    // once the page has stopped loading, so the release it came from isn't
+    // still handing it files
+    window.addEventListener('load', () => sw.register('sw.js').then(reg => {
+      const next = reg.waiting || reg.installing;
+      if (!next) return;
+      const take = () => { if (next.state === 'installed') next.postMessage('update'); };
+      take();
+      next.addEventListener('statechange', take);
+    }).catch(() => { /* no offline copy to fall back on */ }));
   });
 </script>
 <script src="js/exercises.js"></script>

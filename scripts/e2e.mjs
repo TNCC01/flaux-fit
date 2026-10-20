@@ -26,16 +26,33 @@ const TYPES = {
   '.mjs': 'application/javascript', '.svg': 'image/svg+xml',
   '.json': 'application/json', '.png': 'image/png'
 };
+// It can be slowed down (one bar of signal), made to serve the next
+// release of the app, or hand out a script from another release once (see
+// the update steps at the end).
+const serve = { delayMs: 0, next: null, breakOnce: null };
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
   const file = path.normalize(path.join(ROOT, url === '/' ? 'index.html' : url));
   if (!file.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); res.end('not found'); return; }
-    res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
-    res.end(data);
+    setTimeout(() => {
+      if (err) { res.writeHead(404); res.end('not found'); return; }
+      res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
+      if (serve.breakOnce === url) { serve.breakOnce = null; res.end(`throw new Error("${url} from another release")`); return; }
+      res.end(serve.next ? nextRelease(url, data) : data);
+    }, serve.delayMs);
   });
 });
+// The same files as a release called serve.next: sw.js with that VERSION,
+// and the page and app.js each marked with it, so a page can say which
+// release each came from.
+function nextRelease(url, data) {
+  const tag = serve.next;
+  if (url === '/sw.js') return String(data).replace(/const VERSION = '[^']+'/, `const VERSION = 'fit-${tag}'`);
+  if (url === '/' || url === '/index.html') return String(data).replace('<title>', `<meta name="fit-release" content="${tag}"><title>`);
+  if (url === '/js/app.js') return `${data}\nwindow.FIT_RELEASE = '${tag}';\n`;
+  return data;
+}
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const URL = `http://127.0.0.1:${server.address().port}/`;
 
@@ -59,7 +76,7 @@ const p = await context.newPage();
 p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 p.on('pageerror', e => errors.push(String(e)));
 
-const st = (fn) => p.evaluate(fn);
+const st = (fn, arg) => p.evaluate(fn, arg);
 // a 3D figure has drawn into this element's canvas: enough light body pixels
 // against the dark stage
 const figureDrawn = (sel) => p.waitForFunction((s) => {
@@ -331,6 +348,69 @@ try {
   assert(await st(() => state.workout.exerciseIds.join(',')) === idsB, 'favourite B rebuilt with identical movements');
   assert(await previewText() === previewB, 'preview B identical');
   ok('favourite B replays identically despite the recency weighting');
+
+  step = 'a favourite keeps its exercises when the library changes under it';
+  {
+    // An update that reorders the library changes what a seed builds, as
+    // most releases have; a favourite and a session in history must not.
+    const reorder = (keys) => st((k) => {
+      const all = { ...EXERCISES };
+      Object.keys(EXERCISES).forEach(id => { delete EXERCISES[id]; });
+      k.forEach(id => { EXERCISES[id] = all[id]; });
+    }, keys);
+    const order = await st(() => Object.keys(EXERCISES));
+    assert(await st(() => state.saved.every(s => s.frozen && s.frozen.blocks.length > 0)), 'each favourite keeps the exercises it was built with');
+    assert(await st(() => state.history.filter(h => h.generated).every(h => h.frozen && h.frozen.blocks.length > 0)), 'and so does each built session in history');
+    await reorder(order.slice().reverse());
+    const drifted = await st((seed) => {
+      const fav = state.saved.find(s => s.seed === seed);
+      return buildWorkout(fav.request, fav.seed, { recent: fav.request.recent }).exerciseIds.join(',');
+    }, seedA);
+    assert(drifted !== idsA, 'with the library reordered, the seed on its own builds something else');
+    await p.click('#btnBack'); await p.click('#pathLibrary');
+    await (await p.$$('.workout-card:has-text("☆")'))[1].click();
+    assert(await st(() => state.workout.exerciseIds.join(',')) === idsA && await previewText() === previewA,
+           'favourite A still opens with the moves it was saved with');
+    assert(await st(() => state.workout.seed) === seedA && await p.$eval('#btnSave', e => e.disabled), 'same seed, still saved');
+    await p.click('#btnShuffle');
+    assert(await st(() => state.workout.seed) !== seedA && await st(() => state.lastRequest.intervalId) === 'long', 'Shuffle still builds from its request');
+    // a session in history, opened again
+    await p.click('#btnBack'); await p.click('#pathLibrary');
+    const atA = await st((seed) => state.history.findIndex(h => h.seed === seed), seedA);
+    assert(atA >= 0, 'favourite A was started, so it is in history');
+    await (await p.$$('.history-card'))[atA].click();
+    assert(await st(() => state.workout.exerciseIds.join(',')) === idsA, 'its session in history opens with the same moves too');
+    // one saved before favourites kept their moves is built from its seed, and keeps that from then on
+    await p.click('#btnBack');
+    await st((seed) => {
+      const fav = state.saved.find(s => s.seed === seed);
+      state.saved.push({ name: 'Kept the old way', blurb: '', focus: fav.focus, seed: 777001, request: fav.request, savedOn: '1/1/2026' });
+      savePrefs();
+    }, seedA);
+    await p.click('#pathLibrary');
+    await p.click('.workout-card:has(.card-name:text-is("☆ Kept the old way"))');
+    const oldWay = await st(() => state.workout.exerciseIds.join(','));
+    assert(await st(() => state.workout.seed === 777001 && JSON.stringify(state.saved.find(s => s.seed === 777001).frozen.blocks.map(b => b.ids))
+             === JSON.stringify(state.workout.blocks.map(b => b.ids))), 'an old favourite opens from its seed and then keeps those moves');
+    await reorder(order);
+    await p.click('#btnBack'); await p.click('#pathLibrary');
+    await p.click('.workout-card:has(.card-name:text-is("☆ Kept the old way"))');
+    assert(await st(() => state.workout.exerciseIds.join(',')) === oldWay, 'and opens the same after the library changes back');
+    // a favourite naming a move that has gone is built from its seed, and says so
+    await p.click('#btnBack');
+    await st(() => { const fav = state.saved.find(s => s.seed === 777001); fav.frozen.blocks[0].ids[0] = 'noSuchMove'; savePrefs(); });
+    await p.click('#pathLibrary');
+    await p.click('.workout-card:has(.card-name:text-is("☆ Kept the old way"))');
+    assert((await p.$eval('#workoutNote', e => e.textContent)).includes('built again'), 'a favourite with a move that has gone says it was built again');
+    assert(await st(() => state.saved.find(s => s.seed === 777001).frozen.blocks.every(b => b.ids.every(id => EXERCISES[id]))), 'and keeps the new build');
+    await p.click('#btnBack');
+    await st(() => { state.saved = state.saved.filter(s => s.seed !== 777001); savePrefs(); });
+    // and on as before, from favourite B
+    await p.click('#pathLibrary');
+    await (await p.$$('.workout-card:has-text("☆")'))[0].click();
+    assert(await st(() => state.workout.exerciseIds.join(',')) === idsB, 'favourite B as it was');
+  }
+  ok('favourites and history keep the moves they were built with through a library change; old favourites rebuild from their seed once, then keep it; a move gone falls back and says so');
 
   step = 'shuffle after a favourite respects switched-off gear';
   await p.click('#btnBack'); await p.click('#pathBuild'); await toggleAllGear();
@@ -1592,16 +1672,110 @@ try {
   await tab2.close();
   ok('two tabs: each takes in the other\'s history as it saves, so neither writes over the other; a stale save from a tab on the older version is merged, not taken');
 
+  step = 'your data: a backup file, a copy for another device, and a restore that asks first';
+  {
+    await p.click('#pathLibrary');
+    const sections = await p.$$eval('#librarySections > *', els => els.map(e => e.id || e.className));
+    assert(sections[sections.length - 1] === 'yourData', 'Your data is the last thing in Saved & ready-made: ' + sections);
+    assert((await p.$eval('#yourData', e => e.textContent)).includes('home-screen app and Safari keep separate data'), 'it says why it is there');
+    // a dated file of everything
+    const [download] = await Promise.all([p.waitForEvent('download'), p.click('#btnBackup')]);
+    assert(/^FIT backup \d{4}-\d{2}-\d{2}\.json$/.test(download.suggestedFilename()), 'a dated backup file: ' + download.suggestedFilename());
+    const fileText = fs.readFileSync(await download.path(), 'utf8');
+    const backup = JSON.parse(fileText);
+    const mine = await st(() => ({ keys: PERSISTED, history: state.history.length, saved: state.saved.length,
+                                   places: state.gearSets.map(g => g.name).join('|'), summary: dataSummary(state) }));
+    assert(backup.kind === 'fit-backup' && mine.keys.every(k => k in backup.prefs) && backup.prefs.history.length === mine.history
+           && backup.prefs.saved.length === mine.saved && mine.history > 0,
+           `the file holds every setting, session and favourite: ${backup.prefs.history.length} of ${mine.history} sessions, ${backup.prefs.saved.length} of ${mine.saved} favourites`);
+    assert((await p.$eval('#yourData .data-note', e => e.textContent)).includes('downloads'), 'and says where it went');
+    // the same as text on the clipboard
+    await p.click('#btnCopyData');
+    await p.waitForFunction(() => document.querySelector('#yourData .data-note').textContent.startsWith('Copied'));
+    const copied = await st(() => navigator.clipboard.readText());
+    assert(JSON.parse(copied).prefs.history.length === mine.history, 'Copy to another device puts it all on the clipboard');
+    assert((await p.$eval('#yourData .data-note', e => e.textContent)).includes('tap Restore and paste it in'), 'and says what to do on the other device');
+    // no clipboard: a box to copy it from
+    await st(() => { window.realWrite = navigator.clipboard.writeText; navigator.clipboard.writeText = () => Promise.reject(new Error('not allowed')); });
+    await p.click('#btnCopyData');
+    await p.waitForSelector('#yourData .data-copy');
+    assert(JSON.parse(await p.$eval('#yourData .data-copy', e => e.value)).prefs.saved.length === mine.saved
+           && (await p.$eval('#yourData .data-note', e => e.textContent)).includes('Copy all the text in the box'),
+           'without a clipboard the text goes in a box to copy by hand');
+    await st(() => { navigator.clipboard.writeText = window.realWrite; });
+
+    // another device, or the iPhone's home-screen app, which starts empty
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const f = await phone.newPage();
+    f.on('pageerror', e => errors.push('restore: ' + e));
+    f.on('console', m => { if (m.type() === 'error') errors.push('restore: ' + m.text()); });
+    await f.goto(URL);
+    const view = () => f.evaluate(() => document.querySelector('.view.active').id);
+    const said = () => f.$eval('#yourData .data-note', e => e.textContent);
+    assert(await view() === 'gearView', 'a new device starts on the gear question');
+    await f.click('#btnGearRestore');
+    assert(await view() === 'libraryView' && await f.$eval('.restore-panel', e => !e.hidden), 'whose Restore link opens Saved & ready-made with Restore open');
+    await f.fill('#restoreText', 'nope');
+    await f.click('#btnRestoreText');
+    assert((await said()).includes("isn't a FIT backup") && !(await f.$('#btnRestoreYes')), 'text that is not a backup is turned away');
+    // what a message wraps round it, and entries that can't be used, are let go
+    const spoilt = JSON.parse(copied);
+    spoilt.prefs.history.push(null, { name: 'no key or time' });
+    spoilt.prefs.saved.push({ name: 'no seed' });
+    spoilt.prefs.people = 9;
+    await f.fill('#restoreText', `Here's my FIT: ${JSON.stringify(spoilt)} cheers`);
+    await f.click('#btnRestoreText');
+    const found = await f.$eval('.restore-check', e => e.textContent);
+    assert(found.includes(`This backup has ${mine.summary}, saved `) && found.includes('It replaces everything here now: no sessions'),
+           'it says what it found, and what it would replace: ' + found);
+    assert(/^\d+ sessions?, 2 favourites, \d places? \(Home[^)]*\) and Surf Fit (week \d|finished)$/.test(mine.summary),
+           'sessions, favourites, places by name and where the program is up to: ' + mine.summary);
+    await f.click('#btnRestoreNo');
+    assert(await f.evaluate(() => state.history.length === 0 && !document.querySelector('#btnRestoreYes')), 'Cancel changes nothing');
+    await f.click('#btnRestoreText');
+    await f.click('#btnRestoreYes');
+    const moved = await f.evaluate(() => ({ history: state.history.length, saved: state.saved.length, places: state.gearSets.map(g => g.name).join('|'),
+      asked: state.gearAsked, name: document.getElementById('nameA').value === state.nameA, people: state.people }));
+    assert(moved.history === mine.history && moved.saved === mine.saved && moved.places === mine.places && moved.asked && moved.name && moved.people === 1,
+           'Replace brings every session, favourite, place and setting across, checked: ' + JSON.stringify(moved));
+    assert((await said()).startsWith('Restored: ') && await f.$('#btnPutBack'), 'it says so, and offers Put it back');
+    assert(await f.$$eval('.workout-card:has-text("☆")', els => els.length) === mine.saved, 'the favourites are on the page');
+    await (await f.$$('.workout-card:has-text("☆")'))[1].click();
+    assert(await f.evaluate(() => state.workout.exerciseIds.join(',')) === idsA, 'favourite A opens on the other device with the same moves');
+    await f.click('#btnBack');
+    assert(await view() === 'welcomeView', 'and the gear question has been answered');
+    // Put it back undoes it, until the next restore
+    await f.reload();
+    await f.click('#pathLibrary');
+    await f.click('#btnPutBack');
+    assert((await f.$eval('.restore-check', e => e.textContent)).includes('Put back what was here before the restore: no sessions'), 'Put it back says what it puts back');
+    await f.click('#btnRestoreYes');
+    assert(await f.evaluate(() => state.history.length === 0 && !localStorage.getItem('fit-prefs-2-before-restore')), 'Put it back puts back what was there');
+    assert(!(await f.$('#btnPutBack')) && (await said()).startsWith('Put back: '), 'and is used up');
+    // from a file, the same way
+    await f.click('#btnRestore');
+    await f.setInputFiles('#restoreFile', { name: 'FIT backup.json', mimeType: 'application/json', buffer: Buffer.from(fileText) });
+    await f.waitForSelector('#btnRestoreYes');
+    assert((await f.$eval('.restore-check', e => e.textContent)).includes(`This backup has ${mine.summary}`), 'a chosen backup file is read the same way');
+    await f.click('#btnRestoreYes');
+    assert(await f.evaluate((n) => state.history.length === n, mine.history), 'and restored');
+    await phone.close();
+  }
+  ok('Your data: a dated backup file, the same on the clipboard (or in a box without one), and a restore by file or paste from the first-visit question that says what it found, asks, cleans what it takes, and can be put back');
+
   step = 'corrupt preferences fall back, favourites persist';
   await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     prefs.people = 7; prefs.minutes = 13; prefs.textScale = 'big'; prefs.blockedTags = 'nope';
+    prefs.history.push(null, 'junk'); prefs.saved.push({ name: 'no seed' }); prefs.filterFocus = 'nowhere'; prefs.muteAudio = 'yes';
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
   await p.goto(URL);
   assert(await st(() => state.people === 1 && state.minutes === 20 && state.textScale === 1 && Array.isArray(state.blockedTags)),
          'junk preference values fell back to defaults (one person)');
   assert(await st(() => state.saved.length === 2), 'saved favourites survived the reload');
+  assert(await st(() => state.history.every(h => h && typeof h.key === 'string') && state.filterFocus === 'all' && state.muteAudio === false),
+         'sessions and favourites that cannot be used are dropped, and an unknown focus or a switch that is not on or off goes back to its default');
   ok('corrupt preference values fall back to defaults, favourites persist');
 
   step = 'phone width';
@@ -1691,16 +1865,19 @@ try {
   ok(`aria-live phase and block, labelled text sizes, Start ${startContrast.toFixed(1)}:1 and Pause ${pauseContrast.toFixed(1)}:1; Done goes home`);
 
   step = 'opens offline after the first visit';
+  // every file sw.js lists, in a cache named for its release
+  const swSrc = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+  const swList = (name) => [...swSrc.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`))[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+  const expected = swList('SHELL').length + swList('MOVE_3D').length;
+  const cacheFor = (version) => `${version}-${swSrc.match(/const FILES_HASH = '([0-9a-f]+)'/)[1]}`;
+  const baseCache = cacheFor(swSrc.match(/const VERSION = '([^']+)'/)[1]);
   await p.goto(URL);
   await st(() => navigator.serviceWorker.ready);
-  // The worker precaches the shell and the 3D files; wait for it to fill.
-  const expected = 12 + 17;
   await p.waitForFunction(async (n) => {
     const keys = await caches.keys();
-    if (!keys.length) return false;
-    const c = await caches.open(keys[0]);
-    return (await c.keys()).length >= n;
+    return keys.length === 1 && (await (await caches.open(keys[0])).keys()).length === n;
   }, expected, { timeout: 60000 });
+  assert((await st(() => caches.keys())).join() === baseCache, `one cache, named for the release: ${baseCache}`);
   await p.reload();
   assert(await st(() => !!navigator.serviceWorker.controller), 'page is controlled by the worker');
   await context.setOffline(true);
@@ -1712,7 +1889,95 @@ try {
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
   await figureDrawn('#animA');
   await context.setOffline(false);
+  await p.click('#btnBack');
   ok(`opens, builds and shows the 3D figures offline from a ${expected}-file cache`);
+
+  step = 'on one bar of signal it opens from the offline copy at once';
+  {
+    serve.delayMs = 6000;            // every file takes six seconds to come
+    const t0 = Date.now();
+    await p.reload({ waitUntil: 'domcontentloaded' });
+    await p.waitForSelector('#todayCard .today-go', { state: 'visible' });
+    const homeMs = Date.now() - t0;
+    await p.waitForFunction(() => window.FitDeck && window.FitDeck.available);
+    const deckMs = Date.now() - t0;
+    serve.delayMs = 0;
+    // the browser's look for a new sw.js, still out on the slow network, is let finish
+    await st(() => navigator.serviceWorker.getRegistration().then(reg => reg.update()));
+    // well inside the six seconds anything from the network would take
+    assert(homeMs < 2500 && deckMs < 4000, `home in ${homeMs}ms and the 3D figures ready in ${deckMs}ms, not after the network`);
+    note(`with a 6s network: home in ${homeMs}ms, figures ready in ${deckMs}ms`);
+    ok('a slow network does not hold up opening');
+  }
+
+  step = 'a new release waits for a tap, and never runs beside the old one';
+  // the browser looks for a new sw.js each time the page loads
+  const updateShows = () => p.waitForFunction(() => getComputedStyle(document.getElementById('updateBar')).display !== 'none',
+                                              null, { timeout: 30000 });
+  {
+    // which release the page came from, and which its script did
+    const release = (pg = p) => pg.evaluate(() => [(document.querySelector('meta[name="fit-release"]') || {}).content || 'base', window.FIT_RELEASE || 'base'].join());
+    const bar = (pg = p) => pg.$eval('#updateBar', e => getComputedStyle(e).display !== 'none' && e.textContent);
+    serve.next = 'n1';
+    await p.reload();
+    assert(await release() === 'base,base', 'the next load is still the release it has');
+    await updateShows();
+    const shown = await bar();
+    assert(shown === 'New version ready, tap to update', 'once the new one is in, it says so: ' + JSON.stringify(shown));
+    assert((await st(() => caches.keys())).sort().join() === [baseCache, cacheFor('fit-n1')].sort().join(), 'each release in its own cache');
+    await p.reload();
+    assert(await release() === 'base,base', 'a reload before the tap is still the old release, page and scripts');
+    await p.waitForFunction(() => getComputedStyle(document.getElementById('updateBar')).display !== 'none');
+    await p.click('#todayCard .today-go');
+    assert(await bar() === false, 'not shown over a workout');
+    await p.click('#btnBack');
+    // another tab, mid-workout when the tap comes
+    const tab = await context.newPage();
+    tab.on('pageerror', e => errors.push('update tab: ' + e));
+    tab.on('console', m => { if (m.type() === 'error') errors.push('update tab: ' + m.text()); });
+    await tab.goto(URL);
+    await tab.click('#todayCard .today-go'); await tab.click('#btnStart');
+    await Promise.all([p.waitForEvent('load'), p.click('#updateBar')]);
+    await p.waitForFunction(() => window.FIT_RELEASE === 'n1');
+    assert(await release() === 'n1,n1', 'the tap loads the new release, page and scripts');
+    assert(await bar() === false, 'and the line goes');
+    assert((await st(() => caches.keys())).join() === cacheFor('fit-n1'), 'and the old copy is gone');
+    assert(await release(tab) === 'base,base' && await tab.evaluate(() => state.view === 'workout' && state.running),
+           "the other tab's workout carries on, untouched");
+    await Promise.all([tab.waitForEvent('load'), leaveStarted(tab)]);
+    await tab.waitForFunction(() => window.FIT_RELEASE === 'n1');
+    assert(await release(tab) === 'n1,n1', 'and loads the new release once it leaves the workout');
+    await tab.close();
+    await context.setOffline(true);
+    await p.reload();
+    assert(await release() === 'n1,n1' && await p.$('#todayCard .today-go'), 'the new release opens offline');
+    await context.setOffline(false);
+    serve.next = null;
+    ok('a new release installs in the background, says "New version ready", and loads whole on the tap; never over a workout, never a page from one release with scripts from another');
+  }
+
+  step = 'a first visit whose scripts do not match loads again from the offline copy';
+  {
+    // the HTTP cache, say, handing over one script from the last release
+    const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const f = await fresh.newPage();
+    const broken = [];
+    f.on('pageerror', e => broken.push(String(e)));
+    f.on('console', m => { if (m.type() === 'error') broken.push(m.text()); });
+    serve.breakOnce = '/js/generator.js';
+    await f.goto(URL);
+    // the offline copy installs, takes over, and the page loads again from it
+    await f.waitForFunction(() => !!navigator.serviceWorker.controller && document.getElementById('onboardGear').children.length > 0,
+                            null, { timeout: 30000 });
+    assert(broken.some(e => e.includes('from another release')), 'the first load failed as it should: ' + broken.join(' | '));
+    const failedLoads = broken.length;
+    await f.click('#btnGearDone');
+    await f.click('#todayCard .today-go');
+    assert(await f.evaluate(() => document.querySelector('.view.active').id) === 'workoutView' && broken.length === failedLoads,
+           'and works, with nothing more going wrong: ' + broken.slice(failedLoads).join(' | '));
+    await fresh.close();
+    ok('a first visit whose scripts fail loads again, once, from the offline copy as it takes over');
+  }
 
   if (errors.length) {
     console.log('\nCONSOLE ERRORS:'); errors.forEach(e => console.log('  ' + e));

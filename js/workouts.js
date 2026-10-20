@@ -151,14 +151,16 @@ function describeEx(id, ctx) {
 
 // ---------------------------------------------------------------------
 // BLOCK HELPERS
-// Each returns { name, ids, duo(round, ctx), solo(round, ctx) }.
+// Each returns { name, ids, shape, make, duo(round, ctx), solo(round, ctx) }.
+// `make` says which helper built it, so a saved workout can build the same
+// block again (see FROZEN WORKOUTS).
 // ---------------------------------------------------------------------
 
 // Both people do the same exercise, only safe when it needs no
 // single-instance gear, which the self-check enforces.
 function blockSame(name, exId) {
   return {
-    name, ids: [exId], shape: 'same',
+    name, ids: [exId], shape: 'same', make: 'same',
     duo: (r, ctx) => { const ex = describeEx(exId, ctx); return { a: ex, b: ex }; },
     solo: (r, ctx) => describeEx(exId, ctx)
   };
@@ -168,7 +170,7 @@ function blockSame(name, exId) {
 // them round by round.
 function blockAlt(name, idA, idB) {
   return {
-    name, ids: [idA, idB], shape: 'alt',
+    name, ids: [idA, idB], shape: 'alt', make: 'alt',
     duo: (r, ctx) => {
       const A = describeEx(idA, ctx), B = describeEx(idB, ctx);
       return (r % 2 === 1) ? { a: A, b: B } : { a: B, b: A };
@@ -182,7 +184,7 @@ function blockAlt(name, idA, idB) {
 // single-instance item.
 function blockCycle(name, ids) {
   return {
-    name, ids, shape: 'cycle',
+    name, ids, shape: 'cycle', make: 'cycle',
     duo: (r, ctx) => ({
       a: describeEx(ids[(r - 1) % ids.length], ctx),
       b: describeEx(ids[r % ids.length], ctx)
@@ -198,7 +200,7 @@ const pastHalfway = (r, ctx) => r > Math.ceil(((ctx && ctx.rounds) || 8) / 2);
 // One movement at two weights, swapping between the pair at the halfway round.
 function blockSwap(name, heavyId, lightId) {
   return {
-    name, ids: [heavyId, lightId], shape: 'swap',
+    name, ids: [heavyId, lightId], shape: 'swap', make: 'swap',
     duo: (r, ctx) => {
       const h = describeEx(heavyId, ctx), l = describeEx(lightId, ctx);
       return pastHalfway(r, ctx) ? { a: l, b: h } : { a: h, b: l };
@@ -216,7 +218,7 @@ function blockSwapAlternating(name, heavyId, lightId) {
   const tag = (ex, r) => ex.adapted ? ex
     : { ...ex, cue: ex.cue ? `${arm(r)} · ${ex.cue}` : arm(r) };
   return {
-    name, ids: [heavyId, lightId], shape: 'swap',
+    name, ids: [heavyId, lightId], shape: 'swap', make: 'swapAlt',
     duo: (r, ctx) => {
       const h = tag(describeEx(heavyId, ctx), r), l = tag(describeEx(lightId, ctx), r);
       return pastHalfway(r, ctx) ? { a: l, b: h } : { a: h, b: l };
@@ -279,6 +281,88 @@ function sectionInterval(sec) {
 }
 const sectionSeconds = (sec) =>
   sec.count * blockSeconds(sectionInterval(sec)) + Math.max(0, sec.count - 1) * (sec.blockRestSec || 0);
+
+// ---------------------------------------------------------------------
+// FROZEN WORKOUTS
+// A built workout comes from a seed, and the same seed builds something
+// else once the exercise library or the generator changes. So a favourite
+// (and a history entry, and a session saved part-way) keeps what it was
+// built as: each block's exercise ids and the helper that hands them out
+// (which also says who does what with two people), and the plan around
+// them. Built again from that, it's the same workout after any update.
+// The gear still adapts as the cards are drawn (describeEx), as it does
+// for a classic.
+// ---------------------------------------------------------------------
+const BLOCK_MAKERS = {
+  same:    { ids: 1, build: (name, ids) => blockSame(name, ids[0]) },
+  alt:     { ids: 2, build: (name, ids) => blockAlt(name, ids[0], ids[1]) },
+  cycle:   { ids: 0, build: (name, ids) => blockCycle(name, ids.slice()) },
+  swap:    { ids: 2, build: (name, ids) => blockSwap(name, ids[0], ids[1]) },
+  swapAlt: { ids: 2, build: (name, ids) => blockSwapAlternating(name, ids[0], ids[1]) }
+};
+// Plain data, so it goes into localStorage as it is.
+function freezeWorkout(w) {
+  const copy = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
+  return {
+    v: 1, name: w.name, tagline: w.tagline, blurb: w.blurb, focus: w.focus,
+    intervalId: w.intervalId, mix: copy(w.mix), repScale: w.repScale, sections: copy(w.sections),
+    changeoverSec: w.changeoverSec, warmupSec: w.warmupSec, cooldownSec: w.cooldownSec,
+    blockRestSec: w.blockRestSec, notes: copy(w.notes || []), builtWith: copy(w.builtWith),
+    blocks: w.blocks.map(b => ({ make: b.make, name: b.name, ids: b.ids.slice() }))
+  };
+}
+// The workout a frozen copy describes, with the seed and request it was
+// built from (for its history key, Shuffle and Share), or null when any of
+// it is the wrong shape or one of its exercises is no longer in the
+// library. Null means build it again from the seed instead.
+function thawWorkout(f, seed, request) {
+  const plain = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+  const secs = (x) => typeof x === 'number' && Number.isFinite(x) && x >= 0;
+  const text = (x) => (typeof x === 'string' ? x : '');
+  if (!plain(f) || f.v !== 1 || !Array.isArray(f.blocks) || !f.blocks.length || f.blocks.length > 30) return null;
+  if (!(Number.isInteger(seed) && seed > 0) || !plain(request)) return null;
+  const blocks = [];
+  for (const b of f.blocks) {
+    const maker = plain(b) && Object.prototype.hasOwnProperty.call(BLOCK_MAKERS, b.make) && BLOCK_MAKERS[b.make];
+    if (!maker || typeof b.name !== 'string' || !Array.isArray(b.ids)) return null;
+    if (maker.ids ? b.ids.length !== maker.ids : b.ids.length < 2 || b.ids.length > 8) return null;
+    if (!b.ids.every(id => typeof id === 'string' && Object.prototype.hasOwnProperty.call(EXERCISES, id))) return null;
+    blocks.push(maker.build(b.name, b.ids));
+  }
+  if (![f.warmupSec, f.cooldownSec, f.blockRestSec].every(secs)) return null;
+  if (f.repScale !== undefined && !(typeof f.repScale === 'number' && f.repScale > 0)) return null;
+  const w = {
+    id: `gen-${seed}`, generated: true, format: 'tabata',
+    name: text(f.name) || 'Saved workout', tagline: text(f.tagline), blurb: text(f.blurb),
+    focus: typeof f.focus === 'string' && f.focus ? f.focus : 'whole-body',
+    intervalId: f.intervalId, repScale: f.repScale,
+    warmupSec: f.warmupSec, cooldownSec: f.cooldownSec, blockRestSec: f.blockRestSec,
+    blocks, notes: Array.isArray(f.notes) ? f.notes.filter(x => typeof x === 'string') : [],
+    seed, request, exerciseIds: [...new Set(blocks.flatMap(b => b.ids))]
+  };
+  if (f.intervalId === 'mix') {
+    // the sections have to cover the blocks, end to end
+    if (!Array.isArray(f.sections) || !Array.isArray(f.mix) || !secs(f.changeoverSec)) return null;
+    let at = 0;
+    for (const s of f.sections) {
+      if (!plain(s) || !INTERVALS[s.intervalId] || s.start !== at || !(Number.isInteger(s.count) && s.count > 0)
+          || !secs(s.minutes) || !secs(s.blockRestSec)) return null;
+      at += s.count;
+    }
+    if (at !== blocks.length) return null;
+    w.mix = f.mix.filter(id => INTERVALS[id]);
+    w.sections = f.sections.map(s => ({ intervalId: s.intervalId, start: s.start, count: s.count,
+                                        minutes: s.minutes, blockRestSec: s.blockRestSec }));
+    w.changeoverSec = f.changeoverSec;
+  } else if (!INTERVALS[f.intervalId]) {
+    return null;
+  }
+  const bw = f.builtWith;
+  if (plain(bw) && plain(bw.equipment) && Array.isArray(bw.excluded)) {
+    w.builtWith = { equipment: { ...bw.equipment }, excluded: bw.excluded.filter(id => typeof id === 'string') };
+  }
+  return w;
+}
 
 const blockCleanPress = () =>
   blockSwapAlternating('KB clean & press (alt arms)', 'kbCleanPress15', 'kbCleanPress10');

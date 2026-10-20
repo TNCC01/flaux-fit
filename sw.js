@@ -1,24 +1,34 @@
 /*
   © 2026 Wayne Cavanagh / Flaux. All rights reserved.
 
-  SERVICE WORKER: the app opens without a network.
+  SERVICE WORKER: the app opens straight away, signal or not.
 
-  On install it caches the app, including the 3D figures and the engine
-  that draws them (about 1.2 MB, 300 KB over the wire, once, on the first
-  visit). After that every file is network-first with a four-second
-  timeout and the cache as the fallback, so online you always run the
-  current version and a flaky connection falls back rather than hanging.
+  On install it fetches every file below into a cache of its own (the app,
+  the 3D figures and the engine that draws them: about 1.2 MB, 300 KB over
+  the wire), all or nothing: one file failing fails the install, and the
+  browser tries again later. From then on every file comes from that
+  cache, so the app opens at once on one bar of signal or none, and the
+  files it runs on are always one release's, never a mix of two.
 
-  Bump VERSION with every release that changes the app's files. The cache
-  is refreshed one file at a time, so without a bump a slow load can leave
-  it holding the new index.html beside the old app.js, and the two don't
-  work together, offline or on the next slow load. A new VERSION installs
-  the whole app into a fresh cache at once and deletes the old one. When
-  a 3D file is added, list it in MOVE_3D (scripts/selfcheck.mjs checks the
-  list is complete).
+  Updates come in the background. Each time the app opens (and when it
+  comes back to the front) the browser checks this file; a changed one
+  installs the new release into a new cache beside the old, and waits.
+  The app then shows "New version ready, tap to update" (not during a
+  workout). The tap tells the waiting worker to take over, it deletes the
+  old cache, and the page reloads into the new release. Untapped, it takes
+  over the next time FIT is closed and opened again.
+
+  So a release that changes any file below has to change this file too,
+  or it never arrives: bump VERSION, and set FILES_HASH to what
+  scripts/selfcheck.mjs asks for (it fails until the two match, and
+  prints the new value). The hash is part of the cache's name, so changed
+  files can never be installed over the copy that's running. When a file
+  is added, list it below (the self-check fails on a file the pages load,
+  or a 3D file, that isn't listed).
 */
-const VERSION = 'fit-v7';
-const NETWORK_TIMEOUT_MS = 4000;
+const VERSION = 'fit-v8';
+const FILES_HASH = 'b0ab82cf7dc8';
+const CACHE = `${VERSION}-${FILES_HASH}`;
 
 const SHELL = [
   '/', '/index.html', '/css/app.css',
@@ -35,19 +45,23 @@ const MOVE_3D = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(VERSION);
-    // Best effort, file by file: one missing file must not block the rest,
-    // and the app runs without the cache anyway.
-    await Promise.all([...SHELL, ...MOVE_3D].map(url => cache.add(url).catch(() => {})));
-    await self.skipWaiting();
-  })());
+  // Past the browser's own cache, so a file it kept from the last release
+  // can't end up in this one. No skipWaiting: the first install has
+  // nothing to wait for, and an update waits for the tap.
+  event.waitUntil(caches.open(CACHE).then(cache =>
+    cache.addAll([...SHELL, ...MOVE_3D].map(url => new Request(url, { cache: 'reload' })))));
+});
+
+// The tap on "New version ready" (or a page whose scripts failed, which has
+// nothing to lose; see index.html).
+self.addEventListener('message', (event) => {
+  if (event.data === 'update') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
-    await Promise.all(names.filter(n => n !== VERSION).map(n => caches.delete(n)));
+    await Promise.all(names.filter(n => n !== CACHE).map(n => caches.delete(n)));
     await self.clients.claim();
   })());
 });
@@ -57,32 +71,21 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  event.respondWith(networkFirst(req, event));
+  event.respondWith(fromCache(req));
 });
 
-function withTimeout(promise, ms) {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('timeout')), ms);
-    promise.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
-  });
-}
-
-async function networkFirst(req, event) {
-  const cache = await caches.open(VERSION);
+// This release's copy, or the network for anything it doesn't hold. What
+// comes from the network isn't kept: only an install fills the cache, so
+// it only ever holds one release.
+async function fromCache(req) {
+  const cache = await caches.open(CACHE);
   // A navigation to the app is the one page, whatever the query string or
   // hash; other pages (the 3D viewer) are cached under their own path.
   const path = new URL(req.url).pathname;
   const key = req.mode === 'navigate' ? (path === '/' || path === '/index.html' ? '/' : path) : req;
-  const net = fetch(req);
-  // Cached whenever it arrives, even after the timeout has handed over the
-  // cached copy, so the cache never keeps a file older than the rest.
-  event.waitUntil(net.then(fresh => (fresh && fresh.ok ? cache.put(key, fresh.clone()) : null)).catch(() => {}));
-  try {
-    return await withTimeout(net, NETWORK_TIMEOUT_MS);
-  } catch (e) {
-    const cached = await cache.match(key, { ignoreSearch: true });
-    if (cached) return cached;
-    // Nothing cached: let the slow network request run its course.
-    return net;
-  }
+  const hit = await cache.match(key, { ignoreSearch: true });
+  if (!hit) return fetch(req);
+  // a page can't be answered with a redirect it didn't ask for, so a file
+  // the host redirected on install goes out as a plain copy
+  return hit.redirected ? new Response(hit.body, { status: hit.status, statusText: hit.statusText, headers: hit.headers }) : hit;
 }

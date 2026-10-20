@@ -10,6 +10,7 @@
 */
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -29,7 +30,8 @@ const A = loadApp();
 const {
   EXERCISES, EQUIPMENT, REGIONS, EXCLUSION_TAGS, SINGLE_INSTANCE, STRETCHES,
   INTERVALS, CLASSICS, STRETCH_ROUTINES, DEFAULT_EQUIPMENT,
-  describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits,
+  describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits, sectionInterval,
+  freezeWorkout, thawWorkout, BLOCK_MAKERS,
   planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL
 } = A;
 
@@ -91,6 +93,45 @@ const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const need = ['move.html', 'vendor/three/three.min.js',
   ...['js/move', 'js/moves'].flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith('.js')).map(f => `${d}/${f}`))];
 need.forEach(f => { if (!sw.includes(`'/${f}'`)) fail(`sw.js does not precache /${f}`); });
+
+// The app runs from the service worker's copy of one release, and a new
+// release only arrives when sw.js itself changes. So every file it lists
+// has to exist, every file the pages load has to be on the list, and the
+// fingerprint of them all in sw.js has to be current: change a file and
+// this fails until VERSION is bumped and FILES_HASH updated, so a release
+// can never go out that phones never pick up.
+const swList = (name) => [...((sw.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`)) || [])[1] || '').matchAll(/'([^']+)'/g)].map(m => m[1]);
+const precached = [...swList('SHELL'), ...swList('MOVE_3D')];
+const fileOf = (url) => (url === '/' ? 'index.html' : url.slice(1));
+precached.forEach(u => { if (!fs.existsSync(path.join(ROOT, fileOf(u)))) fail(`sw.js precaches ${u}, which doesn't exist`); });
+['index.html', 'move.html'].forEach(page => {
+  const html = fs.readFileSync(path.join(ROOT, page), 'utf8');
+  [...html.matchAll(/(?:src|href)="([^"#?:]+)"/g)].map(m => '/' + m[1].replace(/^\//, ''))
+    .forEach(u => { if (!precached.includes(u)) fail(`${page} loads ${u}, which sw.js doesn't precache, so it's missing offline`); });
+});
+const swVersion = (sw.match(/const VERSION = '([^']+)'/) || [])[1];
+const swHash = (sw.match(/const FILES_HASH = '([0-9a-f]+)'/) || [])[1];
+const filesHash = (() => {
+  const h = crypto.createHash('sha256');
+  [...new Set(precached.map(fileOf))].sort().forEach(f => {
+    const raw = fs.readFileSync(path.join(ROOT, f));
+    // text with Windows line ends is the same file
+    h.update(`${f}\n`).update(/\.(png|ico)$/.test(f) ? raw : Buffer.from(raw.toString('utf8').replace(/\r\n/g, '\n')));
+  });
+  return h.digest('hex').slice(0, 12);
+})();
+if (!swVersion || !swHash) fail('sw.js: VERSION or FILES_HASH is missing');
+else if (swHash !== filesHash) fail(`app files changed: bump VERSION in sw.js (it says ${swVersion}) and update the hash to ${filesHash} (FILES_HASH)`);
+// and against the last release, where git knows it: the files can't
+// change under the same VERSION
+try {
+  const main = execFileSync('git', ['show', 'origin/main:sw.js'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const mainVersion = (main.match(/const VERSION = '([^']+)'/) || [])[1];
+  const mainHash = (main.match(/const FILES_HASH = '([0-9a-f]+)'/) || [])[1];
+  if (mainHash && mainVersion === swVersion && mainHash !== filesHash) {
+    fail(`app files changed since origin/main but VERSION is still ${swVersion}: bump VERSION in sw.js`);
+  }
+} catch (e) { /* no git or no origin/main here: the hash check above still holds */ }
 
 // A shared link previews as FIT in Messages or WhatsApp, not a bare
 // address: a title, a line on what it is, and the app icon at a full
@@ -642,6 +683,137 @@ if (worstOverlap > 0.5) {
   });
 }
 
+// ---------------------------------- 13. favourites never change
+// A favourite (and a history entry, and a session saved part-way) keeps
+// the exercises it was built with (FROZEN WORKOUTS in js/workouts.js), so
+// a change to the library or the generator can't change it. Every style
+// has to come back from its frozen copy, through JSON, exactly as built:
+// the same moves for each person in every round, the same laps, the same
+// bookends. Then a frozen favourite checked in here has to keep running
+// the same rounds whatever the generator does next, and anything that's
+// the wrong shape, or names a move that's gone, has to be refused so the
+// app builds it from its seed instead.
+// Every round of a workout as the timer hands it out: who does what, at
+// what load and target, and for a single-arm lift which arm.
+function expandIds(w, people) {
+  const duo = people === 2;
+  const arm = (ex) => (/^Left arm/.test(ex.cue) ? 'L' : /^Right arm/.test(ex.cue) ? 'R' : '');
+  const one = (ex) => (ex ? `${ex.id}${arm(ex)}${ex.reps ? `×${ex.reps}` : ''}` : '-');
+  const secs = w.sections || [{ intervalId: w.intervalId, start: 0, count: w.blocks.length, minutes: 0, blockRestSec: w.blockRestSec }];
+  const out = [`bookends ${w.warmupSec}/${w.cooldownSec}/${w.blockRestSec}/${w.changeoverSec || 0}`];
+  secs.forEach(sec => {
+    const iv = sectionInterval(sec);
+    const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
+                  hasEquip: () => true, repScale: w.repScale };
+    w.blocks.slice(sec.start, sec.start + sec.count).forEach((block, i) => {
+      if (iv.lap) {
+        const c = amrapCircuits(block, ctx, duo);
+        out.push(`${sec.start + i} lap ${c.a.map(one).join(',')} | ${(c.b || []).map(one).join(',')}`);
+        return;
+      }
+      for (let r = 1; r <= iv.rounds; r++) {
+        const x = duo ? block.duo(r, ctx) : { a: block.solo(r, ctx), b: null };
+        out.push(`${sec.start + i}.${r} ${one(x.a)} / ${one(x.b)}`);
+      }
+    });
+  });
+  return out;
+}
+let frozenChecked = 0;
+{
+  const styles = [...Object.keys(INTERVALS).map(id => [id]), ['mix', ['emom', 'short', 'amrap']], ['mix', ['long', 'fortime']]];
+  for (const [intervalId, mix] of styles) {
+    for (const seed of [11, 4242, 7919, 31337]) {
+      for (const goal of [undefined, 'surf']) {
+        const w = generateWorkout({
+          minutes: 30, people: 2, intervalId, mix, goal, regions: REGION_IDS, equipment: ALL_EQUIP,
+          excluded: [], blockedTags: [], seed, recent: ids.slice(0, 20)
+        });
+        if (w.error) continue;
+        const label = `seed ${seed} ${intervalId}${mix ? ` ${mix.join(',')}` : ''}${goal ? ' surf' : ''}`;
+        const back = thawWorkout(JSON.parse(JSON.stringify(freezeWorkout(w))), w.seed, w.request);
+        if (!back) { fail(`frozen ${label}: did not come back from its frozen copy`); continue; }
+        frozenChecked++;
+        [1, 2].forEach(people => {
+          if (JSON.stringify(expandIds(back, people)) !== JSON.stringify(expandIds(w, people))) {
+            fail(`frozen ${label}: runs differently from the workout it froze, for ${people}`);
+          }
+        });
+        ['name', 'tagline', 'blurb', 'focus', 'intervalId', 'repScale', 'seed', 'id'].forEach(k => {
+          if (back[k] !== w[k]) fail(`frozen ${label}: ${k} came back as ${back[k]}, was ${w[k]}`);
+        });
+        if (back.exerciseIds.join() !== w.exerciseIds.join()) fail(`frozen ${label}: different exercise list`);
+        if (!back.generated || back.request !== w.request) fail(`frozen ${label}: lost its generated flag or request`);
+      }
+    }
+  }
+}
+{
+  // A favourite as saved: one block from each block helper, short bursts
+  // for two people. If this fails, a change to the block helpers (or to the
+  // moves below) would quietly change every favourite already saved.
+  const GOLDEN = {
+    v: 1, name: 'Full Body · 20 min', tagline: 'Sharp bursts', blurb: '5 blocks built for full body.', focus: 'whole-body',
+    intervalId: 'short', warmupSec: 180, cooldownSec: 150, blockRestSec: 45, notes: [],
+    builtWith: { equipment: { kb15: true, kb10: true }, excluded: [] },
+    blocks: [
+      { make: 'swap', name: 'Goblet squats', ids: ['gobletSquat15', 'gobletSquat10'] },
+      { make: 'cycle', name: 'Core mix', ids: ['crunch', 'flutterKicks', 'reverseCrunch', 'tuckUp'] },
+      { make: 'alt', name: 'Push-ups & Superman YTW', ids: ['pushup', 'supermanYtw'] },
+      { make: 'same', name: 'Burpees', ids: ['burpee'] },
+      { make: 'swapAlt', name: 'KB clean & press (alt arms)', ids: ['kbCleanPress15', 'kbCleanPress10'] }
+    ]
+  };
+  const GOLDEN_ROUNDS = [
+    'bookends 180/150/45/0',
+    ...[1, 2, 3, 4].map(r => `0.${r} gobletSquat15 / gobletSquat10`), ...[5, 6, 7, 8].map(r => `0.${r} gobletSquat10 / gobletSquat15`),
+    '1.1 crunch / flutterKicks', '1.2 flutterKicks / reverseCrunch', '1.3 reverseCrunch / tuckUp', '1.4 tuckUp / crunch',
+    '1.5 crunch / flutterKicks', '1.6 flutterKicks / reverseCrunch', '1.7 reverseCrunch / tuckUp', '1.8 tuckUp / crunch',
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map(r => (r % 2 ? `2.${r} pushup / supermanYtw` : `2.${r} supermanYtw / pushup`)),
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map(r => `3.${r} burpee / burpee`),
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map(r => {
+      const s = r % 2 ? 'L' : 'R';
+      return r <= 4 ? `4.${r} kbCleanPress15${s} / kbCleanPress10${s}` : `4.${r} kbCleanPress10${s} / kbCleanPress15${s}`;
+    })
+  ];
+  const request = { minutes: 20, people: 2, intervalId: 'short', regions: REGION_IDS, blockedTags: [], recent: [] };
+  const gold = thawWorkout(JSON.parse(JSON.stringify(GOLDEN)), 424242, request);
+  const gone = GOLDEN.blocks.flatMap(b => b.ids).filter(id => !EXERCISES[id]);
+  if (gone.length) fail(`golden favourite: ${gone.join(', ')} left the library, so favourites with them are built again from their seed; pick other moves for the golden`);
+  else if (!gold) fail('golden favourite: no longer comes back from its frozen copy');
+  else {
+    const got = expandIds(gold, 2);
+    const bad = got.findIndex((x, i) => x !== GOLDEN_ROUNDS[i]);
+    if (got.length !== GOLDEN_ROUNDS.length || bad >= 0) {
+      fail(`golden favourite: round ${bad} runs "${got[bad]}", it was saved as "${GOLDEN_ROUNDS[bad]}"`);
+    }
+    if (gold.builtWith.equipment.kb15 !== true || gold.id !== 'gen-424242' || gold.exerciseIds.length !== 11) {
+      fail('golden favourite: lost its gear, id or exercise list');
+    }
+  }
+  // the wrong shape, or a move that's gone: built from the seed instead
+  const broken = (f) => thawWorkout(f, 424242, request);
+  const copy = () => JSON.parse(JSON.stringify(GOLDEN));
+  const cases = {
+    'a move no longer in the library': (f) => { f.blocks[1].ids[2] = 'noSuchMove'; },
+    'a block helper that does not exist': (f) => { f.blocks[0].make = 'toString'; },
+    'a swap with three moves': (f) => { f.blocks[0].ids.push('crunch'); },
+    'an unknown style': (f) => { f.intervalId = 'tabata9'; },
+    'no blocks': (f) => { f.blocks = []; },
+    'a mix whose sections miss a block': (f) => { f.intervalId = 'mix'; f.mix = ['short', 'long']; f.changeoverSec = 75;
+      f.sections = [{ intervalId: 'short', start: 0, count: 2, minutes: 0, blockRestSec: 30 }, { intervalId: 'long', start: 2, count: 2, minutes: 0, blockRestSec: 30 }]; },
+    'a warm-up that is not a number': (f) => { f.warmupSec = '180'; },
+    'another version': (f) => { f.v = 2; }
+  };
+  Object.entries(cases).forEach(([what, spoil]) => {
+    const f = copy();
+    spoil(f);
+    if (broken(f) !== null) fail(`a frozen favourite with ${what} should be refused, so it's built from its seed`);
+  });
+  if (thawWorkout(copy(), 0, request) !== null || thawWorkout(copy(), 424242, null) !== null) fail('a frozen favourite needs its seed and request');
+  if (Object.keys(BLOCK_MAKERS).join() !== 'same,alt,cycle,swap,swapAlt') fail('BLOCK_MAKERS should cover every block helper');
+}
+
 // ------------------------------------------------------------- report
 const reused = ids.filter(id => EXERCISES[id].equipment.length === 0).length;
 console.log(`exercises          ${ids.length} (${reused} bodyweight)`);
@@ -653,6 +825,7 @@ console.log(`programs           ${programDays} program-day builds, every day at 
 console.log(`export script      ${exported} exports, every style, lengths match the timer`);
 console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused, ${exact} to the second`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
+console.log(`frozen favourites  ${frozenChecked} built and frozen, the same run after thawing; the golden one unchanged`);
 if (warnings.length) {
   console.log(`\n${warnings.length} warning(s):`);
   warnings.forEach(w => console.log(`  - ${w}`));
