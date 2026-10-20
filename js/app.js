@@ -64,8 +64,9 @@ const state = {
   remainingInPhase: 0,
   elapsedTotal: 0,
   running: false,
-  // Start was pressed on this workout (set in startTimer): only then does
-  // finishing count it as done, and leaving it take two taps
+  // Start was pressed on this workout (set in startTimer, cleared by a
+  // reset): only then does finishing count it as done, and leaving it take
+  // two taps
   started: false,
   elapsedAtResume: 0,
   runStartWall: 0,
@@ -74,13 +75,14 @@ const state = {
   wakeLock: null,
   excludeSearch: '',
   // "Something else today" on the home card: the day it was tapped, so the
-  // program session comes back tomorrow (see renderToday; not saved)
+  // program session comes back tomorrow (see renderToday). Saved, so a
+  // reload the same day keeps it.
   todayOther: null
 };
 
 const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'gearSets', 'gearSetId',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
-  'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked'];
+  'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked', 'todayOther'];
 
 function loadPrefs() {
   try {
@@ -122,6 +124,7 @@ function loadPrefs() {
     state.beepOnSilent = state.beepOnSilent !== false;
     // stored prefs from before the gear question means it's not a first visit
     state.gearAsked = p.gearAsked !== false;
+    if (state.todayOther !== dayKey(Date.now())) state.todayOther = null;   // only lasts the day
   } catch (e) { /* corrupt store: fall back to defaults */ }
 }
 function savePrefs() {
@@ -265,7 +268,7 @@ const els = {
   onboardPeople: $('onboardPeople'), onboardWeights: $('onboardWeights'), gearNote: $('gearNote'),
   btnMoreOptions: $('btnMoreOptions'), moreOptions: $('moreOptions'), moreSummary: $('moreSummary'),
   scroller: $('scroller'),
-  welcomeNote: $('welcomeNote'),
+  welcomeNote: $('welcomeNote'), welcomeSub: $('welcomeSub'),
   btnFullscreen: $('btnFullscreen'), installHint: $('installHint'),
 
   btnSetupBack: $('btnSetupBack'), setupTitle: $('setupTitle'),
@@ -418,14 +421,17 @@ function buildSequence(workout, people) {
 // 'playback' (the AudioSession API, iOS 16.4 and later) moves it onto the
 // media channel with videos and music, which the switch leaves alone. The
 // catch: playback takes over from other apps, so Spotify pauses while FIT
-// has sound, hence the setting. Only Safari has navigator.audioSession,
-// so desktop and Android are untouched. The older trick of looping a
-// silent <audio> element is left out: it puts a player on the lock screen
-// and later Safaris broke it.
+// has sound, hence the setting, and FIT gives the sound back when you
+// leave the workout. Safari on a Mac has navigator.audioSession too but no
+// silent switch, so it's left to touch screens (an iPad asking for the
+// desktop site still has touch points); desktop and Android are untouched.
+// The older trick of looping a silent <audio> element is left out: it puts
+// a player on the lock screen and later Safaris broke it.
 // =====================================================================
 let audioCtx = null;
+const CAN_SILENT = 'audioSession' in navigator && navigator.maxTouchPoints > 0;
 function applyAudioSession() {
-  if (!('audioSession' in navigator)) return;
+  if (!CAN_SILENT) return;
   const want = state.beepOnSilent && !state.muteAudio ? 'playback' : 'auto';
   try {
     if (navigator.audioSession.type !== want) navigator.audioSession.type = want;
@@ -441,6 +447,38 @@ function ensureAudio() {
     if (!audioCtx || audioCtx.state === 'closed') audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state !== 'running') Promise.resolve(audioCtx.resume()).catch(() => {});
   } catch (e) { /* no Web Audio: the timer runs silent */ }
+}
+// iOS can also leave the context saying 'running' with no sound: after a
+// call, after another app's sound, or when the home-screen app comes back
+// from the background. So once the page has been hidden, a return to a
+// running workout suspends and resumes it, and the first tap after that
+// (or the Start that sets it going) swaps in a new context, since a tap
+// is always allowed to start sound.
+let audioStale = false;
+function rearmAudio() {
+  const ctx = audioCtx;
+  if (!ctx || ctx.state === 'closed') return ensureAudio();
+  applyAudioSession();
+  try { Promise.resolve(ctx.suspend()).then(() => ctx.resume()).catch(() => {}); } catch (e) { /* see beep() */ }
+}
+function freshAudio() {
+  audioStale = false;
+  if (audioCtx) {
+    const old = audioCtx;
+    audioCtx = null;
+    try { Promise.resolve(old.close()).catch(() => {}); } catch (e) { /* already gone */ }
+  }
+  ensureAudio();
+}
+// Out of the workout, FIT lets go: the session back to 'auto' so your
+// music can carry on, and the context suspended so nothing of FIT's keeps
+// running in the background. The next Start takes it again.
+function releaseAudio() {
+  if (!audioCtx) return;
+  if (CAN_SILENT) {
+    try { if (navigator.audioSession.type !== 'auto') navigator.audioSession.type = 'auto'; } catch (e) { /* see applyAudioSession() */ }
+  }
+  try { Promise.resolve(audioCtx.suspend()).catch(() => {}); } catch (e) { /* see beep() */ }
 }
 function beep(freq, duration, volume = 0.4) {
   if (state.muteAudio) return;
@@ -531,6 +569,7 @@ function setView(v) {
   state.view = v;
   ['welcome', 'gear', 'setup', 'library', 'program', 'workout'].forEach(name => {
     els[name + 'View'].classList.toggle('active', v === name);
+    document.body.classList.toggle('view-' + name, v === name);   // for the scroll fade (css)
   });
   els.scroller.scrollTop = 0;
   queueScrollHint();
@@ -596,13 +635,15 @@ function renderToday() {
   renderProgramPath(prog, ps);
   const waiting = ps && !ps.finished && !ps.doneToday;
   const today = dayKey(Date.now());
+  // what FIT is, until you know: a session done or a program started
+  els.welcomeSub.hidden = state.history.length > 0 || !!ps;
 
   if (waiting && state.todayOther !== today) {
     fillProgramDay(card, prog, ps.st, ps.day, {
       tagline: `${prog.name} · Week ${ps.day.week}, Day ${ps.n + 1}`,
       rerender: renderToday, note: els.welcomeNote
     });
-    card.appendChild(linkButton('Something else today', () => { state.todayOther = today; renderToday(); }));
+    card.appendChild(linkButton('Something else today', () => { state.todayOther = today; savePrefs(); renderToday(); }));
     return;
   }
 
@@ -610,7 +651,7 @@ function renderToday() {
     const top = document.createElement('div');
     top.className = 'today-top';
     if (waiting) {
-      top.appendChild(linkButton(`Back to today's ${prog.name} session`, () => { state.todayOther = null; renderToday(); }));
+      top.appendChild(linkButton(`Back to today's ${prog.name} session`, () => { state.todayOther = null; savePrefs(); renderToday(); }));
     } else {
       top.className += ' today-line';
       top.textContent = `${prog.name}: today's done${ps.last.surfed ? ' (a surf counts)' : ''}. Next up: ${ps.day.name}.`;
@@ -1108,8 +1149,12 @@ function liveOpts(request, extra) {
 
 // Builds and opens a workout. Returns an error message, or null on success.
 function buildAndOpen(request, seed, extra) {
-  const w = generateWorkout(liveOpts(request, { seed: seed || newSeed(), ...extra }));
+  const opts = liveOpts(request, { seed: seed || newSeed(), ...extra });
+  const w = generateWorkout(opts);
   if (w.error) return w.error;
+  // the gear and leave-outs it was built with, so a link passed on from
+  // here rebuilds this workout, not one for this device's gear
+  w.builtWith = { equipment: opts.equipment, excluded: opts.excluded };
   state.lastRequest = request;
   openWorkout(w);
   return null;
@@ -1435,14 +1480,15 @@ function personName(which) {
 // Last time's scores, each moved to whoever made it: with Dave and Wayne
 // swapped round, each still sees their own, and a new name sees none. An
 // unnamed person only matches the same spot. Entries from before names
-// were kept go by spot.
+// were kept go by spot. A block skipped without a score has no last time.
 function lastScoresFrom(rec) {
-  if (!rec.names) return rec.scores;
+  const score = (s, v) => (v && !(s.skipped && !s[v]) ? s[v] : undefined);
+  if (!rec.names) return rec.scores.map(s => s && ({ ...s, a: score(s, 'a'), b: score(s, 'b') }));
   const now = { a: (state.nameA || '').trim(), b: state.people === 2 ? (state.nameB || '').trim() : '' };
   const spots = rec.people === 2 ? ['a', 'b'] : ['a'];
   const from = (w) => [w, ...spots].find(v => spots.includes(v) && rec.names[v] === now[w] && (now[w] || v === w));
   const fa = from('a'), fb = from('b');
-  return rec.scores.map(s => ({ ...s, a: fa ? s[fa] : undefined, b: fb ? s[fb] : undefined }));
+  return rec.scores.map(s => s && ({ ...s, a: score(s, fa), b: score(s, fb) }));
 }
 
 function renderPreview() {
@@ -2041,7 +2087,7 @@ function tickClock() {
 function startTimer() {
   if (state.running) return;
   if (state.currentIdx >= state.sequence.length) seekTo(0);
-  ensureAudio();
+  if (audioStale) freshAudio(); else ensureAudio();
   requestWakeLock();
   state.running = true;
   state.started = true;
@@ -2075,8 +2121,13 @@ function stopTimer() {
   releaseWakeLock();
 }
 
+// Back to the top as if just opened: rounds counted from 0 again, and not
+// started, so skipping through after a reset doesn't count as done.
 function resetWorkout() {
   stopTimer();
+  state.scores = {};
+  state.pick = {};
+  state.started = false;
   seekTo(0);
   if (state.sequence[0]) enterPhaseVisual(state.sequence[0].kind, state.remainingInPhase);
   render();
@@ -2094,6 +2145,9 @@ function finish() {
     completeProgramDay();
   }
   bigBell();
+  // and once the bell has rung, the sound goes back (unless Start over has
+  // it going again)
+  setTimeout(() => { if (!state.running) releaseAudio(); }, 2000);
   clearBleed();
   disarmBack();
   els.workoutView.classList.remove('resting');
@@ -2294,10 +2348,13 @@ const SHARE_VERSION = 1;
 
 // Both kinds carry how many people it's on screen for (a favourite reopened
 // with a mate is two, whatever it was built for), so the link opens the same.
+// A built one carries the gear and leave-outs it was built with, which for
+// a link being passed on are the sender's, not this device's.
 function sharePayload(w) {
   if (w.generated) {
+    const built = w.builtWith || { equipment: effectiveEquip(), excluded: state.excluded };
     return { v: SHARE_VERSION, seed: w.seed, request: { ...w.request, people: state.people },
-             equipment: effectiveEquip(), excluded: state.excluded.slice() };
+             equipment: { ...built.equipment }, excluded: built.excluded.slice() };
   }
   return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id, people: state.people };
 }
@@ -2494,7 +2551,7 @@ function renderProgramToday(prog, st, day) {
   c.className = 'workout-card program-card program-today';
   fillProgramDay(c, prog, st, day, {
     tagline: `Today · week ${day.week}`, rerender: renderProgram, note: els.programNote,
-    gearHint: 'To add a place or change its gear, use Build a workout on the home screen.'
+    gearHint: 'To add a place or change its gear: '
   });
   els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
 }
@@ -2505,6 +2562,8 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
   c.innerHTML = `<div class="card-tagline">${esc(tagline)}</div>
     <div class="card-name">${esc(day.name)}</div>
     <div class="card-blurb">${esc(day.about)}</div>`;
+  // the notes go under Start, so Start stays on the first screen of a phone
+  const notes = [];
   if (!day.stretch) {
     if (!TIME_OPTIONS.includes(state.programMinutes)) state.programMinutes = TIME_OPTIONS.includes(day.minutes) ? day.minutes : 20;
     c.append(pickerLabel('How long have you got?'),
@@ -2512,7 +2571,7 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
     // every length is on offer; a mix that won't fit says what it runs as
     const style = programStyle(day, state.programMinutes);
     if (style.short) {
-      c.append(programHint(`${state.programMinutes} min is too short for ${day.mix.map(id => INTERVALS[id].label).join(' and ')}, so today it's just the ${INTERVALS[style.intervalId].label}.`));
+      notes.push(programHint(`${state.programMinutes} min is too short for ${day.mix.map(id => INTERVALS[id].label).join(' and ')}, so today it's just the ${INTERVALS[style.intervalId].label}.`));
     }
     // the leave-outs from Build a workout apply here too, so say so
     const out = leftOutList();
@@ -2520,7 +2579,7 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
       const line = programHint(`Left out, as in Build a workout: ${out}. `);
       line.classList.add('program-out');
       line.appendChild(linkButton('Change', () => { openSetup(); setMoreOptions(true); }));
-      c.append(line);
+      notes.push(line);
     }
   }
   c.append(...peopleGearRows(!day.stretch, rerender, gearHint));
@@ -2531,6 +2590,7 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
     const err = startProgramDay(prog, day);
     if (err) note.textContent = err;
   });
+  c.append(go, ...notes);
   const surfed = document.createElement('button');
   surfed.className = 'secondary';
   surfed.textContent = 'I surfed today';
@@ -2548,7 +2608,7 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
       rerender();
     }));
   });
-  c.append(go, surfed);
+  c.append(surfed);
 }
 function programHint(text) {
   const el = document.createElement('div');
@@ -2612,10 +2672,10 @@ function peopleGearRows(withGear, rerender, gearHint) {
     pick('Training at', state.gearSets.map(g => ({
       key: `gear-${g.id}`, text: g.name, on: g.id === state.gearSetId, pick: () => useGearSet(g.id)
     })));
+    // with a way there: on home a waiting session hides Build a workout
     if (gearHint) {
-      const note = document.createElement('div');
-      note.className = 'program-hint';
-      note.textContent = gearHint;
+      const note = programHint(gearHint);
+      note.appendChild(linkButton('Change', openSetup));
       rows.push(note);
     }
   }
@@ -2695,8 +2755,18 @@ function renderGearQuestion() {
   });
   const any = GEAR.some(g => state.equipment[g.id] !== false);
   els.btnGearDone.textContent = any ? 'Done' : 'Just bodyweight for now';
+  if (els.gearNote.textContent === NO_BELLS && !noBells()) els.gearNote.textContent = '';
 }
+// Kettlebells ticked with no bell picked would quietly mean no kettlebell
+// moves at all, so Done asks for the bells first.
+const NO_BELLS = "Tick the bells you've got, or untick Kettlebells.";
+const noBells = () => state.equipment.kettlebells !== false && !state.weights.kb.length;
 function finishGearQuestion() {
+  if (noBells()) {
+    els.gearNote.textContent = NO_BELLS;
+    els.gearNote.scrollIntoView({ block: 'nearest' });
+    return;
+  }
   state.gearAsked = true;
   saveIntoGearSet();
   savePrefs();
@@ -2719,6 +2789,7 @@ els.btnLibraryBack.addEventListener('click', goWelcome);
 // a program's session goes back to the program, anything else to the menu
 function leaveWorkout() {
   disarmBack();
+  releaseAudio();
   if (state.programRun) openProgram(); else goWelcome();
 }
 // Two-tap leave once a workout is going, like Reset, so a stray tap on
@@ -2733,7 +2804,7 @@ const inProgress = () => state.started && (state.running || state.elapsedTotal >
 els.btnBack.addEventListener('click', () => {
   if (backArmed || !inProgress()) return leaveWorkout();
   backArmed = true;
-  els.btnBack.textContent = 'Tap again to leave';
+  els.btnBack.textContent = 'Tap again';      // short, so the title beside it keeps its room
   backTimer = setTimeout(disarmBack, 2000);
 });
 els.btnProgramBack.addEventListener('click', goWelcome);
@@ -2864,9 +2935,13 @@ els.beepOnSilent.addEventListener('change', (e) => {
   savePrefs();
 });
 // A tap is the one moment Safari always lets audio restart, so a context
-// still stuck after a call comes back on the next touch of the screen.
+// still stuck after a call comes back on the next touch of the screen, and
+// after time in the background the first touch starts a fresh one (see
+// freshAudio).
 document.addEventListener('touchend', () => {
-  if (state.running && audioCtx && audioCtx.state !== 'running') ensureAudio();
+  if (!state.running || !audioCtx) return;
+  if (audioStale) freshAudio();
+  else if (audioCtx.state !== 'running') ensureAudio();
 }, { passive: true });
 
 document.querySelectorAll('.text-size .mini-btn').forEach(btn => {
@@ -2957,12 +3032,14 @@ function setupFullscreen() {
 // spell in the background can't leave the workout behind. The browser let
 // go of the wake lock while the page was hidden, so a started workout,
 // paused or not, asks for it again, and a running one wakes its audio
-// (Safari leaves it 'interrupted' after a call).
+// (Safari leaves it 'interrupted' after a call, or silent while it still
+// says 'running', so it's re-armed either way; see rearmAudio).
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && audioCtx) audioStale = true;
   if (document.visibilityState !== 'visible') return;
   if (keepAwake) requestWakeLock();
   if (!state.running) return;
-  ensureAudio();
+  if (audioStale) rearmAudio(); else ensureAudio();
   tickClock();
 });
 
@@ -2975,8 +3052,8 @@ els.nameB.value = state.nameB || '';
 els.showAlts.checked = state.showAlts;
 els.muteAudio.checked = state.muteAudio;
 els.beepOnSilent.checked = state.beepOnSilent;
-// only Safari can play through the silent switch, so only Safari asks
-els.silentToggle.hidden = els.silentHint.hidden = !('audioSession' in navigator);
+// only an iPhone or iPad can play through the silent switch, so only they ask
+els.silentToggle.hidden = els.silentHint.hidden = !CAN_SILENT;
 els.showPhotos.checked = state.showPhotos !== false;
 document.body.classList.toggle('show-alternatives', state.showAlts);
 document.body.classList.toggle('hide-photos', state.showPhotos === false);

@@ -9,7 +9,8 @@ Static files, no build step. Deploys to Vercel.
 
 On a first visit FIT asks who's training (just you, or you and a mate) and
 what gear you've got, with everything unticked, including the weights of
-any kettlebells, dumbbells or barbell you tick, and saves the answer as the
+any kettlebells, dumbbells or barbell you tick (kettlebells ticked with no
+bell picked asks for the bells before Done), and saves the answer as the
 Home gear set. Someone whose first visit is a shared link gets the workout
 straight away and the question on the way home. After that the home screen
 has three cards:
@@ -23,7 +24,7 @@ has three cards:
   set ("Whole body · nothing left out") so a choice from last time can't
   catch you out. While Surf Fit is on and today's session is still to do,
   the card is that session instead, with "Something else today" to set it
-  aside for the day.
+  aside for the day (a reload the same day keeps that).
 - **Programs**: a session a day that builds week by week (Surf Fit). The
   card says where you're up to ("Surf Fit · week 2 of 6").
 - **Saved & ready-made**: your favourites and recent sessions, the 16 named
@@ -178,7 +179,9 @@ rather than hardcoded.
   iPad the home-screen app keeps its own storage, separate from Safari's,
   and the Add to Home Screen hint says so
 - Wall-clock timer, wake lock (kept through a pause), audio cues that still
-  play with an iPhone on silent (a setting, since it pauses other music),
+  play with an iPhone on silent (a setting, since it pauses other music;
+  FIT gives the sound back when you leave the workout, and after time in
+  the background the first tap brings the beeps back for sure),
   two-tap reset, and two taps on Menu once a workout is going. Tap the
   timer to pause or resume; on a phone, Start, Skip and Reset stay on
   screen however long the cards get
@@ -189,7 +192,8 @@ rather than hardcoded.
   packed into the URL, so it opens the exact same session on any phone or
   tablet, for the same number of people, with no account and no server
   involved. The message says the minutes, style and people, and Share stays
-  on screen once the workout is going
+  on screen once the workout is going. A link passed on keeps the gear it
+  was first built with, so the third person gets the same session too
 - Works offline after the first visit. A service worker caches the app
   and the 3D figures, so it opens in the gym with no wifi
 

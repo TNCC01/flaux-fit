@@ -81,7 +81,7 @@ const toggleAllGear = async () => { for (const g of GEAR) await p.click(`#equipm
 // Once Start has been pressed, Menu takes two taps: the first one asks.
 const leaveStarted = async (pg = p) => {
   await pg.click('#btnBack');
-  assert(await pg.$eval('#btnBack', e => e.textContent) === 'Tap again to leave', 'the first tap on Menu asks');
+  assert(await pg.$eval('#btnBack', e => e.textContent) === 'Tap again', 'the first tap on Menu asks');
   await pg.click('#btnBack');
 };
 // Contrast of white text on every colour stop of an element's background.
@@ -124,9 +124,17 @@ try {
     f.on('pageerror', e => errors.push('newcomer: ' + e));
     f.on('console', m => { if (m.type() === 'error') errors.push('newcomer: ' + m.text()); });
     await f.goto(URL);
+    assert((await f.$eval('#gearView', e => e.textContent)).includes('tap Change on the home screen'), 'it says where to change it later');
     await f.click('#onboardGear .chip:has-text("Kettlebells")');
     assert((await f.$eval('#onboardWeights', e => e.textContent)).includes('Tick at least one'), 'ticking kettlebells asks which bells');
+    // Done with no bell picked would mean no kettlebell work at all, so it asks
+    await f.click('#btnGearDone');
+    assert(await f.evaluate(() => document.querySelector('.view.active').id === 'gearView' && !state.gearAsked)
+           && (await f.$eval('#gearNote', e => e.textContent)) === "Tick the bells you've got, or untick Kettlebells.",
+           'Done with kettlebells ticked and no bell stays on the question and asks for the bells');
+    assert(await f.$eval('#scrollHint', e => getComputedStyle(e).display === 'none'), 'no bottom fade over the sticky Done');
     await f.click('#onboardWeights .chip:text-is("12kg")');
+    assert((await f.$eval('#gearNote', e => e.textContent)) === '', 'picking a bell clears the ask');
     await f.click('#btnGearDone');
     const home = await f.evaluate(() => {
       const card = document.getElementById('todayCard');
@@ -153,6 +161,63 @@ try {
     await fresh.close();
   }
   ok('a newcomer: just me and a 12kg bell, then 15 min and Start on the home card builds a solo session');
+
+  step = 'a returning phone user with a program day, two places and leave-outs still has Start on the first screen';
+  {
+    const back = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    // Surf Fit days 1 to 3 done on earlier days, so Engine (day 4) is waiting
+    await back.addInitScript(() => {
+      if (localStorage.getItem('fit-prefs-2')) return;
+      const day = 86400000, now = Date.now(), gear = { kettlebells: true }, weights = { kb: [12, 16], db: [], bar: 10 };
+      localStorage.setItem('fit-prefs-2', JSON.stringify({
+        gearAsked: true, people: 2, minutes: 20, blockedTags: ['impact', 'floor'], excluded: ['burpee', 'pushup'],
+        equipment: gear, weights, gearSets: [{ id: 'home', name: 'Home', equipment: gear, weights }, { id: 'dave', name: "Dave's garage", equipment: gear, weights }],
+        programs: { 'surf-fit': { startedAt: now - 9 * day, done: [0, 1, 2].map(n => ({ n, at: now - (5 - n) * day })) } },
+        history: [{ key: 'id:power-hour', name: 'Power Hour', at: now - day, people: 2, intervalId: 'short', generated: false, workoutId: 'power-hour', minutes: 30, completed: true }]
+      }));
+    });
+    const r = await back.newPage();
+    r.on('pageerror', e => errors.push('returning: ' + e));
+    r.on('console', m => { if (m.type() === 'error') errors.push('returning: ' + m.text()); });
+    await r.goto(URL);
+    await r.click('#todayCard .time-chips .chip:text-is("10 min")');
+    const fold = () => r.evaluate(() => {
+      const card = document.getElementById('todayCard'), go = card.querySelector('.program-go');
+      const kids = [...card.children];
+      return { go: go.getBoundingClientRect().bottom, height: innerHeight, sub: document.getElementById('welcomeSub').offsetParent !== null,
+               text: card.textContent, notesAfter: [...card.querySelectorAll('.program-hint')].every(h => kids.indexOf(h) > kids.indexOf(go)),
+               links: [...card.querySelectorAll('.link-btn')].map(b => Math.round(b.getBoundingClientRect().height)) };
+    });
+    const day = await fold();
+    assert(day.text.includes('Engine') && day.text.includes('Training at') && day.text.includes('too short') && day.text.includes('Left out'),
+           "the card is the Engine day at 10 min, with two places and the leave-outs: " + day.text.slice(0, 80));
+    assert(!day.sub, 'a returning user is not told what FIT is again');
+    assert(day.notesAfter, 'the short-day and left-out notes come under Start');
+    assert(day.go <= day.height, `Start is on the first screen (bottom ${Math.round(day.go)} of ${day.height})`);
+    assert(day.links.every(h => h >= 44), 'the links on the card are 44px tall to tap: ' + day.links);
+    // "Something else today" lasts the day, a reload included
+    await r.click('#todayCard .link-btn:has-text("Something else today")');
+    const other = await fold();
+    assert(other.go <= other.height && other.text.includes('Build a workout'), `the built workout's Start is on the first screen too (bottom ${Math.round(other.go)})`);
+    assert(await r.$eval('#pathBuild', e => e.getBoundingClientRect().height >= 44), 'Change is 44px tall to tap');
+    await r.reload();
+    assert((await r.$eval('#todayCard', e => e.textContent)).includes('Build a workout'), 'a reload the same day keeps the built workout');
+    await r.evaluate(() => {
+      const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      prefs.todayOther = dayKey(Date.now() - 86400000);
+      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+    });
+    await r.reload();
+    assert((await r.$eval('#todayCard', e => e.textContent)).includes('Engine'), "yesterday's choice doesn't carry over: the session is back");
+    // on the Programs screen the gear line has its own way to setup
+    await r.click('#pathProgram');
+    const hint = '.program-today .program-hint:has-text("To add a place")';
+    assert(await r.$(`${hint} .link-btn:text-is("Change")`), 'the Programs screen says where places are set, with a Change link');
+    await r.click(`${hint} .link-btn`);
+    assert(await r.evaluate(() => document.querySelector('.view.active').id) === 'setupView', 'and Change opens the setup');
+    await back.close();
+  }
+  ok('returning on a phone: Engine at 10 min with two places and leave-outs keeps Start on the first screen, links are 44px, Something else today lasts the day, and the Programs gear line opens setup');
 
   step = 'welcome';
   assert(await p.$eval('#todayCard', e => e.offsetParent !== null), 'the Today card shows');
@@ -188,7 +253,7 @@ try {
   step = 'Menu mid-workout takes two taps';
   await p.click('#btnBack');
   assert(await activeView() === 'workoutView' && await st(() => !!state.workout), 'one tap on Menu keeps the session');
-  assert((await p.$eval('#btnBack', e => e.textContent)) === 'Tap again to leave', 'and asks for a second tap');
+  assert((await p.$eval('#btnBack', e => e.textContent)) === 'Tap again', 'and asks for a second tap');
   await p.waitForTimeout(2100);
   assert((await p.$eval('#btnBack', e => e.textContent)) === '← Menu', 'the ask goes away after two seconds');
   await leaveStarted();
@@ -303,10 +368,11 @@ try {
          'Chromium has no audioSession, so no silent-switch setting');
   {
     const phone = await browser.newContext({ viewport: { width: 390, height: 844 } });
-    // What the page sees of an iPhone: a session type to set, a context Safari
-    // can leave 'interrupted' (and refuse to resume outside a tap), a wake lock.
+    // What the page sees of an iPhone: a touch screen, a session type to set,
+    // a context Safari can leave 'interrupted' (and refuse to resume outside
+    // a tap), a wake lock that can take a moment to come back.
     await phone.addInitScript(() => {
-      window.__audio = { contexts: [], resumes: 0, refuse: false, typeAtCreate: null };
+      window.__audio = { contexts: [], resumes: 0, suspends: 0, refuse: false, typeAtCreate: null };
       window.AudioContext = class {
         constructor() {
           this.state = 'running'; this.currentTime = 0; this.destination = {};
@@ -317,13 +383,18 @@ try {
           if (__audio.refuse) return Promise.reject(new DOMException('not now', 'InvalidStateError'));
           this.state = 'running'; return Promise.resolve();
         }
+        suspend() { __audio.suspends++; this.state = 'suspended'; return Promise.resolve(); }
+        close() { this.state = 'closed'; return Promise.resolve(); }
         createOscillator() { return { frequency: {}, connect() {}, start() {}, stop() {} }; }
         createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
       };
+      Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 5 });
       Object.defineProperty(navigator, 'audioSession', { configurable: true, value: { type: 'auto' } });
-      window.__locks = { asked: 0, held: 0, last: null };
+      window.__locks = { asked: 0, held: 0, last: null, delay: 0 };
       Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async () => {
-        __locks.asked++; __locks.held++;
+        __locks.asked++;
+        if (__locks.delay) await new Promise(r => setTimeout(r, __locks.delay));
+        __locks.held++;
         const fns = [];
         __locks.last = { addEventListener: (t, f) => fns.push(f),
                          release() { __locks.held--; fns.forEach(f => f()); return Promise.resolve(); } };
@@ -336,6 +407,15 @@ try {
     const ev = (fn) => s.evaluate(fn);
     const ctx = () => ev(() => __audio.contexts[0] && __audio.contexts[0].state);
     const visible = () => ev(() => document.dispatchEvent(new Event('visibilitychange')));
+    // the app goes to the background and comes back
+    const awayAndBack = () => ev(async () => {
+      for (const v of ['hidden', 'visible']) {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }
+      delete document.visibilityState;
+      await new Promise(r => setTimeout(r, 0));
+    });
     await s.goto(URL);
     await s.click('#btnGearDone');
     await s.click('#todayCard .today-go');
@@ -362,6 +442,17 @@ try {
     assert(await ctx() === 'interrupted', 'Safari refusing outside a tap is caught, not thrown');
     await ev(() => { __audio.refuse = false; document.dispatchEvent(new Event('touchend')); });
     assert(await ctx() === 'running', 'and the next touch of the screen brings it back');
+    // iOS can leave it saying 'running' with no sound after time in the background
+    const [sus, res] = await ev(() => [__audio.suspends, __audio.resumes]);
+    await awayAndBack();
+    assert(await s.evaluate((n) => __audio.suspends === n[0] + 1 && __audio.resumes === n[1] + 1, [sus, res]) && await ctx() === 'running',
+           'back from the background, a context that still says running is suspended and resumed anyway');
+    await ev(() => document.dispatchEvent(new Event('touchend')));
+    assert(await ev(() => __audio.contexts.length === 2 && __audio.contexts[0].state === 'closed' && __audio.contexts[1].state === 'running'
+                          && __audio.typeAtCreate === 'playback'), 'and the first touch after that starts a fresh context, on playback');
+    await ev(() => document.dispatchEvent(new Event('touchend')));
+    assert(await ev(() => __audio.contexts.length === 2), 'only the first touch: the next one leaves it alone');
+    await ev(() => { __audio.contexts.shift(); });               // the rest of the step watches the live one
 
     await s.click('#btnStart');                                 // pause for a drink
     assert(await ev(() => !state.running && __locks.held === 1 && !!state.wakeLock), 'a pause keeps the wake lock');
@@ -384,6 +475,7 @@ try {
            'the first tap on Menu only asks, so the wake lock stays');
     await s.click('#btnBack');
     assert(await ev(() => __locks.held === 0 && !state.wakeLock), 'leaving the workout lets the wake lock go');
+    assert(await ev(() => __audio.contexts[0].state === 'suspended'), 'and suspends the audio');
     await visible();
     assert(await ev(() => __locks.asked === 2), 'and nothing asks for it on the home screen');
 
@@ -397,9 +489,35 @@ try {
     });
     await s.reload();
     assert(await ev(() => state.beepOnSilent === true), 'prefs saved before the setting existed start it on');
+    // leaving gives the session back, and a wake lock that lands after you've left is let go
+    await s.click('#todayCard .today-go');
+    await ev(() => { __locks.delay = 300; });
+    await s.click('#btnStart');
+    assert(await ev(() => navigator.audioSession.type === 'playback'), 'Start takes the session');
+    await leaveStarted(s);
+    assert(await ev(() => navigator.audioSession.type === 'auto' && __audio.contexts[0].state === 'suspended'),
+           'leaving puts it back to auto, so music can carry on, and suspends the audio');
+    await s.waitForFunction(() => __locks.asked === 1 && __locks.last, null, { timeout: 2000 });
+    assert(await ev(() => __locks.held === 0 && !state.wakeLock), 'a wake lock still on its way when you leave is let go when it lands');
     await phone.close();
   }
-  ok('iPhone: playback from the first beep, resumes after a call or a return, a refusal is caught; wake lock kept through a pause, asked again on return, let go on leaving; the setting persists');
+  // Safari on a Mac has the session too, but no silent switch
+  {
+    const mac = await browser.newContext({ viewport: { width: 1180, height: 820 } });
+    await mac.addInitScript(() => {
+      Object.defineProperty(navigator, 'audioSession', { configurable: true, value: { type: 'auto' } });
+    });
+    const m = await mac.newPage();
+    m.on('pageerror', e => errors.push('Mac: ' + e));
+    await m.goto(URL);
+    await m.click('#btnGearDone');
+    await m.click('#todayCard .today-go');
+    assert(await m.$eval('#silentToggle', e => e.hidden), 'no silent-switch setting without a touch screen');
+    await m.click('#btnStart');
+    assert(await m.evaluate(() => navigator.audioSession.type === 'auto'), 'and the session is left alone');
+    await mac.close();
+  }
+  ok('iPhone: playback from the first beep, resumes after a call or a return, re-armed after the background even when it says running, a refusal is caught; wake lock kept through a pause, asked again on return, let go on leaving even mid-request; the sound given back on leaving; the setting persists and stays off a Mac');
 
   step = 'the card shows the exercise as a 3D figure; drag turns it, a tap opens the full view';
   // the full viewer is checked by move-check; here it's the app's side of the tap
@@ -569,8 +687,27 @@ try {
   const dashes = (amrap.blocks - 1) * (await st(() => state.people));
   assert(await p.evaluate((b) => state.history[0].scores.every((x, i) => i === b ? !x.skipped : x.skipped), blk), 'the blocks skipped with no score are marked skipped');
   assert((amrapLine.match(/–/g) || []).length === dashes && amrapLine.includes('1 · –'), `and read "–", not 0: ${amrapLine}`);
+  // reopened, the scored block has its last time and a skipped one has none
+  await leaveStarted(); await p.click('#pathLibrary'); await p.click('.history-card');
+  const amrapAtBlock = (b) => p.evaluate((b) => { seekTo(state.sequence.findIndex(x => x.amrap && x.blockIdx === b)); render(); }, b);
+  const skippedBlk = await p.evaluate((b) => state.sequence.find(x => x.amrap && x.blockIdx !== b).blockIdx, blk);
+  await amrapAtBlock(blk);
+  assert((await p.$eval('#counterA', e => e.textContent)).includes('Last time 1'), 'reopened, the scored block shows Last time 1');
+  await amrapAtBlock(skippedBlk);
+  const skippedLast = await p.$eval('#counterA', e => e.textContent);
+  assert(!skippedLast.includes('Last time'), 'and a block skipped unscored shows no Last time: ' + skippedLast.trim());
+  // Start over on the finish screen counts from 0, not on top of the first go
+  await p.click('#btnStart');
+  await amrapAtBlock(blk);
+  for (let i = 0; i < 3; i++) await p.click('#counterA .count-more');
+  while (await st(() => !isFinished())) await p.click('#btnSkip');
+  await p.click('#btnAgain');
+  await amrapAtBlock(blk);
+  assert((await p.$eval('#counterA .count-now b', e => e.textContent)) === '0', 'Start over: the counter is back at 0');
+  await p.click('#counterA .count-more');
+  assert(await p.evaluate((b) => state.history[0].scores[b].a === 1, blk), 'and one round is one round, not 4');
   await p.click('#btnStart');                                   // pause
-  ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it; skipped blocks read "–" and the lap goes after`);
+  ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it; skipped blocks read "–", show no Last time, and the lap goes after; Start over counts from 0`);
 
   step = 'For Time: rounds of a lap against a cap, Done logs the time';
   await leaveStarted(); await pickInterval('For Time');
@@ -784,6 +921,12 @@ try {
   await skipToEnd();
   assert(await st(() => state.programs['surf-fit'].done.length === 0 && !state.history.some(h => h.completed && h.key === historyKey(state.workout))),
          'skipping to the end without Start ticks nothing off');
+  // nor does a stray Start, then Reset back to the top, then skipping through
+  await p.click('#btnAgain'); await p.click('#btnReset'); await p.click('#btnReset');
+  assert(await st(() => !state.running && state.currentIdx === 0 && !state.started), 'a reset goes back to the top, not started');
+  await skipToEnd();
+  assert(await st(() => state.programs['surf-fit'].done.length === 0 && !state.history.some(h => h.completed && h.key === historyKey(state.workout))),
+         'Start, then Reset, then skipping to the end ticks nothing off either');
   await p.click('#btnAgain');
   assert(await st(() => state.running && state.currentIdx === 0 && state.started) && (await p.$eval('#btnSkip', e => e.offsetParent !== null)),
          'Start over runs it again from the top');
@@ -863,6 +1006,13 @@ try {
   await p.click('#programNote .link-btn:text-is("Undo")');
   assert(await st(() => state.programs['surf-fit'].done.length === 3) && await p.$('.program-today') && (await p.$eval('#programNote', e => e.textContent)) === '',
          'Undo takes it back, and the Engine day is today again');
+  // Undo only ever takes back today's surf: not one from another day
+  await p.click('.program-today button:has-text("I surfed today")');
+  await st(() => { const d = state.programs['surf-fit'].done; d[d.length - 1].at -= 86400000; savePrefs(); });
+  await p.click('#programNote .link-btn:text-is("Undo")');
+  assert(await st(() => state.programs['surf-fit'].done.length === 4 && state.programs['surf-fit'].done[3].surfed),
+         'Undo leaves a surf from yesterday alone');
+  await st(() => { state.programs['surf-fit'].done.pop(); savePrefs(); renderProgram(); });
   await p.click('#btnProgramBack');
   await p.click('#todayCard button:has-text("I surfed today")');
   assert((await p.$eval('#todayCard .today-line', e => e.textContent)).includes("today's done"), 'from home too');
@@ -977,6 +1127,17 @@ try {
   await q.click('#btnGearDone');
   assert(await q.evaluate(() => document.querySelector('.view.active').id === 'welcomeView' && state.gearAsked && state.people === 2),
          'then home, with the answer kept');
+  // this device is bodyweight only now; passing the link on still sends the sender's workout
+  assert(await p.evaluate((ids) => ids.split(',').some(id => EXERCISES[id].equipment.length), sharedIds), 'the shared workout uses some gear');
+  await q.goto(shareUrl);
+  const fwdUrl = await q.evaluate(() => shareUrlFor(state.workout));
+  assert(await q.evaluate(() => !Object.values(effectiveEquip()).some(Boolean)), 'the forwarding device has no gear');
+  const third = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const c = await third.newPage();
+  c.on('pageerror', e => errors.push('third device: ' + e));
+  await c.goto(fwdUrl);
+  assert(await c.evaluate(() => state.workout.exerciseIds.join(',')) === sharedIds, 'a link passed on opens the same movements as the first one');
+  await third.close();
   // a solo link opens solo on a device set to two
   await p.click('#btnBack'); await p.click('#pathBuild');
   await p.click('#peoplePicker .chip[data-people="1"]');
@@ -1060,6 +1221,13 @@ try {
   await p.click('#btnStart');
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
   assert(await controlsOnScreen(), 'and Pause, Skip and Reset stay there while working');
+  assert(await st(() => document.body.classList.contains('can-scroll') && getComputedStyle(document.getElementById('scrollHint')).display === 'none'),
+         'the page scrolls, but no bottom fade sits over the controls');
+  const titleWas = await p.$eval('#workoutTitle', e => e.getBoundingClientRect().width);
+  await p.click('#btnBack');
+  const titleNow = await p.$eval('#workoutTitle', e => e.getBoundingClientRect().width);
+  assert(titleNow >= titleWas - 20, `the first tap on Menu leaves the title its room (${Math.round(titleWas)}px, then ${Math.round(titleNow)}px)`);
+  await st(() => disarmBack());
   await st(() => { document.getElementById('scroller').scrollTop = 400; });
   assert(await controlsOnScreen(), 'scrolled down too');
   await p.route('**/move.html*', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>3D</title>' }));

@@ -122,8 +122,6 @@ body::before {
   left: 0; right: 0;
   bottom: 0;
   height: 3.25rem;
-  /* Below the sticky Build button, which already occupies this strip on the
-     setup screen. */
   z-index: 4;
   pointer-events: none;
   opacity: 0;
@@ -131,6 +129,12 @@ body::before {
   background: linear-gradient(to top, rgba(5,10,10,0.92), rgba(5,10,10,0.45) 55%, transparent);
 }
 body.can-scroll #scrollHint { opacity: 1; }
+/* Not over a sticky bottom button, which already marks the bottom: the fade
+   sits outside #scroller, so it would paint on top and make the button look
+   switched off. That's Build and the first-visit Done, and on a phone the
+   workout's Start, Skip and Reset. */
+body.view-setup #scrollHint, body.view-gear #scrollHint { display: none; }
+@media (max-width: 700px) { body.view-workout #scrollHint { display: none; } }
 
 .app { max-width: 1100px; margin: 0 auto; }
 .view { display: none; flex-direction: column; gap: 0.85rem; }
@@ -290,17 +294,21 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
   border: 2px solid rgba(20,184,166,0.5);
   background: linear-gradient(135deg, rgba(20,184,166,0.16), rgba(13,148,136,0.04) 60%), var(--card);
   border-radius: 1.25rem;
-  padding: 1.1rem 1.2rem 1.2rem;
+  padding: 0.9rem 1.2rem 1.2rem;
   display: flex; flex-direction: column; gap: 0.45rem;
 }
-.today-card .link-btn { align-self: flex-start; margin-top: 0; padding: 0.35rem 0; font-size: 0.95rem; }
+/* 44px tall to tap; the negative margin keeps it from taking more room */
+.today-card .link-btn {
+  align-self: flex-start; display: inline-flex; align-items: center;
+  min-height: 44px; margin: -0.45rem 0; padding: 0; font-size: 0.95rem;
+}
 /* a program note above a built workout: done today, or set aside for today */
 .today-top { padding-bottom: 0.55rem; margin-bottom: 0.2rem; border-bottom: 1px solid var(--border); }
 .today-line { color: var(--muted); font-size: 0.95rem; line-height: 1.4; }
 /* pinned to the bottom with Start when the card is taller than its content */
 .today-style { color: var(--muted); font-size: 0.95rem; line-height: 1.4; margin-top: auto; padding-top: 0.5rem; }
-.today-style .link-btn { display: inline; padding: 0.35rem 0.2rem; }
-.today-go, .today-card .program-go { font-size: 1.3rem; padding: 1.1rem; margin-top: 0.4rem; }
+.today-style .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; }
+.today-go, .today-card .program-go { font-size: 1.3rem; padding: 1.1rem; margin-top: 0.2rem; }
 
 /* ============== Pickers ============== */
 .picker-row { background: var(--card); border-radius: 1rem; padding: 0.95rem 1rem; }
@@ -877,9 +885,13 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .program-today { border-left-color: var(--teal); }
 .program-go { width: 100%; }
 .program-card .picker-label { margin-top: 0.7rem; }
+/* closer on the home card, so Start is on the first screen of a phone */
+.today-card .picker-label { margin: 0.3rem 0 0.15rem; }
+.today-card .chip-row { margin-top: 0; }
 .program-hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem; }
-/* a Change or Undo link at the end of a line of text */
-.program-hint .link-btn, .build-note .link-btn { display: inline; margin: 0; padding: 0.35rem 0.2rem; font-size: inherit; }
+/* a Change or Undo link at the end of a line of text; the padding makes it
+   44px tall to tap, and the negative margin keeps the lines where they were */
+.program-hint .link-btn, .build-note .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; font-size: inherit; }
 .program-status { display: grid; gap: 0.7rem; }
 .program-progress { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; color: var(--muted); font-size: 0.95rem; }
 .program-progress b { color: var(--text); font-size: 1.15rem; }
