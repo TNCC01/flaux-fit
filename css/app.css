@@ -322,6 +322,9 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
   background: var(--grad-primary); border-color: transparent; color: #fff;
   box-shadow: 0 2px 10px rgba(20,184,166,0.3);
 }
+/* A time the mix won't fit in: still there, but plainly not on offer. */
+.chip.dim { opacity: 0.4; cursor: default; }
+.chip.dim:active { transform: none; border-color: var(--border); background-color: var(--bg); }
 .people-chip { min-width: 95px; text-align: center; }
 .name-inputs { display: flex; gap: 0.45rem; margin-top: 0.6rem; }
 .name-inputs.hidden { display: none; }

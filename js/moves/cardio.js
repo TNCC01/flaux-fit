@@ -906,7 +906,7 @@ export default {
     muscles: { primary: ['quads', 'glutes', 'hamstrings', 'calves'], secondary: ['hipFlexors', 'core', 'shoulders'] },
     coaching: {
       setup: [
-        'Pick a marker such as the mailbox, 20 to 40 metres away, on a flat, clear surface.',
+        'Pick a marker 20 to 40 metres away, on a flat, clear surface.',
         'Start in a split stance, leaning forward slightly.',
       ],
       steps: [

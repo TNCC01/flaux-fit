@@ -280,6 +280,8 @@ try {
   step = 'classic under long efforts, then the timer survives a suspension';
   await p.click('.interval-card:has-text("Long efforts")');
   await p.click('#btnSetupBack'); await p.click('#pathLibrary');
+  assert(await p.$eval(`${card('Power Hour')} .card-style`, e => e.textContent) === 'Long efforts', 'the classic card says the style it will run as');
+  assert(await p.$(card('Sunrise Stretch')) && !(await p.$(`${card('Sunrise Stretch')} .card-style`)), 'a stretch routine has no style to show');
   await p.click(card('Power Hour'));
   assert(await rounds() === 4, 'classic takes the long preference');
   await p.click('#btnStart'); await p.click('#btnSkip');       // into block 1
@@ -469,6 +471,7 @@ try {
   step = 'history entry of a classic reopens at the interval it was run';
   await leaveStarted(); await pickInterval('Short bursts');
   await p.click('#btnSetupBack'); await p.click('#pathLibrary');
+  assert(await p.$eval(`${card('Power Hour')} .card-style`, e => e.textContent) === 'Short bursts', 'the card follows the style picked');
   await p.click(card('Power Hour'));
   assert(await rounds() === 8, 'fresh open of the classic uses today\'s short preference');
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
@@ -667,6 +670,48 @@ try {
   await p.click('#timePicker .chip:text-is("20 min")');
   await p.click('#btnBuild');
   ok('Mix: 30:00 exactly, EMOM then short bursts then AMRAP, a changeover between each');
+
+  step = "Mix: no time on offer that the mix won't fit, and a build error shows by the button";
+  await p.click('#btnBack'); await p.click('#pathBuild');
+  assert(await st(() => state.minutes === 20 && !state.mixOn), 'starting from one style at 20 minutes');
+  const dimmed = (sel) => p.$$eval(`${sel} .chip.dim`, els => els.map(e => e.textContent).join(','));
+  await p.click('.interval-card:has-text("Two or three styles")');
+  assert(await st(() => mixMinimumMinutes(state.mixStyles)) === 25, 'EMOM, short bursts and AMRAP need 25 minutes');
+  assert(await st(() => state.minutes) === 25, 'turning Mix on raises 20 minutes to the 25 it needs');
+  assert(await dimmed('#timePicker') === '10 min,15 min,20 min', 'the shorter times are dimmed: ' + await dimmed('#timePicker'));
+  assert(await p.$$eval('#timePicker .chip.dim', els => els.every(e => e.getAttribute('aria-disabled') === 'true')), 'and marked as not on offer');
+  assert(((await p.$eval('#timeHint', e => !e.hidden && e.textContent)) || '').includes('at least 25 min'), 'a line under the times says why');
+  await p.click('#timePicker .chip:text-is("15 min")', { force: true });
+  assert(await st(() => state.minutes) === 25, 'a dimmed time does nothing');
+  await p.click('.mix-chip:has-text("AMRAP")');
+  assert(await dimmed('#timePicker') === '10 min' && await st(() => state.minutes) === 25, 'two styles fit in 15, and the time stays as picked');
+  await p.click('#timePicker .chip:text-is("15 min")');
+  assert(await st(() => state.minutes) === 15, '15 can be picked now');
+  await p.click('.mix-chip:has-text("AMRAP")');
+  assert(await st(() => state.minutes === 25 && state.mixStyles.join(',') === 'emom,short,amrap'), 'adding the third style back raises it to 25 again');
+  assert(await st(() => !planMix(state.minutes, state.mixStyles).error), 'so the mix always fits the time');
+  await p.click('#btnSetupBack');
+  assert(await dimmed('#todayCard') === '10 min,15 min,20 min', 'the home card dims the same times');
+  assert((await p.$eval('#todayCard', e => e.textContent)).includes('This mix needs at least 25 min'), 'and says why');
+  await p.click('#pathBuild');
+  // an error the time can't fix: it comes up beside the button, not off the bottom
+  await st(() => { state.excluded = Object.keys(EXERCISES); document.getElementById('scroller').scrollTop = 0; });
+  await p.click('#btnBuild');
+  const refused = await st(() => {
+    const n = document.getElementById('buildNote').getBoundingClientRect();
+    const b = document.getElementById('btnBuild').getBoundingClientRect();
+    return { text: document.getElementById('buildNote').textContent, top: n.top, bottom: n.bottom, gap: n.top - b.bottom, h: innerHeight };
+  });
+  assert(await activeView() === 'setupView' && refused.text.includes('excluded'), 'the build is refused: ' + refused.text);
+  assert(refused.top >= 0 && refused.bottom <= refused.h && refused.gap >= 0 && refused.gap < 60,
+         `and the reason is on screen just under the button: ${JSON.stringify(refused)}`);
+  await st(() => { state.excluded = []; savePrefs(); });
+  await p.click('.interval-card:has-text("Short bursts")');
+  assert(await dimmed('#timePicker') === '' && await p.$eval('#timeHint', e => e.hidden), 'one style: every time is on offer again');
+  await p.click('#timePicker .chip:text-is("20 min")');
+  await p.click('#btnBuild');
+  assert(await st(() => state.totalDuration) === 1200, `and 20 minutes runs 20:00, got ${await st(() => state.totalDuration)}s`);
+  ok('Mix: shorter times dimmed and the minutes raised to fit, on setup and the home card; a refused build says why by the button');
 
   step = 'Surf fitness: a session built from surf exercises';
   await p.click('#btnBack'); await p.click('#pathBuild');

@@ -416,12 +416,12 @@ const CLASSICS = [
   },
   {
     id: 'driveway-demon', name: 'Driveway Demon', tagline: 'Sprint, swing, suffer',
-    focus: 'whole-body', blurb: 'Six blocks of sprints, KBs, bodyweight and holds. Use the whole driveway.',
+    focus: 'whole-body', blurb: 'Six blocks of sprints, KBs, bodyweight and holds. Find some flat ground to sprint on.',
     format: 'tabata', blockRestSec: 45,
     blocks: [
       blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
       blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockAlt('Sprints & KB hold', 'sprint', 'kbRackHold15'),
       blockCycle('Climbers, skaters & crawls', ['mountainClimberFast', 'skaterHops', 'highKnees', 'bearCrawl']),
       blockAlt('Push-ups & plank', 'pushup', 'plankHold'),
       blockAlt('Ring rows & hollow rocks', 'ringRow', 'hollowRocks')
@@ -437,7 +437,7 @@ const CLASSICS = [
       blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
       blockCycle('Skipping & push-up mix', ['skipping', 'pushup', 'inchworm', 'pikePushup']),
       blockAlt('Barbell press & plank', 'barbellPress', 'plankHold'),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockAlt('Sprints & KB hold', 'sprint', 'kbRackHold15'),
       blockAlt('Ring hangs & suitcase carry', 'ringTuckHold', 'dbSuitcaseCarry'),
       blockCleanPress()
     ]
@@ -451,7 +451,7 @@ const CLASSICS = [
       blockCycle('Rows & push-up mix', ['ringRow', 'pushup', 'ringPushup', 'pikePushup']),
       blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
       blockCycle('Barbell press, rows & planks', ['barbellPress', 'plankHold', 'barbellRow', 'plankShoulderTaps']),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockAlt('Sprints & KB hold', 'sprint', 'kbRackHold15'),
       blockCycle('Skipping & core', ['skipping', 'hollowRocks', 'highKnees', 'bicycleCrunch']),
       blockSwap('Dumbbell press', 'dbPressHeavy', 'dbPressLight'),
       blockCycle('Lunges, step-ups & hinges', ['dbLunge', 'stepUp', 'kbDeadlift15', 'gluteBridge']),
@@ -467,7 +467,7 @@ const CLASSICS = [
       blockCycle('Jacks, knees & skaters', ['jumpingJacks', 'highKnees', 'skaterHops', 'mountainClimber']),
       blockAlt('Burpees & plank', 'burpee', 'plankHold'),
       blockCycle('Skipping & squats', ['skipping', 'airSquat', 'highKnees', 'squatJump']),
-      blockAlt('Driveway sprint & wall sit', 'sprint', 'wallSit'),
+      blockAlt('Sprints & wall sit', 'sprint', 'wallSit'),
       blockCycle('Climbers & core burners', ['mountainClimberFast', 'bicycleCrunch', 'flutterKicks', 'plankShoulderTaps']),
       blockAlt('Squat jumps & push-ups', 'squatJump', 'pushup'),
       blockCycle('Crawls & bridges', ['bearCrawl', 'gluteBridge', 'inchworm', 'singleLegBridge']),

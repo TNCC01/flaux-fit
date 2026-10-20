@@ -115,6 +115,7 @@ function loadPrefs() {
     if (!Array.isArray(state.blockedTags)) state.blockedTags = [];
     if (state.people !== 1 && state.people !== 2) state.people = 1;
     if (!TIME_OPTIONS.includes(state.minutes)) state.minutes = 20;
+    fitMixMinutes();
     if (typeof state.textScale !== 'number' || !(state.textScale > 0)) state.textScale = 1;
     if (typeof state.nameA !== 'string') state.nameA = '';
     if (typeof state.nameB !== 'string') state.nameB = '';
@@ -270,7 +271,7 @@ const els = {
   btnSetupBack: $('btnSetupBack'), setupTitle: $('setupTitle'),
   peoplePicker: $('peoplePicker'), nameInputs: $('nameInputs'),
   nameA: $('nameA'), nameB: $('nameB'),
-  equipmentPicker: $('equipmentPicker'), weightPicker: $('weightPicker'), timePicker: $('timePicker'),
+  equipmentPicker: $('equipmentPicker'), weightPicker: $('weightPicker'), timePicker: $('timePicker'), timeHint: $('timeHint'),
   mixPicker: $('mixPicker'), gearSetPicker: $('gearSetPicker'), goalPicker: $('goalPicker'), goalHint: $('goalHint'), rowRegions: $('rowRegions'),
   intervalPicker: $('intervalPicker'),
   bodyMap: $('bodyMap'), regionPicker: $('regionPicker'), tagPicker: $('tagPicker'),
@@ -615,9 +616,11 @@ function renderToday() {
   }
   const head = document.createElement('div');
   head.innerHTML = '<div class="card-tagline">Today</div><div class="card-name">Build a workout</div>';
+  const floor = mixFloor();
   card.append(head, pickerLabel('How long have you got?'),
-    timeChips(TIME_OPTIONS, state.minutes, m => { state.minutes = m; savePrefs(); renderToday(); }),
-    ...peopleGearRows(true, renderToday));
+    timeChips(TIME_OPTIONS, state.minutes, m => { state.minutes = m; savePrefs(); renderToday(); }, floor));
+  if (floor > TIME_OPTIONS[0]) card.append(programHint(mixFloorText(floor)));
+  card.append(...peopleGearRows(true, renderToday));
   // everything else comes from last time, and Change opens the full setup
   const style = document.createElement('div');
   style.className = 'today-style';
@@ -852,8 +855,10 @@ function weightRow(kind, rerender = renderEquipmentPicker) {
 
 function renderTimePicker() {
   els.timePicker.innerHTML = '';
+  const floor = mixFloor();
   TIME_OPTIONS.forEach(m => {
-    const b = tappable('chip' + (state.minutes === m ? ' active' : ''), () => {
+    const b = tappable('chip' + (state.minutes === m ? ' active' : '') + (m < floor ? ' dim' : ''), () => {
+      if (m < floor) return;
       state.minutes = m;
       savePrefs();
       renderTimePicker();
@@ -861,14 +866,19 @@ function renderTimePicker() {
     });
     b.textContent = `${m} min`;
     b.setAttribute('aria-pressed', String(state.minutes === m));
+    if (m < floor) b.setAttribute('aria-disabled', 'true');
     els.timePicker.appendChild(b);
   });
+  els.timeHint.hidden = !(floor > TIME_OPTIONS[0]);
+  els.timeHint.textContent = els.timeHint.hidden ? '' : mixFloorText(floor);
 }
 
 function renderIntervalPicker() {
   els.intervalPicker.innerHTML = '';
   const card = (on, name, sub, blurb, pick) => {
-    const b = tappable('interval-card' + (on ? ' active' : ''), () => { pick(); savePrefs(); renderIntervalPicker(); });
+    const b = tappable('interval-card' + (on ? ' active' : ''), () => {
+      pick(); fitMixMinutes(); savePrefs(); renderIntervalPicker(); renderTimePicker();
+    });
     b.innerHTML = `
       <div class="interval-name">${esc(name)}</div>
       <div class="interval-sub">${esc(sub)}</div>
@@ -899,8 +909,10 @@ function renderMixPicker() {
     const c = tappable('chip mix-chip' + (at >= 0 ? ' active' : ''), () => {
       if (at >= 0) state.mixStyles = state.mixStyles.filter(x => x !== id);
       else if (state.mixStyles.length < 3) state.mixStyles = [...state.mixStyles, id];
+      fitMixMinutes();
       savePrefs();
       renderMixPicker();
+      renderTimePicker();
     });
     c.innerHTML = at >= 0 ? `<b>${at + 1}</b> ${esc(INTERVALS[id].label)}` : esc(INTERVALS[id].label);
     c.setAttribute('aria-pressed', String(at >= 0));
@@ -911,6 +923,22 @@ function renderMixPicker() {
   note.className = 'picker-hint mix-plan';
   note.textContent = mixPlanText();
   els.mixPicker.appendChild(note);
+}
+// With Mix on, the shortest time on offer the mix fits in. Shorter time
+// chips are dimmed, and turning Mix on or adding a style raises the minutes
+// to it, so a build can't fail for want of time.
+function mixFloor() {
+  if (!state.mixOn || state.mixStyles.length < 2) return 0;
+  const min = mixMinimumMinutes(state.mixStyles);
+  return (min && TIME_OPTIONS.find(m => m >= min)) || 0;
+}
+function fitMixMinutes() {
+  const floor = mixFloor();
+  if (floor && state.minutes < floor) state.minutes = floor;
+}
+// Said under the time chips while some are dimmed.
+function mixFloorText(floor) {
+  return `This mix needs at least ${floor} min. For less time, take a style out or pick a single style.`;
 }
 function mixPlanText() {
   const s = state.mixStyles;
@@ -1206,6 +1234,9 @@ function namedCard(w) {
     ? `<div class="card-time-detail">${parts.workMin} min work + ${parts.bookendsMin} min warm-up/cool-down</div>` : '';
   const adapted = workoutAdapted(w)
     ? '<div class="card-adapted">Adapted for your equipment</div>' : '';
+  // a classic runs in the style last picked in setup, so the card says which
+  const style = w.format === 'tabata'
+    ? `<span>·</span> <span class="card-style">${esc(intervalFor(w).label)}</span>` : '';
   card.innerHTML = `
     <div class="card-name">${esc(w.name)}</div>
     <div class="card-tagline">${esc(w.tagline)}</div>
@@ -1213,6 +1244,7 @@ function namedCard(w) {
       <span class="duration">${parts.totalMin} min</span>
       <span>·</span>
       <span class="focus-tag ${focusClassMap[w.focus]}">${focusLabelMap[w.focus]}</span>
+      ${style}
     </div>
     ${detail}
     <div class="card-blurb">${esc(w.blurb)}</div>
@@ -2518,14 +2550,17 @@ function pickerLabel(text) {
   label.textContent = text;
   return label;
 }
-// "10 min", "15 min"...; tapping one hands it to onPick.
-function timeChips(options, current, onPick) {
+// "10 min", "15 min"...; tapping one hands it to onPick. Times under
+// `floor` (see mixFloor) are dimmed and can't be picked.
+function timeChips(options, current, onPick, floor = 0) {
   const row = document.createElement('div');
   row.className = 'chip-row time-chips';
   options.forEach(m => {
-    const chip = tappable('chip' + (m === current ? ' active' : ''), () => onPick(m));
+    const chip = tappable('chip' + (m === current ? ' active' : '') + (m < floor ? ' dim' : ''),
+      () => { if (m >= floor) onPick(m); });
     chip.textContent = `${m} min`;
     chip.setAttribute('aria-pressed', String(m === current));
+    if (m < floor) chip.setAttribute('aria-disabled', 'true');
     row.appendChild(chip);
   });
   return row;
@@ -2718,7 +2753,11 @@ els.btnClearExclude.addEventListener('click', () => {
 els.btnBuild.addEventListener('click', () => {
   els.buildNote.textContent = '';
   const err = buildAndOpen(requestFromState());
-  if (err) els.buildNote.textContent = err;
+  if (!err) return;
+  // the note sits under the button at the very end of a long page, so
+  // bring it up beside the button rather than leave the tap looking dead
+  els.buildNote.textContent = err;
+  els.buildNote.scrollIntoView({ block: 'center' });
 });
 
 els.btnShuffle.addEventListener('click', () => {

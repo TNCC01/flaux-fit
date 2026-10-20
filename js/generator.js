@@ -97,6 +97,8 @@ function classicBookends(w) {
 }
 
 // How many blocks fit in the time, and what the result actually runs to.
+// Whole blocks rarely land on the minutes exactly, so any time left short
+// of them goes on the cool-down, as a mix does, and 20 minutes runs 20.
 function planBlocks(minutes, iv) {
   const { warmupSec, cooldownSec } = bookends(minutes);
   const target = minutes * 60;
@@ -107,6 +109,10 @@ function planBlocks(minutes, iv) {
     const total = warmupSec + cooldownSec + n * per + (n - 1) * blockRestSec;
     const miss = Math.abs(total - target);
     if (!best || miss < best.miss) best = { blocks: n, blockRestSec, total, miss, warmupSec, cooldownSec };
+  }
+  if (best.total < target) {
+    best.cooldownSec += target - best.total;
+    best.total = target;
   }
   return best;
 }
@@ -277,16 +283,27 @@ function generateWorkout(opts) {
       return Object.keys(EXERCISES).some(id => usable(id) && g.patterns.includes(EXERCISES[id].pattern));
     });
     return {
-      error: anyRegion
+      error: surf ? 'No surf exercises fit your current equipment and exclusions. Turn some movements or equipment back on.'
+        : anyRegion
         ? 'No movements match those target areas with your current equipment and exclusions.'
         : 'Everything is excluded. Turn some movements or equipment back on.'
     };
   }
 
-  // Drop target regions that contribute nothing, and say so.
+  // Surf picks its own areas, so say which parts of surfing had to go
+  // (bodyweight with no floor work leaves only legs and balance).
+  const deadSurf = surf ? groupOrder.filter(k => !eligible.includes(k)) : [];
+  if (deadSurf.length) {
+    const labels = deadSurf.map(k => SURF_GROUPS[k].label.toLowerCase());
+    const list = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} or ${labels[labels.length - 1]}` : labels[0];
+    notes.push(`Not enough ${list} exercises fit your equipment and exclusions, so ${labels.length > 1 ? 'they were' : 'it was'} skipped.`);
+  }
+
+  // Drop target regions that contribute nothing, and say so. (Not for surf:
+  // it uses every region and never shows them.)
   const covered = new Set(eligible.flatMap(k => poolFor(k)).flatMap(id => EXERCISES[id].regions));
   const dead = regions.filter(r => !covered.has(r));
-  if (dead.length && dead.length < regions.length) {
+  if (!surf && dead.length && dead.length < regions.length) {
     const labels = dead.map(r => (REGIONS.find(x => x.id === r) || {}).label || r);
     notes.push(`Nothing available for ${labels.join(' or ')}, so it was skipped.`);
     regions = regions.filter(r => covered.has(r));
@@ -472,7 +489,7 @@ function generateWorkout(opts) {
       : iv.id === 'amrap' ? 'As many rounds as you can'
       : iv.id === 'fortime' ? 'Race the clock' : 'Sharp bursts',
     focus: focusFor(regions),
-    blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()}, ${iv.sub}.`,
+    blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()}, ${iv.sub.charAt(0).toLowerCase() + iv.sub.slice(1)}.`,
     format: 'tabata',
     intervalId: iv.id,
     repScale,

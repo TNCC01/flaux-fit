@@ -28,8 +28,15 @@ into timed steps:
 node scripts/export-sequence.mjs --list
 node scripts/export-sequence.mjs power-hour
 node scripts/export-sequence.mjs power-hour --interval long --people 1
+node scripts/export-sequence.mjs power-hour --interval emom --gear kb15,kb10
 node scripts/export-sequence.mjs --generate --minutes 30 --regions legs,core
+node scripts/export-sequence.mjs --generate --minutes 30 --interval mix --mix emom,short,amrap
 ```
+
+`--interval` takes any of the five styles below, or `mix` with `--generate`
+(a classic runs in one style, so asking for a classic as a mix is refused
+with a reason). `--gear` lists the kit on hand, or `none` for bodyweight;
+by default everything is on.
 
 Output shape:
 
@@ -58,17 +65,38 @@ Each step maps 1:1 onto a Garmin `WorkoutStepMesg`:
 | `wkt_step_name` | `step.name` |
 | `intensity` | `step.intensity` (already `warmup` / `active` / `rest` / `cooldown`) |
 
+Some steps carry more than a name and a time, for the styles that count reps:
+
+| Field | On | Holds |
+|---|---|---|
+| `reps` | EMOM work steps | the target for that minute, e.g. `"8 reps"`, `"20s each side"` |
+| `lap` | AMRAP and For Time work steps | the exercises in one lap, each `{ name, reps }` |
+| `lapB` | the same, with `--people 2` | person B's lap |
+| `laps` | For Time work steps | how many laps to finish inside the cap |
+
+`note` always spells the same thing out in words, so a model that only shows
+the step name and a line of text still gets the target.
+
 ---
 
 ## What changed since this doc was first written
 
 Worth knowing before you start, because it affects step counts and names:
 
-- **Two interval styles.** `short` is the original 8 × (20s + 10s); `long` is
-  4 × (40s + 20s). Both are 240s per block and 160s of work, so a workout is
-  the same length either way, but `long` produces roughly **half the steps**,
-  which matters if you hit a step-count ceiling on the target model. Pass
-  `--interval long` to get the shorter file.
+- **Five interval styles, plus a mix.** Every block is 240s whichever style
+  runs it, so a workout is the same length in any of them, but the step count
+  changes a lot, which matters if you hit a step-count ceiling on the target
+  model:
+  - `short`: 8 × (20s work + 10s rest), 16 steps a block.
+  - `long`: 4 × (40s work + 20s rest), 8 steps a block.
+  - `emom`: 4 × 60s, one step a minute with the rep target in `reps`; the
+    rest is whatever's left of the minute, so there's no rest step.
+  - `amrap`: one 240s step a block; `lap` lists the exercises to go round.
+  - `fortime`: one 240s step a block (the cap), with `laps` to finish. On the
+    watch it runs to the cap; finishing early just means more rest.
+  - `mix`: two or three of the above back to back, each a section of its own,
+    with a 75s `changeover` step (intensity `rest`) between sections. EMOM,
+    AMRAP and For Time sections can run longer than 4 minutes in a mix.
 - **Most workouts are now generated, not preset.** The 16 named classics are
   still there and still exportable by id. For anything else, use
   `--generate` with the same inputs the app takes.
@@ -76,8 +104,10 @@ Worth knowing before you start, because it affects step counts and names:
   and the coaching detail moved to `note`. Garmin truncates step names at
   ~15 characters on some models, so prefer `name` and consider trimming the
   load suffix if the model is tight on space.
-- **Warm-up and cool-down scale with session length** (2 to 5 minutes each),
-  they are no longer always 5 + 5.
+- **Warm-up and cool-down scale with session length** (2 to 6 minutes each),
+  they are no longer always 5 + 5. Blocks come in four-minute lumps, so the
+  cool-down also takes up any time they leave short of the minutes asked for:
+  a 20-minute session is 20:00 exactly.
 - **Single-person export is still the sensible default** for a watch. Passing
   `--people 2` puts person B's movement in `note`.
 
@@ -97,8 +127,9 @@ encode `WorkoutMesg` + `WorkoutStepMesg` records. The user loads the files
 onto the watch (USB, drop into `GARMIN/Workouts/`), or pushes via Garmin
 Connect if the toolchain supports it.
 
-Check early: the 60-minute workouts expand to ~160 steps in `short` mode
-(~85 in `long`), and some models cap workout step counts.
+Check early: a 60-minute workout expands to about 170 steps in `short`, 90
+in `long`, 50 in `emom` and 20 in `amrap` or `fortime`, and some models cap
+workout step counts.
 
 ### Route 2: Connect IQ native watch app (bigger project, later)
 A Monkey C app mirroring FIT (menu, round bars, equipment logic). Full

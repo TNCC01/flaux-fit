@@ -26,7 +26,8 @@ Home gear set. After that the home screen has three cards:
   card says where you're up to ("Surf Fit · week 2 of 6").
 - **Saved & ready-made**: your favourites and recent sessions, the 16 named
   classics, and the stretch routines (the Stretching filter shows just
-  those).
+  those). A classic runs in the style last picked in setup, and its card
+  says which.
 
 Built workouts are **generated on the spot** rather than
 pulled from a table of presets. The input space (10 equipment items × 8
@@ -105,7 +106,10 @@ leftover seconds go on the cool-down. A 30-minute EMOM, short bursts and
 AMRAP mix is a 4-minute warm-up, a 6-minute EMOM, two short-burst blocks,
 a 6-minute AMRAP and a 3-minute cool-down, with a 75-second changeover
 between styles that says what's coming and how it works. Setup shows that
-breakdown as you pick, or the shortest session the mix fits in. All the
+breakdown as you pick. Times shorter than the mix fits in are dimmed, on
+setup and the home card, and turning Mix on or adding a style moves the
+time up to the shortest that fits, so a mix can't be refused for want of
+time. All the
 exercises are picked in one pass, so muscle groups and gear are spread
 across the whole session, not chosen per section.
 
@@ -152,7 +156,9 @@ rather than hardcoded.
 - Exclusions: four quick constraint filters (no jumping / floor work /
   overhead / running) plus a searchable list of every movement
 - Warm-up and cool-down that scale with the session instead of wrapping a
-  10-minute workout in 10 minutes of walking
+  10-minute workout in 10 minutes of walking. Blocks come in four-minute
+  lumps, so the cool-down takes up any time they leave short and 20
+  minutes runs 20:00
 - Injury alternative for every movement
 - Adjustable exercise text size, for reading across a room
 - Workout history, so a generated session you liked but forgot to save is
@@ -255,8 +261,9 @@ npm test                         # self-check, then the browser suite
 `node scripts/selfcheck.mjs` needs nothing installed. It validates every
 exercise's fields, that every movement has 3D data and a bodyweight
 fallback, that no block hands one item to two people in any round of either
-interval style, that duration labels match what the timer actually runs,
-and that all 1240 generator input combinations either build a valid workout
+interval style, that duration labels match what the timer actually runs
+and that a session runs to the minutes picked, that the export script for
+the Garmin work matches the timer in every style, and that all 1240 generator input combinations either build a valid workout
 or refuse for a good reason. It also proves a workout rebuilds exactly from
 its stored request and seed, and that a seed builds the same workout
 whatever sort algorithm the browser uses. Safari and Chrome sort

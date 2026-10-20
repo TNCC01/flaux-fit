@@ -503,7 +503,7 @@ export default {
         'Lower the back knee towards the floor, letting the back heel lift.',
         'Keep the front knee over the middle toes and the torso upright.',
         'Drive through the front foot and bring the back leg through into the next step.',
-        'Keep going down the driveway and back.',
+        'Keep going for about 10 metres, then turn and come back.',
       ],
       cues: [
         'Long steps, stay tall',

@@ -5,7 +5,7 @@
   ===================
   Equipment: kettlebells, a barbell, dumbbells, a skipping rope, rings, a
   pull-up bar, resistance bands, a medicine or slam ball and a box or bench,
-  each switchable in setup; plus a gravel driveway (~1 min round trip).
+  each switchable in setup; plus some open ground for sprints, lunges and carries.
 
   Each exercise carries:
     name       short headline shown BIG on the workout screen
@@ -81,7 +81,7 @@ const EXCLUSION_TAGS = [
   { id: 'impact',   label: 'No jumping',   blurb: 'Skips jumps, hops and plyometrics' },
   { id: 'floor',    label: 'No floor work', blurb: 'Nothing that needs lying or kneeling down' },
   { id: 'overhead', label: 'No overhead',  blurb: 'Nothing pressed above the head' },
-  { id: 'running',  label: 'No running',   blurb: 'Skips driveway sprints and shuttles' }
+  { id: 'running',  label: 'No running',   blurb: 'Skips sprints and shuttles' }
 ];
 
 const EXERCISES = {
@@ -106,7 +106,7 @@ const EXERCISES = {
   // LEGS: lunge pattern
   // ===================================================================
   reverseLunge:    { name: 'Reverse lunges', cue: 'Alternate legs, long step back', alt: 'Static split squats', equipment: [], img: 'reverseLunge', emom: 12, regions: ['legs'], pattern: 'lunge', tags: [] },
-  walkingLunge:    { name: 'Walking lunges', cue: 'Down the driveway and back', alt: 'Reverse lunges in place', equipment: [], img: 'walkingLunge', emom: '30s', regions: ['legs'], pattern: 'lunge', tags: [] },
+  walkingLunge:    { name: 'Walking lunges', cue: 'About 10 m out and back', alt: 'Reverse lunges in place', equipment: [], img: 'walkingLunge', emom: '30s', regions: ['legs'], pattern: 'lunge', tags: [] },
   lateralLunge:    { name: 'Lateral lunges', cue: 'Step wide, sit into that hip', alt: 'Shallow side steps', equipment: [], img: 'lateralLunge', emom: 12, surf: ['legs'], regions: ['legs'], pattern: 'lunge', tags: [] },
   curtsyLunge:     { name: 'Curtsy lunges', cue: 'Step back and across', alt: 'Plain reverse lunges', equipment: [], img: 'curtsyLunge', emom: 12, regions: ['legs'], pattern: 'lunge', tags: [] },
   cossackSquat:    { name: 'Cossack squats', cue: 'Side to side, other leg straight', alt: 'Shallow lateral lunges', equipment: [], img: 'cossackSquat', emom: 10, surf: ['legs'], regions: ['legs'], pattern: 'lunge', tags: [] },
@@ -215,7 +215,7 @@ const EXERCISES = {
   bearCrawlLateral:{ name: 'Lateral bear crawls', cue: 'Sideways, knees off the floor', alt: 'Bear hold with a shoulder tap', equipment: [], img: 'bearCrawlLateral', emom: '30s', regions: ['core', 'push'], pattern: 'crawl', tags: ['floor'] },
   inchworm:        { name: 'Inchworm walkouts', cue: 'Walk the hands out to a plank', alt: 'Walkouts, knees down on the return', equipment: [], img: 'inchworm', emom: 5, regions: ['core'], pattern: 'crawl', tags: ['floor'] },
   inchwormPushup:  { name: 'Inchworm push-ups', cue: 'Walk out, one push-up, walk back', alt: 'Walkouts with no push-up', equipment: [], img: 'inchwormPushup', emom: 4, regions: ['push', 'core'], pattern: 'crawl', tags: ['floor'] },
-  sprint:          { name: 'Driveway sprint', cue: 'To the mailbox and back', alt: 'Brisk walk to the mailbox & back', equipment: [], img: 'sprint', emom: '1 lap', regions: ['cardio'], pattern: 'cardio', tags: ['impact', 'running'] },
+  sprint:          { name: 'Sprints', cue: 'Out to a marker and back', alt: 'Brisk walk out and back', equipment: [], img: 'sprint', emom: '1 lap', regions: ['cardio'], pattern: 'cardio', tags: ['impact', 'running'] },
   shuttleRun:      { name: 'Shuttle runs', cue: 'Out, touch, back, then repeat', alt: 'Walking shuttles', equipment: [], img: 'shuttleRun', emom: '30s', regions: ['cardio'], pattern: 'cardio', tags: ['impact', 'running'] },
 
   // ===================================================================
@@ -234,7 +234,7 @@ const EXERCISES = {
   kbSnatch10:     { name: 'KB snatches', load: '10kg', cue: 'One pull to overhead', sideCue: true, alt: 'KB high pulls', equipment: ['kb10'], bw: 'squatReach', img: 'kbSnatch', emom: '5/side', regions: ['push', 'legs'], pattern: 'hinge', tags: ['overhead'] },
   kbRackHold15:   { name: 'KB front rack hold', load: '15kg', cue: 'Stay tall, breathe', alt: 'Dumbbell suitcase hold', equipment: ['kb15'], bw: 'wallSit', img: 'kbRackHold', emom: '40s', regions: ['core'], pattern: 'carry', tags: [] },
   kbSuitcaseHold15: { name: 'KB suitcase hold', load: '15kg', cue: 'One side only, do not lean', sideCue: true, alt: 'Lighter bell, shorter hold', equipment: ['kb15'], bw: 'sidePlankHold', img: 'kbSuitcaseHold', emom: '20s/side', regions: ['core'], pattern: 'carry', tags: [] },
-  kbFarmersWalk15:{ name: 'KB farmer carry', load: '15kg', cue: 'One side, down the driveway', sideCue: true, alt: 'Suitcase hold in place', equipment: ['kb15'], bw: 'bearCrawl', img: 'kbFarmersWalk', emom: '20s/side', regions: ['core', 'pull'], pattern: 'carry', tags: [] },
+  kbFarmersWalk15:{ name: 'KB farmer carry', load: '15kg', cue: 'One side, out and back', sideCue: true, alt: 'Suitcase hold in place', equipment: ['kb15'], bw: 'bearCrawl', img: 'kbFarmersWalk', emom: '20s/side', regions: ['core', 'pull'], pattern: 'carry', tags: [] },
   kbCleanPress15: { name: 'KB clean & press', load: '15kg', cue: 'One motion, floor to overhead', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb15'], bw: 'squatReach', img: 'kbCleanPress', emom: 6, regions: ['push', 'legs'], pattern: 'pushV', tags: ['overhead'] },
   kbCleanPress10: { name: 'KB clean & press', load: '10kg', cue: 'One motion, floor to overhead', alt: 'Dumbbell clean & press (lighter)', equipment: ['kb10'], bw: 'squatReach', img: 'kbCleanPress', emom: 8, regions: ['push', 'legs'], pattern: 'pushV', tags: ['overhead'] },
   kbPress10:      { name: 'Single-arm KB press', load: '10kg', cue: 'Ribs down, press tall', sideCue: true, alt: 'Dumbbell shoulder press', equipment: ['kb10'], bw: 'pikePushup', img: 'kbPressSingle', emom: '6/side', regions: ['push'], pattern: 'pushV', tags: ['overhead'] },
@@ -282,7 +282,7 @@ const EXERCISES = {
   dbRdl:          { name: 'Romanian deadlifts', cue: 'Dumbbells down the shins', alt: 'Bodyweight good mornings', equipment: ['dumbbells'], bw: 'goodMorning', img: 'dbRdl', emom: 12, regions: ['legs', 'pull'], pattern: 'hinge', tags: [] },
   renegadeRow:    { name: 'Renegade rows', cue: 'Plank on the dumbbells, row one side', alt: 'Renegade rows from the knees', equipment: ['dumbbells'], db: 'light', bw: 'plankShoulderTaps', img: 'renegadeRow', emom: 10, regions: ['pull', 'core'], pattern: 'pullH', tags: ['floor'] },
   dbWoodchop:     { name: 'Woodchops', cue: 'One dumbbell, hip to opposite shoulder', sideCue: true, alt: 'Bodyweight torso rotations', equipment: ['dumbbells'], db: 'light', bw: 'russianTwistBw', img: 'dbWoodchop', emom: '8/side', surf: ['rotation'], regions: ['core'], pattern: 'coreRot', tags: [] },
-  dbSuitcaseCarry:{ name: 'Suitcase carry', cue: 'One dumbbell, down the driveway', sideCue: true, alt: 'Suitcase hold in place', equipment: ['dumbbells'], bw: 'bearCrawl', img: 'farmersWalk', emom: '20s/side', regions: ['core'], pattern: 'carry', tags: [] },
+  dbSuitcaseCarry:{ name: 'Suitcase carry', cue: 'One dumbbell, out and back', sideCue: true, alt: 'Suitcase hold in place', equipment: ['dumbbells'], bw: 'bearCrawl', img: 'farmersWalk', emom: '20s/side', regions: ['core'], pattern: 'carry', tags: [] },
   dbFarmersWalk:  { name: "Farmer's walk", cue: 'Both dumbbells, tall and steady', alt: 'Shorter walk, lighter pair', equipment: ['dumbbells'], bw: 'bearCrawl', img: 'dbFarmersWalk', emom: '40s', regions: ['pull', 'core'], pattern: 'carry', tags: [] },
   dbOverheadCarry:{ name: 'Overhead carry', cue: 'Both locked out, walk tall', alt: 'Front rack carry instead', equipment: ['dumbbells'], db: 'light', bw: 'bearCrawl', img: 'dbOverheadCarry', emom: '30s', regions: ['push', 'core'], pattern: 'carry', tags: ['overhead'] },
 
