@@ -55,6 +55,9 @@ const state = {
   goal: 'general',
   // programs started: { [id]: { startedAt, done: [{ n, at, surfed }] } }
   programs: {},
+  // each person's level, from how their sessions felt: { [name, or '#a'
+  // for a spot with no name]: { k, easy } } (see PERSONAL LEVELS)
+  levels: {},
   // a mixed session: on, and the styles in order (see planMix)
   mixOn: false,
   mixStyles: ['emom', 'short', 'amrap'],
@@ -89,6 +92,12 @@ const state = {
   started: false,
   elapsedAtResume: 0,
   runStartWall: 0,
+  // blocks (or stretches) skipped this go, and the seconds that skipped,
+  // for the finish screen
+  skipped: [],
+  skippedSec: 0,
+  // what each person said on the finish screen: { a: 'easy', b: 'cooked' }
+  feel: {},
   lastBeep: null,
   tickHandle: null,
   wakeLock: null,
@@ -99,7 +108,7 @@ const state = {
   todayOther: null
 };
 
-const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'gearSets', 'gearSetId',
+const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'levels', 'gearSets', 'gearSetId',
   'regions', 'blockedTags', 'excluded', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked', 'todayOther'];
 
@@ -144,6 +153,16 @@ function cleanPrefs(p) {
     if (!PROGRAMS.some(x => x.id === id) || !plain(pr) || !Array.isArray(pr.done)) delete s.programs[id];
     else pr.done = pr.done.filter(d => plain(d) && Number.isInteger(d.n) && typeof d.at === 'number');
   });
+  // a level in range for each person, by a name or a spot of sensible length
+  const levels = {};
+  if (plain(s.levels)) {
+    Object.keys(s.levels).slice(0, 60).forEach(key => {
+      const v = s.levels[key];
+      const k = plain(v) && typeof v.k === 'number' ? Math.round(v.k * 10) / 10 : NaN;
+      if (key && key.length <= 30 && key !== '__proto__' && k >= LEVEL_MIN && k <= LEVEL_MAX) levels[key] = { k, easy: v.easy === 1 ? 1 : 0 };
+    });
+  }
+  s.levels = levels;
   if (!Array.isArray(s.mixStyles)) s.mixStyles = ['emom', 'short', 'amrap'];
   s.mixStyles = [...new Set(s.mixStyles.filter(id => INTERVALS[id]))].slice(0, 3);
   if (s.mixStyles.length < 2) s.mixStyles = ['emom', 'short', 'amrap'];
@@ -156,6 +175,12 @@ function cleanPrefs(p) {
   s.saved = s.saved.filter(x => plain(x) && Number.isInteger(x.seed) && x.seed > 0 && plain(x.request));
   if (!Array.isArray(s.history)) s.history = [];
   s.history = s.history.filter(h => plain(h) && typeof h.key === 'string' && typeof h.at === 'number').slice(0, HISTORY_CAP);
+  // how it felt, when someone said (older sessions have nothing)
+  s.history.forEach(h => {
+    if (h.feel === undefined) return;
+    const feel = plain(h.feel) ? Object.fromEntries(['a', 'b'].filter(w => ownKey(FEEL_LABEL, h.feel[w])).map(w => [w, h.feel[w]])) : {};
+    if (Object.keys(feel).length) h.feel = feel; else delete h.feel;
+  });
   if (!Array.isArray(s.blockedTags)) s.blockedTags = [];
   if (s.people !== 1 && s.people !== 2) s.people = 1;
   if (!TIME_OPTIONS.includes(s.minutes)) s.minutes = 20;
@@ -209,6 +234,8 @@ window.addEventListener('storage', (e) => {
     state.history = theirs.history;
     state.saved = theirs.saved;
     state.programs = theirs.programs;
+    // levels move on with the history, as a session finishes
+    state.levels = theirs.levels;
   }
   // redraw whatever lists them
   if (state.view === 'welcome') renderToday();
@@ -322,11 +349,43 @@ function sectionsOf(w) {
 // A workout's style for history and comparisons: 'stretch' for a stretch
 // routine, 'mix', or the interval's id.
 const styleIdOf = (w) => (w.format === 'stretch' ? 'stretch' : w.sections ? 'mix' : intervalFor(w).id);
-const buildCtx = (w, ivOverride) => {
+// The cards' context for one person ('a', the default, or 'b'): their
+// level comes with it (see personScale).
+const buildCtx = (w, ivOverride, who = 'a') => {
   const iv = ivOverride || intervalFor(w);
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
-           hasEquip, loads: loadsFor(state.weights), repScale: (w && w.repScale) || undefined };
+           hasEquip, loads: loadsFor(state.weights), repScale: (w && w.repScale) || undefined,
+           level: personScale(w, who) };
 };
+
+// ------------------------------------------------------------- levels
+// How each person said a session felt (see PERSONAL LEVELS in
+// js/workouts.js), as the finish screen and history say it.
+const FEEL_LABEL = { easy: 'Too easy', right: 'About right', cooked: 'Cooked' };
+// Whose level it is: the person's name, or with no name set, their spot
+// ('#a', '#b'), so it follows Wayne whichever spot he's in.
+function levelKey(which) {
+  const name = ((which === 'a' ? state.nameA : state.nameB) || '').trim().toLowerCase();
+  return name ? name.slice(0, 30) : `#${which}`;
+}
+// Each person's level for a new build, for its request: undefined while
+// nobody's is away from 1, so the request is what it always was.
+function personalScales() {
+  const out = {};
+  (state.people === 2 ? ['a', 'b'] : ['a']).forEach(w => {
+    const key = levelKey(w);
+    if (ownKey(state.levels, key) && state.levels[key].k !== 1) out[key] = state.levels[key].k;
+  });
+  return Object.keys(out).length ? out : undefined;
+}
+// The level a workout was built at for whoever is in this spot now: by
+// name, so with Dave and Wayne swapped round each keeps their own reps,
+// and someone it wasn't built for gets the plain targets.
+function personScale(w, who) {
+  const s = w && w.repScales;
+  const key = levelKey(who);
+  return (ownKey(s, key) && s[key]) || undefined;
+}
 
 // Classics carry no bookends of their own; derive them once at load.
 CLASSICS.forEach(w => Object.assign(w, classicBookends(w)));
@@ -375,6 +434,7 @@ const els = {
   exerciseGrid: $('exerciseGrid'), labelA: $('labelA'), labelB: $('labelB'),
   exerciseA: $('exerciseA'), repsA: $('repsA'), cueA: $('cueA'), animA: $('animA'), alternativeA: $('alternativeA'),
   personB: $('personB'), exerciseB: $('exerciseB'), repsB: $('repsB'), cueB: $('cueB'),
+  levelA: $('levelA'), levelB: $('levelB'), finishA: $('finishA'), finishB: $('finishB'),
   circuitA: $('circuitA'), counterA: $('counterA'), circuitB: $('circuitB'), counterB: $('counterB'),
   animB: $('animB'), alternativeB: $('alternativeB'),
   upcoming: $('upcoming'), preStart: $('preStart'),
@@ -441,8 +501,9 @@ function buildSequence(workout, people) {
     const total = workout.blocks.length;
     const secs = sectionsOf(workout);
     secs.forEach((sec, secIdx) => {
-      const iv = sectionInterval(sec);
-      const ctx = buildCtx(workout, iv);
+      const iv = sectionInterval(sec, workout.workRest);
+      // each person's own context, so their level reaches their reps only
+      const ctxA = buildCtx(workout, iv, 'a'), ctxB = buildCtx(workout, iv, 'b');
       // between the sections of a mix: a longer break that says what's next
       if (secIdx > 0) {
         const first = workout.blocks[sec.start];
@@ -457,13 +518,15 @@ function buildSequence(workout, people) {
         if (iv.lap) {
           // one phase for the whole block; each person carries their lap, and
           // in For Time how many laps of it to finish
-          const c = amrapCircuits(block, ctx, isDuo);
+          const lapA = amrapCircuits(block, ctxA, isDuo).a;
+          const lapB = isDuo ? amrapCircuits(block, ctxB, true).b : null;
           const carry = (lap) => lap && { ...lap[0], circuit: lap, lapRounds: iv.forTime ? forTimeRounds(lap.length, iv.workSec) : 0 };
           seq.push({ kind: 'work', amrap: !!iv.amrap, forTime: !!iv.forTime, duration: iv.workSec,
-                     blockIdx, totalBlocks: total, name: label, a: carry(c.a), b: carry(c.b) });
+                     blockIdx, totalBlocks: total, name: label, a: carry(lapA), b: carry(lapB) });
         }
         for (let round = 1; !iv.lap && round <= iv.rounds; round++) {
-          const w = isDuo ? block.duo(round, ctx) : { a: block.solo(round, ctx), b: null };
+          // the same moves either way: duo() is deterministic, only the targets differ
+          const w = isDuo ? { a: block.duo(round, ctxA).a, b: block.duo(round, ctxB).b } : { a: block.solo(round, ctxA), b: null };
           seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round, emom: !!iv.reps,
                      totalBlocks: total, totalRounds: iv.rounds, name: label, a: w.a, b: w.b });
           // an EMOM's rest is whatever is left of the minute, not a phase of its own
@@ -1243,7 +1306,8 @@ function requestFromState() {
     mix: state.mixOn ? state.mixStyles.slice() : undefined,
     goal: state.goal === 'surf' ? 'surf' : undefined,
     regions: state.regions.slice(),
-    blockedTags: state.blockedTags.slice()
+    blockedTags: state.blockedTags.slice(),
+    repScales: personalScales()
   };
 }
 
@@ -1454,6 +1518,17 @@ function scoreLine(rec) {
     : `${what}: ${row('a')}`;
   return `<div class="card-score">${esc(text)}</div>`;
 }
+// How it felt, when someone said (older sessions have nothing): "Felt too
+// easy", or with two "Wayne: too easy · Dave: cooked".
+function feelLine(rec) {
+  const f = rec.feel;
+  if (!f) return '';
+  const say = (w) => FEEL_LABEL[f[w]].toLowerCase();
+  const text = rec.people === 2
+    ? ['a', 'b'].filter(w => f[w]).map(w => `${nameIn(rec, w)}: ${say(w)}`).join(' · ')
+    : f.a ? `Felt ${say('a')}` : '';
+  return text ? `<div class="card-feel">${esc(text)}</div>` : '';
+}
 // Who was A or B in a history entry: the name kept with it, or for older
 // entries that kept none, today's name.
 function nameIn(rec, which) {
@@ -1483,6 +1558,7 @@ function historyCard(rec) {
     </div>
     <div class="card-blurb">${esc(rec.blurb || '')}</div>
     ${scoreLine(rec)}
+    ${feelLine(rec)}
     ${rec.completed ? '<div class="card-done">Finished</div>'
                     : '<div class="card-part">Started, not finished</div>'}`;
   wrap.addEventListener('click', () => {
@@ -1560,6 +1636,8 @@ function openWorkout(workout) {
   // AMRAP rounds counted this session, and what this workout scored last time
   state.scores = {};
   state.pick = {};
+  state.skipped = [];
+  state.skippedSec = 0;
   const before = state.history.find(h => h.key === historyKey(workout) && h.scores
     && h.intervalId === styleIdOf(workout));       // a classic can be run in any style
   state.lastScores = before ? lastScoresFrom(before) : null;
@@ -1643,13 +1721,20 @@ function renderPreview() {
     return;
   }
   add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupExercise.cue);
+  // two people at different levels: each one's reps ("Burpees (Wayne 9 reps, Dave 7 reps)")
+  const duo = state.people === 2;
+  const short = (which) => ((which === 'a' ? state.nameA : state.nameB) || '').trim() || which.toUpperCase();
   sectionsOf(w).forEach((sec, si) => {
-    const iv = sectionInterval(sec);
-    const sctx = buildCtx(w, iv);
+    const iv = sectionInterval(sec, w.workRest);
+    const ctxA = buildCtx(w, iv, 'a'), ctxB = buildCtx(w, iv, 'b');
     if (si > 0) add(`Change over: ${fmtMin(w.changeoverSec || CHANGEOVER_SEC)}`, `Next up, ${iv.label}: ${iv.blurb}`);
     w.blocks.slice(sec.start, sec.start + sec.count).forEach((b, j) => {
       const i = sec.start + j;
-      const names = Array.from(new Set((b.ids || []).map(id => withReps(describeEx(id, sctx)))));
+      const both = (id) => {
+        const a = describeEx(id, ctxA), bx = duo ? describeEx(id, ctxB) : a;
+        return bx.reps === a.reps ? withReps(a) : `${a.display || a.name} (${short('a')} ${a.reps}, ${short('b')} ${bx.reps})`;
+      };
+      const names = Array.from(new Set((b.ids || []).map(both)));
       add(`Block ${i + 1}: ${b.name}`,
           `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.label}, ${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
     });
@@ -2050,6 +2135,7 @@ function render() {
   // a phase on screen means the finish screen has gone (see finish)
   els.workoutView.classList.remove('finished');
   els.btnAgain.hidden = true;
+  els.finishA.hidden = els.finishB.hidden = true;
   els.timerCard.className = 'timer-card ' + phase.kind;
   let label = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
     : phase.changeover ? 'Change over' : (PHASE_LABEL[phase.kind] || '');
@@ -2091,6 +2177,7 @@ function render() {
   els.exerciseA.textContent = dispA ? (dispA.display || dispA.name) : '';
   els.repsA.textContent = dispA ? (dispA.reps || '') : '';
   const showA = shownFor('a', dispA);
+  setText(els.levelA, levelLine('a', showA));
   els.cueA.textContent = showA ? (showA.cue || '') : '';
   setAlt(els.alternativeA, showA ? showA.alt : '');
   updateAnim(els.animA, showA);
@@ -2098,11 +2185,13 @@ function render() {
     els.exerciseB.textContent = dispB.display || dispB.name;
     els.repsB.textContent = dispB.reps || '';
     const showB = shownFor('b', dispB);
+    setText(els.levelB, levelLine('b', showB));
     els.cueB.textContent = showB.cue || '';
     setAlt(els.alternativeB, showB.alt);
     updateAnim(els.animB, showB);
   } else {
     updateAnim(els.animB, null);
+    setText(els.levelB, '');
   }
   renderCircuit('a', dispA, phase);
   renderCircuit('b', state.people === 2 ? dispB : null, phase);
@@ -2113,6 +2202,13 @@ function render() {
   els.btnStart.classList.toggle('running', state.running);
   // once it's going, only Share is left of the pre-start strip (css)
   els.preStart.classList.toggle('underway', state.running || state.elapsedTotal > 0);
+}
+
+// "+1 rep: you said too easy", under a target that a person's level moved
+// (see PERSONAL LEVELS), so a change FIT made on its own says why.
+function levelLine(who, ex) {
+  if (!ex || !ex.more) return '';
+  return `${ex.more}: you said ${personScale(state.workout, who) > 1 ? 'too easy' : 'cooked'}`;
 }
 
 function renderUpcoming() {
@@ -2165,10 +2261,15 @@ function locate(elapsed) {
   return { idx: state.sequence.length, remaining: 0 };
 }
 
-// Jump to the start of a phase, keeping the wall-clock origin in step.
-function seekTo(idx) {
+// How far into the session a phase starts (the end, for one past the last).
+function startOf(idx) {
   let acc = 0;
   for (let i = 0; i < idx && i < state.sequence.length; i++) acc += state.sequence[i].duration;
+  return acc;
+}
+// Jump to the start of a phase, keeping the wall-clock origin in step.
+function seekTo(idx) {
+  const acc = startOf(idx);
   state.currentIdx = Math.min(idx, state.sequence.length);
   state.elapsedTotal = acc;
   state.elapsedAtResume = acc;
@@ -2261,6 +2362,8 @@ function resetWorkout() {
   if (state.started) clearRun();
   state.scores = {};
   state.pick = {};
+  state.skipped = [];
+  state.skippedSec = 0;
   state.started = false;
   seekTo(0);
   if (state.sequence[0]) enterPhaseVisual(state.sequence[0].kind, state.remainingInPhase);
@@ -2288,15 +2391,25 @@ function finish() {
   disarmBack();
   els.workoutView.classList.remove('resting');
   els.workoutView.classList.add('finished');
+  // never started, nobody did anything: no cards saying well done
+  els.workoutView.classList.toggle('unstarted', !state.started);
   els.timerCard.className = 'timer-card';
   setText(els.phaseLabel, 'Done');
   els.timeDisplay.textContent = '✓';
-  // the last tick can land a fraction short of the end ("19:59 / 20:00")
-  els.totalTime.textContent = `Total ${fmt(Math.min(state.elapsedTotal, state.totalDuration))} / ${fmt(state.totalDuration)}`;
-  setText(els.blockName, 'Workout complete. Nice work.');
+  // the time it ran, out of the whole: all of it unless something was
+  // skipped (the last tick can land a fraction short of the end, and that
+  // isn't "19:59 / 20:00")
+  els.totalTime.textContent = `Total ${fmt(Math.round(timeDone()))} / ${fmt(state.totalDuration)}`;
+  setText(els.blockName, state.started ? 'Workout complete. Nice work.' : 'The end of the workout');
   els.roundDots.innerHTML = '';
+  finishSummary().forEach(text => {
+    const line = document.createElement('div');
+    line.className = 'finish-line';
+    line.textContent = text;
+    els.roundDots.appendChild(line);
+  });
   els.exerciseA.textContent = 'Well done.';
-  els.repsA.textContent = els.cueA.textContent = '';
+  els.repsA.textContent = els.cueA.textContent = els.levelA.textContent = els.levelB.textContent = '';
   setAlt(els.alternativeA, '');
   updateAnim(els.animA, null);
   updateAnim(els.animB, null);
@@ -2318,8 +2431,140 @@ function finish() {
   els.btnAgain.hidden = false;
   els.overallProgress.style.width = '100%';
   els.preStart.classList.remove('underway'); // Save and Share; the preview and Shuffle hide (css)
+  // each person's scores and How was that?, fresh for this finish
+  state.feel = {};
+  feelBefore = {};
+  renderFinishPeople();
 }
 const isFinished = () => state.currentIdx >= state.sequence.length;
+
+// ------------------------------------------------------- finish screen
+// It says what was done: the minutes, the blocks (and any skipped), each
+// AMRAP and For Time score against last time, and on a program day where
+// that leaves the program. Then each person can say how it was, one tap
+// each, and that sets their reps for the next build (see levels).
+function finishSummary() {
+  const w = state.workout;
+  if (!state.started) return ["Skipped to the end without pressing Start, so it isn't counted as a session."];
+  const sec = timeDone();
+  const stretch = w.format === 'stretch';
+  const total = stretch ? stretchList(w).length : w.blocks.length;
+  const unit = stretch ? (total === 1 ? 'stretch' : 'stretches') : (total === 1 ? 'block' : 'blocks');
+  const skipped = state.skipped.length;
+  const lines = [`${sec < 60 ? 'Under a minute' : `${Math.round(sec / 60)} min`} done · ${total - skipped} of ${total} ${unit}${skipped ? `, ${skipped} skipped` : ''}`];
+  const day = programDoneLine();
+  if (day) lines.push(day);
+  return lines;
+}
+// Seconds of the session run through rather than skipped.
+const timeDone = () => Math.max(0, state.totalDuration - state.skippedSec);
+// "Day 9 of 42 done. Next: Pop-ups & legs"
+function programDoneLine() {
+  const run = state.programRun;
+  const prog = run && PROGRAMS.find(p => p.id === run.id);
+  const ps = prog && programStatus(prog);
+  if (!ps) return '';
+  return `Day ${run.n + 1} of ${prog.weeks * prog.days.length} done. ${ps.finished ? `That's the whole of ${prog.name}.` : `Next: ${ps.day.name}`}`;
+}
+// Each AMRAP and For Time score this person made, against last time:
+// "Block 2 AMRAP: 5 rounds (last time 4)".
+function finishScores(who) {
+  const rows = [], seen = new Set();
+  state.sequence.forEach(p => {
+    if (!(p.amrap || p.forTime) || seen.has(p.blockIdx)) return;
+    seen.add(p.blockIdx);
+    const s = state.scores[p.blockIdx] || {};
+    const v = s[who] || 0;
+    const last = state.lastScores && state.lastScores[p.blockIdx] ? state.lastScores[p.blockIdx][who] : undefined;
+    const what = s.skipped && !v ? 'skipped' : p.forTime ? (v ? fmt(v) : 'capped') : `${v} round${v === 1 ? '' : 's'}`;
+    const before = what === 'skipped' ? '' : p.forTime ? (last ? fmt(last) : '') : (last != null ? String(last) : '');
+    rows.push(`Block ${p.blockIdx + 1} ${p.forTime ? 'For Time' : 'AMRAP'}: ${what}${before ? ` (last time ${before})` : ''}`);
+  });
+  return rows;
+}
+// Each person's level before this finish screen's taps, so changing your
+// mind doesn't count twice.
+let feelBefore = {};
+// The history entry of the session just finished, which keeps how it felt;
+// a stretch routine says nothing about reps, so it doesn't ask.
+const finishedEntry = () => (state.started && state.workout && state.workout.format !== 'stretch'
+  && state.history.find(h => h.key === historyKey(state.workout))) || null;
+function renderFinishPeople() {
+  const entry = finishedEntry();
+  ['a', 'b'].forEach(who => {
+    const box = els['finish' + who.toUpperCase()];
+    box.innerHTML = '';
+    if (who === 'b' && state.people !== 2) { box.hidden = true; return; }
+    const scores = finishScores(who);
+    if (scores.length) {
+      const list = document.createElement('ul');
+      list.className = 'finish-scores';
+      list.innerHTML = scores.map(t => `<li>${esc(t)}</li>`).join('');
+      box.appendChild(list);
+    }
+    if (entry) box.append(...feelRow(who));
+    box.hidden = !box.children.length;
+    // the question takes the place of "Well done." (the top says Nice work)
+    els['exercise' + who.toUpperCase()].textContent = entry ? '' : 'Well done.';
+  });
+}
+// How was that? Too easy, About right, Cooked, and what the answer does.
+function feelRow(who) {
+  const ask = document.createElement('div');
+  ask.className = 'feel-ask';
+  ask.textContent = 'How was that?';
+  const row = document.createElement('div');
+  row.className = 'chip-row feel-row';
+  row.setAttribute('role', 'group');
+  row.setAttribute('aria-label', `How was that for ${state.people === 1 ? 'you' : personName(who)}?`);
+  Object.entries(FEEL_LABEL).forEach(([id, label]) => {
+    const on = state.feel[who] === id;
+    const chip = tappable('chip feel-chip' + (on ? ' active' : ''), () => tapFeel(who, id));
+    chip.textContent = label;
+    chip.dataset.feel = id;
+    chip.setAttribute('aria-pressed', String(on));
+    row.appendChild(chip);
+  });
+  const note = document.createElement('div');
+  note.className = 'feel-note';
+  note.setAttribute('role', 'status');
+  note.textContent = feelNote(who);
+  return [ask, row, note];
+}
+// One tap: kept with the session, and the person's level moved from where
+// it was before this screen. The same answer again takes it back.
+function tapFeel(who, feel) {
+  const entry = finishedEntry();
+  if (!entry) return;
+  const key = levelKey(who);
+  if (!ownKey(feelBefore, who)) feelBefore[who] = ownKey(state.levels, key) ? { ...state.levels[key] } : null;
+  if (state.feel[who] === feel) delete state.feel[who]; else state.feel[who] = feel;
+  const now = state.feel[who];
+  const level = now ? nextLevel(feelBefore[who], now) : feelBefore[who];
+  if (level && (level.k !== 1 || level.easy)) state.levels[key] = level; else delete state.levels[key];
+  const kept = { ...(entry.feel || {}) };
+  if (now) kept[who] = now; else delete kept[who];
+  if (Object.keys(kept).length) entry.feel = kept; else delete entry.feel;
+  savePrefs();
+  const keyboard = document.activeElement && document.activeElement.classList.contains('feel-chip');
+  renderFinishPeople();
+  if (keyboard) els['finish' + who.toUpperCase()].querySelector(`[data-feel="${feel}"]`).focus();
+}
+// What an answer does, said under it.
+function feelNote(who) {
+  const feel = state.feel[who];
+  if (!feel) return '';
+  const key = levelKey(who);
+  const level = ownKey(state.levels, key) ? state.levels[key] : { k: 1, easy: 0 };
+  const before = feelBefore[who] ? feelBefore[who].k : 1;
+  if (feel === 'right') return 'Noted. Your reps stay as they are.';
+  if (feel === 'easy') {
+    if (level.k > before) return 'Noted. Your reps go up a notch next time.';
+    if (level.k >= LEVEL_MAX) return 'Noted. Your reps are already as high as they go.';
+    return 'Noted. Say it again next time and your reps go up a notch.';
+  }
+  return level.k < before ? 'Noted. Your reps come down a notch next time.' : 'Noted. Your reps are already as low as they go.';
+}
 
 function skipBlock() {
   if (!state.sequence.length) return;
@@ -2332,6 +2577,12 @@ function skipBlock() {
     state.scores[cur.blockIdx] = { a: 0, b: 0, skipped: true };
     saveScores();
   }
+  // what the finish screen says was skipped: the block (or stretch), unless
+  // it was scored (a For Time finished early, say), and the time
+  const scored = (cur.amrap || cur.forTime) && s && (s.a || s.b);
+  const what = cur.kind === 'stretch' ? cur.stretchIdx : (cur.kind === 'work' || cur.kind === 'rest') && !scored ? cur.blockIdx : undefined;
+  if (what !== undefined && !state.skipped.includes(what)) state.skipped.push(what);
+  const from = Math.min(elapsedNow(), state.totalDuration);
   let target = state.currentIdx + 1;
   if (cur.kind !== 'stretch') {
     // Walk to the first phase that isn't part of this block.
@@ -2341,6 +2592,7 @@ function skipBlock() {
       else break;
     }
   }
+  state.skippedSec += Math.max(0, startOf(target) - from);
   if (target >= state.sequence.length) {
     state.elapsedTotal = state.totalDuration;
     state.currentIdx = state.sequence.length;
@@ -2546,7 +2798,8 @@ function saveRun() {
     workoutId: w.generated ? null : w.id, intervalId: intervalFor(w).id,
     people: state.people, names: { a: state.nameA || '', b: state.nameB || '' },
     programRun: state.programRun || null,
-    elapsed, idx, scores: state.scores, pick: state.pick, lastScores: state.lastScores || null
+    elapsed, idx, scores: state.scores, pick: state.pick, lastScores: state.lastScores || null,
+    skipped: state.skipped, skippedSec: state.skippedSec
   };
   try { localStorage.setItem(RUN_KEY, JSON.stringify(snap)); } catch (e) { /* private mode or full: nothing to pick up later */ }
 }
@@ -2598,7 +2851,10 @@ function cleanRun(s) {
     names: { a: name(names.a), b: name(names.b) },
     programRun: prog ? { id: s.programRun.id, n: s.programRun.n } : null,
     scores, pick,
-    lastScores: Array.isArray(s.lastScores) ? s.lastScores.map(x => (plain(x) ? { a: last(x.a), b: last(x.b) } : null)) : null
+    lastScores: Array.isArray(s.lastScores) ? s.lastScores.map(x => (plain(x) ? { a: last(x.a), b: last(x.b) } : null)) : null,
+    // saved before the finish screen counted skips: none
+    skipped: Array.isArray(s.skipped) ? [...new Set(s.skipped.filter(whole))].slice(0, 60) : [],
+    skippedSec: count(s.skippedSec) ? s.skippedSec : 0
   };
 }
 
@@ -2678,6 +2934,8 @@ function resumeRun() {
   state.scores = s.scores;
   state.pick = s.pick;
   state.lastScores = s.lastScores;
+  state.skipped = s.skipped;
+  state.skippedSec = Math.min(s.skippedSec, state.totalDuration);
   state.started = true;
   seekTo(s.idx);
   enterPhaseVisual(state.sequence[s.idx].kind, state.remainingInPhase);
@@ -2701,10 +2959,21 @@ const SHARE_VERSION = 1;
 // with a mate is two, whatever it was built for), so the link opens the same.
 // A built one carries the gear and leave-outs it was built with, which for
 // a link being passed on are the sender's, not this device's.
+//
+// And the levels it was built at, by name (see PERSONAL LEVELS): on the
+// other device Wayne's reps reach whoever is called Wayne there and nobody
+// else, so passing a session from the phone to the iPad keeps everyone's
+// reps, and a mate opening it gets the plain targets. A level kept by spot
+// (someone with no name) stays behind, since that spot could be anyone.
+// The other device's own levels are never put on a link: it's the sender's
+// session, and their levels go on their own next build.
 function sharePayload(w) {
   if (w.generated) {
     const built = w.builtWith || { equipment: effectiveEquip(), excluded: state.excluded };
-    return { v: SHARE_VERSION, seed: w.seed, request: { ...w.request, people: state.people },
+    const request = { ...w.request, people: state.people };
+    const named = cleanRepScales(Object.fromEntries(Object.entries(w.repScales || {}).filter(([k]) => !k.startsWith('#'))));
+    if (named) request.repScales = named; else delete request.repScales;
+    return { v: SHARE_VERSION, seed: w.seed, request,
              equipment: { ...built.equipment }, excluded: built.excluded.slice() };
   }
   return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id, people: state.people };
@@ -3096,7 +3365,7 @@ function renderProgram() {
       <div class="card-tagline">${esc(prog.tagline)}</div>
       <div class="card-blurb">${esc(prog.blurb)}</div>
       <div class="picker-label">Each week</div>${rhythm}
-      <div class="card-blurb">Rep targets start a little lighter and build over the ${prog.weeks} weeks. Pick how long you've got each day.</div>`);
+      <div class="card-blurb">Rep targets start a little lighter and build over the ${prog.weeks} weeks, and the timed days work longer and rest less as the weeks go on. Pick how long you've got each day.</div>`);
     const go = document.createElement('button');
     go.textContent = `Start ${prog.name}`;
     go.addEventListener('click', () => {
@@ -3174,9 +3443,12 @@ function renderProgramToday(prog, st, day) {
 // screen and the home card both show it, so they say how to redraw and
 // where a message goes.
 function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint }) {
+  // a timed day says this week's split: "45s on, 15s off this week"
+  const timing = Object.values(day.workRest || {}).map(([on, off]) => `${on}s on, ${off}s off`).join(', ');
   c.innerHTML = `<div class="card-tagline">${esc(tagline)}</div>
     <div class="card-name">${esc(day.name)}</div>
-    <div class="card-blurb">${esc(day.about)}</div>`;
+    <div class="card-blurb">${esc(day.about)}</div>
+    ${timing ? `<div class="day-timing">${esc(timing)} this week</div>` : ''}`;
   // the notes go under Start, so Start stays on the first screen of a phone
   const notes = [];
   if (!day.stretch) {
@@ -3311,9 +3583,10 @@ function startProgramDay(prog, day) {
     minutes,
     people: state.people,
     intervalId, mix,
-    goal: prog.goal, surfFocus: day.focus, repScale: day.repScale,
+    goal: prog.goal, surfFocus: day.focus, repScale: day.repScale, workRest: day.workRest,
     // the leave-outs from Build a workout, the same as any other session
-    regions: REGIONS.map(r => r.id), blockedTags: state.blockedTags.slice()
+    regions: REGIONS.map(r => r.id), blockedTags: state.blockedTags.slice(),
+    repScales: personalScales()
   };
   const err = buildAndOpen(request);
   if (err) state.programRun = null;

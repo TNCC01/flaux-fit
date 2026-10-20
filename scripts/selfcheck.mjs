@@ -31,7 +31,8 @@ const {
   EXERCISES, EQUIPMENT, REGIONS, EXCLUSION_TAGS, SINGLE_INSTANCE, STRETCHES,
   INTERVALS, CLASSICS, STRETCH_ROUTINES, DEFAULT_EQUIPMENT,
   describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits, sectionInterval,
-  freezeWorkout, thawWorkout, BLOCK_MAKERS,
+  freezeWorkout, thawWorkout, BLOCK_MAKERS, withWorkRest, cleanWorkRest, nextLevel, cleanRepScales, targetDiff,
+  LEVEL_MIN, LEVEL_MAX,
   planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL
 } = A;
 
@@ -266,6 +267,86 @@ for (const ivId of emomIds) {
     if (!m) fail(`${id}: a rotating hold needs a timed EMOM target`);
     else if (!d.cue.includes(`${Math.round(+m[1] / EXERCISES[id].rotateCue)}s`)) fail(`${id} (${ivId}): rotation cue doesn't fit the ${m[1]}s hold: "${d.cue}"`);
   });
+}
+
+// ------------------------------- 5c. a program's splits and personal levels
+// A program week's split of a timed style keeps the block at 240 seconds
+// (so a day never changes length), and the cues follow it. A person's level
+// moves their rep targets and nothing else, stays sensible at either end
+// of its range on top of a program's build-up, and moves by the rules.
+for (const prog of PROGRAMS) {
+  Object.entries(prog.workRest || {}).forEach(([id, ladder]) => {
+    const iv = INTERVALS[id];
+    if (!iv || iv.reps) { fail(`${prog.id}: a work/rest ladder for "${id}", which isn't a timed style`); return; }
+    if (ladder.length !== prog.weeks) fail(`${prog.id}: the ${id} ladder needs a rung for each of its ${prog.weeks} weeks`);
+    ladder.forEach(([on, off], i) => {
+      const rung = withWorkRest(iv, { [id]: [on, off] });
+      if (blockSeconds(rung) !== 240) fail(`${prog.id} week ${i + 1}: ${id} at ${on}s on, ${off}s off runs ${blockSeconds(rung)}s, not 240`);
+      if (!cleanWorkRest({ [id]: [on, off] })) fail(`${prog.id} week ${i + 1}: ${id} ${on}/${off} would be refused when a favourite or link comes back`);
+      const half = Math.round(on / 2);
+      ids.filter(x => EXERCISES[x].sideCue && !EXERCISES[x].equipment.length).slice(0, 3).forEach(x => {
+        const d = describeEx(x, { rounds: rung.rounds, workSec: rung.workSec, restSec: rung.restSec, reps: false, lap: false });
+        if (!d.cue.includes(`${half}s`)) fail(`${x} at ${on}s on: the cue should swap sides at ${half}s, got "${d.cue}"`);
+      });
+    });
+    for (let i = 1; i < ladder.length; i++) {
+      if (ladder[i][0] < ladder[i - 1][0]) fail(`${prog.id}: the ${id} work drops from week ${i} to week ${i + 1}`);
+    }
+  });
+}
+{
+  const surf = PROGRAMS.find(p => p.id === 'surf-fit');
+  const longAt = (n) => JSON.stringify(programDay(surf, n).workRest);
+  if (longAt(0) !== '{"long":[30,30]}' || longAt(28) !== '{"long":[45,15]}') fail(`Surf Fit's Paddle power should run 30/30 in week 1 and 45/15 in week 5, got ${longAt(0)} and ${longAt(28)}`);
+  if (programDay(surf, 3).workRest !== undefined) fail('Surf Fit Engine (EMOM, AMRAP) has no timed split to carry');
+  const bad = [{ long: [50, 20] }, { emom: [30, 30] }, { long: [60, 0] }, { short: ['20', '10'] }, { toString: [30, 30] }, [30, 30], { long: [30, 30], short: [1, 29] }];
+  bad.forEach(x => { if (cleanWorkRest(x) !== undefined) fail(`cleanWorkRest should refuse ${JSON.stringify(x)}`); });
+  if (JSON.stringify(cleanWorkRest({ long: [45, 15], short: [25, 5] })) !== '{"long":[45,15],"short":[25,5]}') fail('cleanWorkRest should keep good splits');
+}
+{
+  // the rules: two Too easy in a row up a notch, one Cooked down, held between 0.7 and 1.3
+  const run = (feels, from = null) => feels.reduce((rec, f) => nextLevel(rec, f), from);
+  const cases = [
+    [['easy'], 1, 1], [['easy', 'easy'], 1.1, 0], [['easy', 'right', 'easy'], 1, 1], [['cooked'], 0.9, 0],
+    [['easy', 'cooked'], 0.9, 0], [Array(12).fill('easy'), 1.3, 0], [Array(9).fill('cooked'), 0.7, 0],
+    [['easy', 'easy', 'easy', 'easy', 'cooked'], 1.1, 0]
+  ];
+  cases.forEach(([feels, k, easy]) => {
+    const got = run(feels);
+    if (got.k !== k || got.easy !== easy) fail(`levels: ${feels.join(', ')} should leave ${k} (${easy} waiting), got ${got.k} (${got.easy})`);
+  });
+  if (JSON.stringify(cleanRepScales({ wayne: 1.1, '#b': 0.9 })) !== '{"wayne":1.1,"#b":0.9}') fail('cleanRepScales should keep levels in range');
+  [{ wayne: 1.4 }, { wayne: 0.6 }, { wayne: 1 }, { wayne: '1.1' }, null, [1.1]].forEach(x => {
+    if (cleanRepScales(x) !== undefined) fail(`cleanRepScales should refuse ${JSON.stringify(x)}`);
+  });
+  const diffs = [[13, 12, '+1 rep'], [22, 20, '+2 reps'], [9, 10, '−1 rep'], ['45s', '40s', '+5s'], ['9/side', '8/side', '+1 each side'], [12, 12, ''], ['1 lap', '1 lap', '']];
+  diffs.forEach(([a, b, want]) => { if (targetDiff(a, b) !== want) fail(`targetDiff(${a}, ${b}) should be "${want}", got "${targetDiff(a, b)}"`); });
+  // every target readable at both ends of the range, on top of a program's
+  // lightest and heaviest weeks, and an EMOM's timed effort still leaves
+  // 15 seconds of the minute
+  for (const ivId of emomIds) {
+    for (const repScale of [undefined, 0.8, 1.1]) {
+      for (const level of [LEVEL_MIN, LEVEL_MAX]) {
+        const ctx = { ...ctxFor(ivId), repScale, level };
+        ids.forEach(id => {
+          const d = describeEx(id, ctx), plain = describeEx(id, { ...ctx, level: undefined });
+          if (!d.reps || /^0|NaN|undefined/.test(d.reps)) fail(`${id} (${ivId}) at level ${level}, scale ${repScale}: reads "${d.reps}"`);
+          const m = !INTERVALS[ivId].lap && /^(\d+)s( each side)?$/.exec(d.reps);
+          if (m && +m[1] * (m[2] ? 2 : 1) > 45) fail(`${id} (EMOM) at level ${level}, scale ${repScale}: "${d.reps}" leaves under 15s of the minute`);
+          if (d.id !== plain.id || d.display !== plain.display) fail(`${id}: a level changed the move itself`);
+          if (d.reps !== plain.reps && !d.more) fail(`${id} (${ivId}) at level ${level}: the target moved but the card wouldn't say why`);
+          if (d.reps === plain.reps && d.more) fail(`${id} (${ivId}) at level ${level}: says "${d.more}" but the target didn't move`);
+        });
+      }
+    }
+  }
+  // the timed styles have no reps, so a level leaves them exactly as they were
+  for (const ivId of Object.keys(INTERVALS).filter(id => !INTERVALS[id].reps)) {
+    ids.forEach(id => {
+      const a = describeEx(id, { ...ctxFor(ivId), level: LEVEL_MAX }), b = describeEx(id, ctxFor(ivId));
+      if (JSON.stringify(a) !== JSON.stringify(b)) fail(`${id} (${ivId}): a level changed a timed card`);
+    });
+  }
 }
 
 // -------------------------------------- 6. blockSwap swaps at the halfway
@@ -528,11 +609,23 @@ for (const prog of PROGRAMS) {
       if (!!short !== !!(day.mix && minutes < min)) fail(`${label}, ${minutes} min: ran as ${intervalId}, the mix needs ${min}`);
       if (short && intervalId !== day.mix[0]) fail(`${label}, ${minutes} min: too short for the mix should run ${day.mix[0]}, got ${intervalId}`);
       const w = generateWorkout({ minutes, people: 2, intervalId, mix,
-        goal: prog.goal, surfFocus: day.focus, repScale: day.repScale, equipment, blockedTags,
+        goal: prog.goal, surfFocus: day.focus, repScale: day.repScale, workRest: day.workRest, equipment, blockedTags,
         regions: REGION_IDS, seed: 9000 + n * 100 + minutes, recent: [] });
       if (w.error) { fail(`${label}, ${minutes} min, ${equipLabel}, no:${blockedTags.join(',') || '-'}: ${w.error}`); continue; }
       programDays++;
       if (w.repScale !== day.repScale) fail(`${label}: the build-up didn't reach the workout`);
+      if (JSON.stringify(w.workRest) !== JSON.stringify(day.workRest) || JSON.stringify(w.request.workRest) !== JSON.stringify(day.workRest)) {
+        fail(`${label}: the week's split (${JSON.stringify(day.workRest)}) didn't reach the workout and its request`);
+      }
+      // a split is timing only: the same seed picks the same moves without it, and the session runs as long
+      if (day.workRest) {
+        const flat = generateWorkout({ minutes, people: 2, intervalId, mix, goal: prog.goal, surfFocus: day.focus, repScale: day.repScale,
+          equipment, blockedTags, regions: REGION_IDS, seed: 9000 + n * 100 + minutes, recent: [] });
+        if (flat.exerciseIds.join() !== w.exerciseIds.join()) fail(`${label}: the week's split changed the moves`);
+        const secs = (x) => (x.sections || [{ intervalId: x.intervalId, count: x.blocks.length, blockRestSec: x.blockRestSec }])
+          .reduce((t, sec) => t + sec.count * blockSeconds(sectionInterval(sec, x.workRest)), 0);
+        if (secs(w) !== secs(flat)) fail(`${label}: the week's split changed how long the blocks run`);
+      }
       checkBlocks(`${label}, ${minutes} min`, w, equipment);
       const left = w.blocks.flatMap(b => b.ids).filter(id => EXERCISES[id].tags.some(t => blockedTags.includes(t)));
       if (left.length) fail(`${label}, ${minutes} min: left out ${blockedTags.join(',')} but got ${left.join(', ')}`);
@@ -644,6 +737,36 @@ if (worstOverlap > 0.5) {
   }
 }
 
+// ------------------------- 11b. levels change the reps, never the moves
+// Each person's level rides on the request, so a favourite or a link
+// rebuilds the same reps for them; the same seed picks the same moves with
+// or without levels, in every style, and only rep targets differ.
+let levelsChecked = 0;
+{
+  const levels = { a: 1.3, b: 0.7 };
+  const strip = (lines) => lines.map(x => x.replace(/×[^ ,/|]+/g, ''));
+  for (const [intervalId, mix] of [...Object.keys(INTERVALS).map(id => [id]), ['mix', ['emom', 'short', 'amrap']]]) {
+    for (const seed of [5, 808, 31337]) {
+      const opts = { minutes: 25, people: 2, intervalId, mix, regions: REGION_IDS, equipment: ALL_EQUIP, excluded: [], blockedTags: [], seed, recent: ids.slice(10, 30) };
+      const plain = generateWorkout(opts);
+      const lv = generateWorkout({ ...opts, repScales: { wayne: 1.3, '#b': 0.7 } });
+      if (plain.error || lv.error) continue;
+      levelsChecked++;
+      const label = `seed ${seed} ${intervalId}${mix ? ` ${mix.join(',')}` : ''}`;
+      if (JSON.stringify(lv.request.repScales) !== '{"wayne":1.3,"#b":0.7}') fail(`${label}: the levels didn't reach the request`);
+      const again = generateWorkout({ ...lv.request, equipment: ALL_EQUIP, excluded: [], seed });
+      if (JSON.stringify(again.repScales) !== JSON.stringify(lv.repScales)) fail(`${label}: rebuilt from its request, the levels came back different`);
+      const shape = (w) => JSON.stringify(w.blocks.map(b => [b.make, b.ids]));
+      if (shape(plain) !== shape(lv) || shape(again) !== shape(lv)) { fail(`${label}: levels changed the moves`); continue; }
+      const flat = expandIds(plain, 2), scaled = expandIds(lv, 2, levels);
+      if (JSON.stringify(strip(flat)) !== JSON.stringify(strip(scaled))) fail(`${label}: levels changed who does what or the timings`);
+      const timed = !intervalId.startsWith('mix') && !INTERVALS[intervalId].reps;
+      if (timed && JSON.stringify(flat) !== JSON.stringify(scaled)) fail(`${label}: levels changed a timed session`);
+      if (!timed && JSON.stringify(flat) === JSON.stringify(scaled)) fail(`${label}: levels of 1.3 and 0.7 left every rep target as it was`);
+    }
+  }
+}
+
 // ------------------------------- 12. seeds must not depend on the sort engine
 // Safari and Chrome sort with different algorithms, so a comparator runs a
 // different number of times in each. If the generator drew random numbers
@@ -695,24 +818,26 @@ if (worstOverlap > 0.5) {
 // app builds it from its seed instead.
 // Every round of a workout as the timer hands it out: who does what, at
 // what load and target, and for a single-arm lift which arm.
-function expandIds(w, people) {
+function expandIds(w, people, levels = {}) {
   const duo = people === 2;
   const arm = (ex) => (/^Left arm/.test(ex.cue) ? 'L' : /^Right arm/.test(ex.cue) ? 'R' : '');
   const one = (ex) => (ex ? `${ex.id}${arm(ex)}${ex.reps ? `×${ex.reps}` : ''}` : '-');
   const secs = w.sections || [{ intervalId: w.intervalId, start: 0, count: w.blocks.length, minutes: 0, blockRestSec: w.blockRestSec }];
   const out = [`bookends ${w.warmupSec}/${w.cooldownSec}/${w.blockRestSec}/${w.changeoverSec || 0}`];
   secs.forEach(sec => {
-    const iv = sectionInterval(sec);
-    const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
-                  hasEquip: () => true, repScale: w.repScale };
+    const iv = sectionInterval(sec, w.workRest);
+    const ctxOf = (who) => ({ rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
+                              hasEquip: () => true, repScale: w.repScale, level: levels[who] });
+    const ctx = ctxOf('a'), ctxB = ctxOf('b');
     w.blocks.slice(sec.start, sec.start + sec.count).forEach((block, i) => {
       if (iv.lap) {
         const c = amrapCircuits(block, ctx, duo);
-        out.push(`${sec.start + i} lap ${c.a.map(one).join(',')} | ${(c.b || []).map(one).join(',')}`);
+        const b = duo ? amrapCircuits(block, ctxB, true).b : null;
+        out.push(`${sec.start + i} lap ${c.a.map(one).join(',')} | ${(b || []).map(one).join(',')}`);
         return;
       }
       for (let r = 1; r <= iv.rounds; r++) {
-        const x = duo ? block.duo(r, ctx) : { a: block.solo(r, ctx), b: null };
+        const x = duo ? { a: block.duo(r, ctx).a, b: block.duo(r, ctxB).b } : { a: block.solo(r, ctx), b: null };
         out.push(`${sec.start + i}.${r} ${one(x.a)} / ${one(x.b)}`);
       }
     });
@@ -725,25 +850,31 @@ let frozenChecked = 0;
   for (const [intervalId, mix] of styles) {
     for (const seed of [11, 4242, 7919, 31337]) {
       for (const goal of [undefined, 'surf']) {
-        const w = generateWorkout({
-          minutes: 30, people: 2, intervalId, mix, goal, regions: REGION_IDS, equipment: ALL_EQUIP,
-          excluded: [], blockedTags: [], seed, recent: ids.slice(0, 20)
-        });
-        if (w.error) continue;
-        const label = `seed ${seed} ${intervalId}${mix ? ` ${mix.join(',')}` : ''}${goal ? ' surf' : ''}`;
-        const back = thawWorkout(JSON.parse(JSON.stringify(freezeWorkout(w))), w.seed, w.request);
-        if (!back) { fail(`frozen ${label}: did not come back from its frozen copy`); continue; }
-        frozenChecked++;
-        [1, 2].forEach(people => {
-          if (JSON.stringify(expandIds(back, people)) !== JSON.stringify(expandIds(w, people))) {
-            fail(`frozen ${label}: runs differently from the workout it froze, for ${people}`);
-          }
-        });
-        ['name', 'tagline', 'blurb', 'focus', 'intervalId', 'repScale', 'seed', 'id'].forEach(k => {
-          if (back[k] !== w[k]) fail(`frozen ${label}: ${k} came back as ${back[k]}, was ${w[k]}`);
-        });
-        if (back.exerciseIds.join() !== w.exerciseIds.join()) fail(`frozen ${label}: different exercise list`);
-        if (!back.generated || back.request !== w.request) fail(`frozen ${label}: lost its generated flag or request`);
+        // and again at a program week's split, with two people's levels
+        for (const extra of [{}, { workRest: { long: [45, 15], short: [25, 5] }, repScales: { wayne: 1.2, '#b': 0.8 } }]) {
+          const w = generateWorkout({
+            minutes: 30, people: 2, intervalId, mix, goal, regions: REGION_IDS, equipment: ALL_EQUIP,
+            excluded: [], blockedTags: [], seed, recent: ids.slice(0, 20), ...extra
+          });
+          if (w.error) continue;
+          const label = `seed ${seed} ${intervalId}${mix ? ` ${mix.join(',')}` : ''}${goal ? ' surf' : ''}${extra.workRest ? ' split+levels' : ''}`;
+          const back = thawWorkout(JSON.parse(JSON.stringify(freezeWorkout(w))), w.seed, w.request);
+          if (!back) { fail(`frozen ${label}: did not come back from its frozen copy`); continue; }
+          frozenChecked++;
+          [1, 2].forEach(people => {
+            if (JSON.stringify(expandIds(back, people)) !== JSON.stringify(expandIds(w, people))) {
+              fail(`frozen ${label}: runs differently from the workout it froze, for ${people}`);
+            }
+          });
+          ['name', 'tagline', 'blurb', 'focus', 'intervalId', 'repScale', 'seed', 'id'].forEach(k => {
+            if (back[k] !== w[k]) fail(`frozen ${label}: ${k} came back as ${back[k]}, was ${w[k]}`);
+          });
+          ['workRest', 'repScales'].forEach(k => {
+            if (JSON.stringify(back[k]) !== JSON.stringify(w[k])) fail(`frozen ${label}: ${k} came back as ${JSON.stringify(back[k])}, was ${JSON.stringify(w[k])}`);
+          });
+          if (back.exerciseIds.join() !== w.exerciseIds.join()) fail(`frozen ${label}: different exercise list`);
+          if (!back.generated || back.request !== w.request) fail(`frozen ${label}: lost its generated flag or request`);
+        }
       }
     }
   }
@@ -803,6 +934,7 @@ let frozenChecked = 0;
     'a mix whose sections miss a block': (f) => { f.intervalId = 'mix'; f.mix = ['short', 'long']; f.changeoverSec = 75;
       f.sections = [{ intervalId: 'short', start: 0, count: 2, minutes: 0, blockRestSec: 30 }, { intervalId: 'long', start: 2, count: 2, minutes: 0, blockRestSec: 30 }]; },
     'a warm-up that is not a number': (f) => { f.warmupSec = '180'; },
+    'a split that runs past four minutes': (f) => { f.workRest = { short: [25, 10] }; },
     'another version': (f) => { f.v = 2; }
   };
   Object.entries(cases).forEach(([what, spoil]) => {
@@ -826,6 +958,7 @@ console.log(`export script      ${exported} exports, every style, lengths match 
 console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused, ${exact} to the second`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 console.log(`frozen favourites  ${frozenChecked} built and frozen, the same run after thawing; the golden one unchanged`);
+console.log(`personal levels    ${levelsChecked} builds with two levels: the same moves, only the reps differ`);
 if (warnings.length) {
   console.log(`\n${warnings.length} warning(s):`);
   warnings.forEach(w => console.log(`  - ${w}`));

@@ -15,6 +15,9 @@
     fortime  a set number of laps of the block's exercises against a
            240s cap; tap Done to log the time, the rest of the cap is rest
 
+  A program week can run short bursts or long efforts at its own split of
+  the same 240 seconds (see withWorkRest).
+
   Everything that used to hardcode "round 5" or "switch at 10s" now reads
   the live interval out of ctx, so cues stay truthful in both styles.
 */
@@ -40,13 +43,40 @@ const DEFAULT_INTERVAL = 'short';
 
 // Every block is this long whichever interval you pick.
 const blockSeconds = (iv) => iv.rounds * (iv.workSec + iv.restSec);
+const ownKey = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+
+// A program week can run a timed style at its own split of the same block
+// (Surf Fit's long efforts go from 30s on, 30s off to 45s on, 15s off).
+// workRest is { long: [45, 15] }, keyed by style; every split keeps the
+// style's rounds and its 240 seconds, so the length never changes.
+function withWorkRest(iv, workRest) {
+  const wr = ownKey(workRest, iv.id) && workRest[iv.id];
+  if (!wr) return iv;
+  return { ...iv, workSec: wr[0], restSec: wr[1], sub: `${wr[0]}s work · ${wr[1]}s rest` };
+}
+// A workRest from a build, a favourite or a link, checked: splits a timed
+// style can run in its 240 seconds, or undefined.
+function cleanWorkRest(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return undefined;
+  const out = {};
+  for (const [id, wr] of Object.entries(x)) {
+    const iv = ownKey(INTERVALS, id) && INTERVALS[id];
+    if (!iv || iv.reps || !Array.isArray(wr) || wr.length !== 2) return undefined;
+    const [work, rest] = wr;
+    if (!Number.isInteger(work) || !Number.isInteger(rest) || work < 5 || rest < 5
+        || iv.rounds * (work + rest) !== blockSeconds(iv)) return undefined;
+    out[id] = [work, rest];
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 // ---------------------------------------------------------------------
 // EXERCISE RESOLUTION
-// ctx = { rounds, workSec, restSec, reps, lap, repScale, hasEquip }, where
-// hasEquip(id) => bool, reps is true for the styles that count reps rather
-// than seconds (EMOM, AMRAP, For Time) and lap for the two that work
-// through the block as one list (AMRAP, For Time)
+// ctx = { rounds, workSec, restSec, reps, lap, repScale, level, hasEquip },
+// where hasEquip(id) => bool, reps is true for the styles that count reps
+// rather than seconds (EMOM, AMRAP, For Time), lap for the two that work
+// through the block as one list (AMRAP, For Time), repScale a program's
+// build-up and level the person's own (see PERSONAL LEVELS)
 // ---------------------------------------------------------------------
 
 // Walk bw fallbacks until everything the exercise needs is on hand.
@@ -106,6 +136,28 @@ function timedSec(v) {
   const m = /^(\d+)s(\/side)?$/.exec(typeof v === 'string' ? v : '');
   return m ? +m[1] * (m[2] ? 2 : 1) : 0;
 }
+// An EMOM's timed effort leaves at least 15 seconds of the minute to rest,
+// however far a program and a level have pushed it.
+function inMinute(v, ctx) {
+  if (!ctx || !ctx.reps || ctx.lap) return v;
+  const m = /^(\d+)s(\/side)?$/.exec(typeof v === 'string' ? v : '');
+  const cap = m && (m[2] ? 20 : 45);
+  return m && +m[1] > cap ? `${cap}s${m[2] || ''}` : v;
+}
+// How far a person's level moved a target, the way the card says it:
+// '+1 rep', '−2 reps', '+5s', '+1 each side', or '' when it didn't.
+function targetDiff(now, plain) {
+  const parse = (v) => {
+    if (typeof v === 'number') return { n: v, secs: false, side: false };
+    const m = /^(\d+)(s?)(\/side)?$/.exec(v || '');
+    return m && { n: +m[1], secs: !!m[2], side: !!m[3] };
+  };
+  const a = parse(now), b = parse(plain);
+  if (!a || !b || a.n === b.n) return '';
+  const d = Math.abs(a.n - b.n);
+  const amount = a.secs ? `${d}s` : a.side ? `${d}` : `${d} rep${d === 1 ? '' : 's'}`;
+  return `${a.n > b.n ? '+' : '−'}${amount}${a.side ? ' each side' : ''}`;
+}
 
 // The weight to show on the card. ctx.loads, when the app knows the gear
 // you own, holds the real weight for each role ({ kb15: '16kg', kb10:
@@ -128,7 +180,11 @@ function loadFor(ex, ctx) {
 function describeEx(id, ctx) {
   const ex = resolveEx(id, ctx);
   const emom = !!(ctx && ctx.reps);
-  const target = scaleTarget(ctx && ctx.lap ? amrapTarget(ex.emom) : ex.emom, ctx && ctx.repScale);
+  // the program's build-up, then the person's own level on top
+  const base = ctx && ctx.lap ? amrapTarget(ex.emom) : ex.emom;
+  const repScale = (ctx && ctx.repScale) || 1, level = (ctx && ctx.level) || 1;
+  const plain = inMinute(scaleTarget(base, repScale), ctx);
+  const target = level === 1 ? plain : inMinute(scaleTarget(base, repScale * level), ctx);
   // when counting reps the effort is the reps (or the timed hold), not the clock
   const workSec = (emom && timedSec(target)) || (ctx && ctx.workSec) || INTERVALS[DEFAULT_INTERVAL].workSec;
   let cue = ex.cue || '';
@@ -145,8 +201,50 @@ function describeEx(id, ctx) {
   // glance which one is theirs.
   const load = loadFor(ex, ctx);
   return { id: ex.id, name: ex.name, load, cue, reps: emom ? repsLabel(target) : '',
+           more: emom && level !== 1 ? targetDiff(target, plain) : '',
            display: load ? `${ex.name} · ${load}` : ex.name,
            alt: ex.alt || '', img: ex.img || null, adapted: ex.adapted };
+}
+
+// ---------------------------------------------------------------------
+// PERSONAL LEVELS
+// After a session each person can say how it was: Too easy, About right or
+// Cooked. Two Too easy in a row move their level up a notch and one Cooked
+// moves it down, between 0.7 and 1.3, so one bad day can't undo weeks. A
+// new build keeps each person's level on its request as repScales
+// ({ wayne: 1.1, '#b': 0.9 }: by name, or by spot for someone with no
+// name), and the cards scale that person's rep targets by it, on top of a
+// program's build-up, so two people get their own reps from the same
+// moves. Rep targets only: the moves and the clock stay as built.
+// ---------------------------------------------------------------------
+const LEVEL_MIN = 0.7;
+const LEVEL_MAX = 1.3;
+const LEVEL_STEP = 0.1;
+// A person's level, { k, easy } (easy: a Too easy waiting for its second),
+// after one more answer: 'easy', 'right' or 'cooked'.
+function nextLevel(rec, feel) {
+  let k = rec && typeof rec.k === 'number' ? rec.k : 1;
+  let easy = rec && rec.easy === 1 ? 1 : 0;
+  if (feel === 'easy') {
+    easy++;
+    if (easy >= 2) { k += LEVEL_STEP; easy = 0; }
+  } else if (feel === 'cooked') {
+    k -= LEVEL_STEP; easy = 0;
+  } else if (feel === 'right') {
+    easy = 0;
+  }
+  return { k: Math.round(Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, k)) * 10) / 10, easy };
+}
+// repScales from a build, a favourite or a link, checked: a level in range
+// for each person (two at most), or undefined when nobody's is away from 1.
+function cleanRepScales(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return undefined;
+  const out = {};
+  Object.keys(x).slice(0, 2).forEach(key => {
+    const k = typeof x[key] === 'number' ? Math.round(x[key] * 10) / 10 : NaN;
+    if (key && key.length <= 30 && key !== '__proto__' && k >= LEVEL_MIN && k <= LEVEL_MAX && k !== 1) out[key] = k;
+  });
+  return Object.keys(out).length ? out : undefined;
 }
 
 // ---------------------------------------------------------------------
@@ -270,10 +368,11 @@ const CHANGEOVER_SEC = 75;      // between sections: longer than a block rest
 const FLEX_MIN_MINUTES = 4;     // shortest EMOM / AMRAP / For Time section
 const isFlexible = (id) => !!(INTERVALS[id] && INTERVALS[id].reps);
 
-// The interval a section runs at: the style's own, with the plan's minutes
-// as an EMOM's rounds or an AMRAP's or For Time's length.
-function sectionInterval(sec) {
-  const iv = INTERVALS[sec.intervalId] || INTERVALS[DEFAULT_INTERVAL];
+// The interval a section runs at: the style's own (at a program week's
+// split, see withWorkRest), with the plan's minutes as an EMOM's rounds or
+// an AMRAP's or For Time's length.
+function sectionInterval(sec, workRest) {
+  const iv = withWorkRest(INTERVALS[sec.intervalId] || INTERVALS[DEFAULT_INTERVAL], workRest);
   if (!sec.minutes) return iv;
   if (iv.lap) return { ...iv, workSec: sec.minutes * 60 };
   if (iv.reps) return { ...iv, rounds: sec.minutes };
@@ -306,6 +405,7 @@ function freezeWorkout(w) {
   return {
     v: 1, name: w.name, tagline: w.tagline, blurb: w.blurb, focus: w.focus,
     intervalId: w.intervalId, mix: copy(w.mix), repScale: w.repScale, sections: copy(w.sections),
+    workRest: copy(w.workRest), repScales: copy(w.repScales),
     changeoverSec: w.changeoverSec, warmupSec: w.warmupSec, cooldownSec: w.cooldownSec,
     blockRestSec: w.blockRestSec, notes: copy(w.notes || []), builtWith: copy(w.builtWith),
     blocks: w.blocks.map(b => ({ make: b.make, name: b.name, ids: b.ids.slice() }))
@@ -331,11 +431,13 @@ function thawWorkout(f, seed, request) {
   }
   if (![f.warmupSec, f.cooldownSec, f.blockRestSec].every(secs)) return null;
   if (f.repScale !== undefined && !(typeof f.repScale === 'number' && f.repScale > 0)) return null;
+  if (f.workRest !== undefined && !cleanWorkRest(f.workRest)) return null;
   const w = {
     id: `gen-${seed}`, generated: true, format: 'tabata',
     name: text(f.name) || 'Saved workout', tagline: text(f.tagline), blurb: text(f.blurb),
     focus: typeof f.focus === 'string' && f.focus ? f.focus : 'whole-body',
     intervalId: f.intervalId, repScale: f.repScale,
+    workRest: cleanWorkRest(f.workRest), repScales: cleanRepScales(f.repScales),
     warmupSec: f.warmupSec, cooldownSec: f.cooldownSec, blockRestSec: f.blockRestSec,
     blocks, notes: Array.isArray(f.notes) ? f.notes.filter(x => typeof x === 'string') : [],
     seed, request, exerciseIds: [...new Set(blocks.flatMap(b => b.ids))]
@@ -624,6 +726,12 @@ const PROGRAMS = [
     blurb: 'A session a day for surfers whose fitness has slipped: paddling stamina, a pop-up that beats the wave, and legs that hold a turn. Hard days, easy days and mobility, so every day is doable.',
     // reps start lighter and build: weeks 1 to 6
     repScale: [0.8, 0.9, 1, 1, 1.1, 1.1],
+    // and the timed days work longer and rest less: [work, rest] seconds,
+    // weeks 1 to 6, each still a four-minute block
+    workRest: {
+      long:  [[30, 30], [35, 25], [40, 20], [40, 20], [45, 15], [45, 15]],
+      short: [[15, 15], [20, 10], [20, 10], [20, 10], [25, 5], [25, 5]]
+    },
     days: [
       { name: 'Paddle power', short: 'Paddle', style: 'long', focus: 'paddle', minutes: 20,
         about: 'Long efforts on paddling strength and stamina: rows, swimmers, prone paddling. The muscles that get you out the back.' },
@@ -642,10 +750,15 @@ const PROGRAMS = [
     ]
   }
 ];
-// The template, week (1-based) and rep scale for day n (0-based) of a program.
+// The template, week (1-based), rep scale and timed splits (see
+// withWorkRest) for day n (0-based) of a program.
 function programDay(prog, n) {
   const week = Math.min(prog.weeks, Math.floor(n / prog.days.length) + 1);
-  return { ...prog.days[n % prog.days.length], n, week, repScale: prog.repScale[week - 1] || 1 };
+  const day = prog.days[n % prog.days.length];
+  const ladder = prog.workRest || {};
+  const timed = (day.mix || (day.style ? [day.style] : [])).filter(id => ownKey(ladder, id));
+  const workRest = timed.length ? Object.fromEntries(timed.map(id => [id, ladder[id][week - 1].slice()])) : undefined;
+  return { ...day, n, week, repScale: prog.repScale[week - 1] || 1, workRest };
 }
 // The style a day runs in at this length: its own, or its mix. A mix that
 // won't fit the minutes runs as its first style on its own, so a short day

@@ -60,8 +60,24 @@ timed styles also do the **same 160 seconds of work**:
 In an EMOM each exercise has a rep target (`emom` in `js/exercises.js`):
 a count, a count per side, or a timed effort for holds and carries, pitched
 to take 30 to 40 seconds so there's time left in the minute to recover. The
-card shows it above the name ("12 reps", "8 each side", "40s"). One number
-for everyone for now; levels can come later.
+card shows it above the name ("12 reps", "8 each side", "40s").
+
+**Levels.** At the end of a session each person taps how it was: Too easy,
+About right or Cooked (one tap each, and optional; the same answer again
+takes it back). FIT keeps a level for each person by name (by spot, A or
+B, for someone with no name), starting at 1: two Too easy in a row move it
+up 0.1, one Cooked moves it down 0.1, and it stays between 0.7 and 1.3, so
+one rough day can't undo weeks of work. The next workout built from the
+Today card, Build a workout or a program day scales each person's rep
+targets by their own level (`nextLevel`, `repScales` in `js/workouts.js`),
+so with two of you each gets their own reps from the same moves, and the
+card says why ("+1 rep: you said too easy"). Only rep targets move: the
+moves, the clock and the timed styles stay as built, and an EMOM's timed
+efforts still leave 15 seconds of the minute. The levels go on the
+workout's request by name, so a favourite comes back with the same reps
+for each person, Wayne keeps his own if he and Dave swap spots, and a new
+mate gets the plain targets. The classics and stretch routines don't use
+levels.
 
 In an AMRAP each block becomes one four-minute lap of its exercises, each
 at about two thirds of its EMOM target since they're done back to back.
@@ -89,8 +105,15 @@ back, shoulders and ankles.
 builds week by week. The first is **Surf Fit**, six weeks on a weekly
 rhythm: paddle power, pop-ups and legs, mobility, an engine mix (EMOM then
 AMRAP), paddle and shoulders, pop-ups and turns, and an easy day. Rep
-targets start at 80% and build over the six weeks to 110% (`repScale`);
-timed days have no reps to scale. Each day builds through the generator
+targets start at 80% and build over the six weeks to 110% (`repScale`),
+and each person's own level goes on top. The two timed days build by
+working longer and resting less (`workRest`, one split a week, every one
+still a four-minute block): Paddle power's long efforts go 30s on and 30s
+off in week 1, then 35/25, 40/20, 40/20 and 45/15 in weeks 5 and 6;
+Pop-ups & legs' short bursts go 15/15, then 20/10 for three weeks, then
+25/5. The day's card says this week's ("45s on, 15s off this week"), and
+the split goes on the request, so a favourite or a link of the day runs
+it again exactly. Each day builds through the generator
 with the day's style and focus, at whatever length you pick, with today's
 people, gear and weights, and leaves out whatever Build a workout leaves
 out (the day's card says what, with a Change link). Every length is on
@@ -192,8 +215,9 @@ rather than hardcoded.
   naming a move that has since left the library is built from its seed
   and says so. Share links are still the seed and the request
 - Your data, at the bottom of Saved & ready-made. **Save a backup** saves
-  a dated file of everything (`FIT backup 2026-10-20.json`; on an iPhone
-  or iPad through the share sheet, so Save to Files or AirDrop). **Copy to
+  a dated file of everything, levels included (`FIT backup 2026-10-20.json`;
+  on an iPhone or iPad through the share sheet, so Save to Files or
+  AirDrop). **Copy to
   another device** puts the same on the clipboard as text, or in a box to
   copy by hand when there's no clipboard. **Restore** takes the file or
   the pasted text, runs it through the same checks as the stored
@@ -212,8 +236,14 @@ rather than hardcoded.
   timer to pause or resume; Start, Skip and Reset stay on screen however
   long the cards get, in one row on a phone
 - A finish screen with Done (home, or back to the program for a program
-  day), Start over, and Save and Share. Skipping to the end without ever
-  pressing Start doesn't count as a session done
+  day), Start over, and Save and Share. It says what was done: the
+  minutes, the blocks and any skipped ("16 min done · 4 of 5 blocks, 1
+  skipped", with the clock at the time it ran), each AMRAP and For Time
+  score against last time ("Block 2 AMRAP: 5 rounds (last time 4)"), and
+  on a program day where that leaves it ("Day 9 of 42 done. Next: Pop-ups
+  & legs"). Then How was that? on each person's card (see Levels), kept
+  with the session in history. Skipping to the end without ever pressing
+  Start doesn't count as a session done, and the screen says so
 - Never loses your place. A session under way is saved as it goes (every
   five seconds, and on a pause, a skip, a score and whenever the app goes
   out of view), under its own key rather than with the settings. After a
@@ -234,7 +264,11 @@ rather than hardcoded.
   tablet, for the same number of people, with no account and no server
   involved. The message says the minutes, style and people, and Share stays
   on screen once the workout is going. A link passed on keeps the gear it
-  was first built with, so the third person gets the same session too
+  was first built with, so the third person gets the same session too.
+  It carries each named person's level, so on the other device Wayne's
+  reps reach whoever is called Wayne there and nobody else, and someone
+  else opening it gets the plain targets; the other device's own levels
+  are never put on it, since it's the sender's session
 - Opens at once, signal or not. After the first visit a service worker
   keeps a copy of the whole app and the 3D figures, and FIT runs from it,
   so it opens in a garage on one bar of signal as fast as it does with no
@@ -350,7 +384,11 @@ differently, and a favourite saved on the iPad has to come back identical
 on the phone. Every style comes back from a favourite's frozen copy
 exactly as built, a checked-in golden favourite (one block from each block
 helper) still runs the same rounds, and a frozen copy that's the wrong
-shape or names a move that's gone is refused. It also checks that every
+shape or names a move that's gone is refused. Every rung of a program's
+work/rest ladder runs its block in 240 seconds and reaches the build;
+the level rules (two Too easy up, one Cooked down, 0.7 to 1.3) hold, and
+the same seed with levels picks the same moves in every style with only
+the rep targets different. It also checks that every
 file the pages load is precached and that `FILES_HASH` in `sw.js` is
 current (see Offline and updates).
 
@@ -362,7 +400,10 @@ size, a share link opened in a fresh browser context, corrupt preferences,
 picking a session back up after a reload and coming back after time away,
 a phone-width layout and a phone on its side, favourites and history
 keeping their moves through a library change, backing up, copying and
-restoring your data on a second device (and putting it back), the app
+restoring your data on a second device (and putting it back), the finish
+screen's summary and How was that? (two Too easy taps lifting one
+person's EMOM reps above the other's, kept through a favourite, a swap of
+spots and a link), Surf Fit's timed days building week by week, the app
 opening with the network switched off and at once with a six-second
 network, a new release waiting for its tap and never running beside the
 old one, and a page whose scripts fail handing over to the release

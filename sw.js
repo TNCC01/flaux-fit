@@ -26,8 +26,8 @@
   is added, list it below (the self-check fails on a file the pages load,
   or a 3D file, that isn't listed).
 */
-const VERSION = 'fit-v8';
-const FILES_HASH = 'b0ab82cf7dc8';
+const VERSION = 'fit-v9';
+const FILES_HASH = '809d962f8069';
 const CACHE = `${VERSION}-${FILES_HASH}`;
 
 const SHELL = [

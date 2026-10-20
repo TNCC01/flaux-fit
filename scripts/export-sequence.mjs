@@ -128,7 +128,7 @@ const sections = workout.sections || (workout.format === 'tabata'
 if (workout.format === 'tabata') {
   if (workout.warmupSec > 0) push('warmup', workout.warmupSec, 'Warm-up', 'Easy movement');
   sections.forEach((sec, si) => {
-    const iv = sectionInterval(sec);
+    const iv = sectionInterval(sec, workout.workRest);
     const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps,
                   lap: !!iv.lap, hasEquip, repScale: workout.repScale };
     // between the sections of a mix: a longer break that says what's next
@@ -189,7 +189,7 @@ console.log(JSON.stringify({
     ? { id: 'mix', label: 'Mix', styles: workout.sections.map(x => x.intervalId) }
     : workout.format === 'tabata' ? ivOut(INTERVALS[sections[0].intervalId]) : null,
   sections: workout.sections
-    ? workout.sections.map(x => ({ ...ivOut(sectionInterval(x)), blocks: x.count, minutes: x.minutes || undefined }))
+    ? workout.sections.map(x => ({ ...ivOut(sectionInterval(x, workout.workRest)), blocks: x.count, minutes: x.minutes || undefined }))
     : undefined,
   people,
   totalSeconds: total,

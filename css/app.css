@@ -748,6 +748,38 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .count-now b { font-size: 2.2rem; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
 .count-now span { font-size: 0.8rem; margin-top: 0.15rem; }
 .card-score { color: var(--teal-bright); font-weight: 700; font-size: 0.9rem; margin-top: 0.35rem; }
+.card-feel { color: var(--muted); font-weight: 600; font-size: 0.9rem; margin-top: 0.25rem; }
+/* a person's level moved this target: "+1 rep: you said too easy" */
+.exercise-level {
+  font-size: calc(clamp(0.9rem, 1.4vw, 1.15rem) * var(--ex-scale, 1)); font-weight: 700;
+  color: var(--teal-bright); line-height: 1.3; margin-top: 0.3rem;
+}
+.exercise-level:empty { display: none; }
+
+/* The finish screen: what was done above the timer, then each person's
+   scores against last time and How was that? on their own card */
+.finish-line { color: var(--text); font-size: 1.02rem; font-weight: 700; line-height: 1.35; }
+.finish-line + .finish-line { color: var(--teal-bright); }
+.person-finish { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.6rem; }
+.person-finish[hidden] { display: none; }
+.finish-scores { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; color: var(--text); font-weight: 700; line-height: 1.35; }
+.feel-ask {
+  font-size: 0.8rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted); margin-top: 0.2rem;
+}
+/* one row where they fit, two on a narrow card (a phone on its side) */
+.feel-row .chip { flex: 1 1 auto; min-height: 44px; padding: 0.55rem 0.4rem; text-align: center; white-space: nowrap; }
+.feel-note { color: var(--muted); font-size: 0.9rem; line-height: 1.35; }
+.feel-note:empty { display: none; }
+/* the tick, Done and the total on one line, so the scores, the question,
+   and Save and Share all get the room */
+#workoutView.finished .timer-card {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 0.2rem 0.9rem; padding: 0.6rem 1rem;
+}
+#workoutView.finished .time-display { order: -1; font-size: 2.2rem; margin: 0; }
+#workoutView.finished.unstarted .exercise-grid { display: none; }
+#workoutView.finished .pre-actions button { flex-basis: 0; padding-left: 0.4rem; padding-right: 0.4rem; }
 .exercise-name {
   font-size: calc(clamp(1.7rem, 3.6vw, 3rem) * var(--ex-scale));
   font-weight: 900;
@@ -1045,6 +1077,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .today-card .picker-label { margin: 0.3rem 0 0.15rem; }
 .today-card .chip-row { margin-top: 0; }
 .program-hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem; }
+/* a timed day's split this week: "45s on, 15s off this week" */
+.day-timing { color: var(--teal-bright); font-size: 0.92rem; font-weight: 700; margin-top: 0.25rem; }
 /* a Change or Undo link at the end of a line of text; the padding makes it
    44px tall to tap, and the negative margin keeps the lines where they were */
 .program-hint .link-btn, .build-note .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; font-size: inherit; }

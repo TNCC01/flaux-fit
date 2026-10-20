@@ -1207,6 +1207,136 @@ try {
   await p.click('#btnBuild'); await p.click('#btnStart');
   ok('history keeps the names: a rename leaves the score with Dave, a new name gets no "Last time", and a swap follows the person');
 
+  step = 'the finish screen says what was done, and each person says how it was';
+  await leaveStarted();
+  await p.click('#pathBuild'); await p.fill('#nameA', 'Wayne'); await p.fill('#nameB', 'Dave');
+  await p.click('.interval-card:has-text("EMOM")');
+  await p.click('#btnBuild');
+  assert(await st(() => state.people === 2 && state.workout.request.repScales === undefined && !Object.keys(state.levels).length),
+         'before anyone has said, a build carries no levels');
+  // one block skipped, then the clock runs out on its own
+  const runOut = () => p.evaluate(() => new Promise(done => {
+    state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now();
+    const t = setInterval(() => { if (isFinished()) { clearInterval(t); done(); } }, 50);
+  }));
+  await p.click('#btnStart');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
+  await p.click('#btnSkip');
+  assert(await st(() => { saveRun(); return JSON.stringify(readRun().skipped); }) === '[0]', 'a session saved part-way keeps what was skipped');
+  await runOut();
+  const fin1 = await st(() => ({ lines: [...document.querySelectorAll('#roundDots .finish-line')].map(e => e.textContent),
+    total: document.getElementById('totalTime').textContent, n: state.workout.blocks.length, whole: fmt(state.totalDuration),
+    done: fmt(Math.round(timeDone())), near: Math.abs(timeDone() - (state.totalDuration - 240)) < 3, min: Math.round((state.totalDuration - 240) / 60),
+    asks: ['finishA', 'finishB'].map(id => document.querySelector(`#${id} .feel-ask`) && document.querySelector(`#${id} .feel-ask`).textContent),
+    chips: [...document.querySelectorAll('#finishA .feel-chip')].map(c => c.textContent).join('|') }));
+  assert(fin1.lines.length === 1 && fin1.lines[0] === `${fin1.min} min done · ${fin1.n - 1} of ${fin1.n} blocks, 1 skipped`,
+         'the summary says the minutes done and the block skipped: ' + JSON.stringify(fin1.lines));
+  assert(fin1.total === `Total ${fin1.done} / ${fin1.whole}` && fin1.near, 'and the clock the time it ran, four minutes short: ' + fin1.total);
+  assert(fin1.asks.every(a => a === 'How was that?') && fin1.chips === 'Too easy|About right|Cooked', 'each person is asked how it was, three answers: ' + JSON.stringify(fin1));
+  await p.click('#finishA .feel-chip[data-feel="easy"]');
+  await p.click('#finishB .feel-chip[data-feel="right"]');
+  const said1 = await st(() => ({ feel: JSON.stringify(state.history[0].feel), levels: JSON.stringify(state.levels),
+    notes: ['finishA', 'finishB'].map(id => document.querySelector(`#${id} .feel-note`).textContent),
+    on: [...document.querySelectorAll('.feel-chip.active')].map(c => c.dataset.feel).join() }));
+  assert(said1.feel === '{"a":"easy","b":"right"}' && said1.levels === '{"wayne":{"k":1,"easy":1}}' && said1.on === 'easy,right',
+         'one tap each, kept with the session, and one Too easy waits for a second: ' + JSON.stringify(said1));
+  assert(said1.notes[0] === 'Noted. Say it again next time and your reps go up a notch.' && said1.notes[1] === 'Noted. Your reps stay as they are.',
+         'each answer says what it does: ' + JSON.stringify(said1.notes));
+  // the same answer again takes it back; then it's given again
+  await p.click('#finishA .feel-chip[data-feel="easy"]');
+  assert(await st(() => JSON.stringify(state.history[0].feel) === '{"b":"right"}' && !state.levels.wayne), 'a second tap on the same answer takes it back');
+  await p.click('#finishA .feel-chip[data-feel="cooked"]'); await p.click('#finishA .feel-chip[data-feel="easy"]');
+  assert(await st(() => JSON.stringify(state.levels) === '{"wayne":{"k":1,"easy":1}}'), 'changing your mind counts once, not twice: ' + await st(() => JSON.stringify(state.levels)));
+  // the history card says how it felt, and an old entry without it still shows
+  await p.click('#btnStart');
+  await st(() => {
+    state.history.splice(1, 0, { key: 'id:quick-spark', name: 'Quick Spark', at: Date.now() - 86400000 * 3, people: 2, intervalId: 'short',
+                                 generated: false, workoutId: 'quick-spark', minutes: 13, completed: true });
+    savePrefs(); renderLibrary(); setView('library');
+  });
+  const felt = await p.$$eval('.history-card', els => els.slice(0, 2).map(e => ({ name: e.querySelector('.card-name').textContent,
+    feel: (e.querySelector('.card-feel') || {}).textContent || '', done: !!e.querySelector('.card-done') })));
+  assert(felt[0].feel === 'Wayne: too easy · Dave: about right' && felt[1].name === 'Quick Spark' && felt[1].feel === '' && felt[1].done,
+         'the card says who felt what, and an old session with nothing said still shows: ' + JSON.stringify(felt));
+  // a second Too easy in a row moves Wayne up a notch, and one Cooked moves Dave down
+  await st(() => goWelcome());
+  await p.click('#todayCard .today-go');
+  assert(await st(() => state.workout.request.repScales === undefined), 'one Too easy alone changes nothing yet');
+  await p.click('#btnStart');
+  await runOut();
+  const whole = await st(() => ({ total: document.getElementById('totalTime').textContent, line: document.querySelector('#roundDots .finish-line').textContent,
+                                  n: state.workout.blocks.length, min: Math.round(state.totalDuration / 60) }));
+  assert(/^Total (\d+:\d\d) \/ \1$/.test(whole.total) && whole.line === `${whole.min} min done · ${whole.n} of ${whole.n} blocks`,
+         'run out on the clock with nothing skipped, the finish screen has the whole session on it: ' + JSON.stringify(whole));
+  await p.click('#finishA .feel-chip[data-feel="easy"]');
+  await p.click('#finishB .feel-chip[data-feel="cooked"]');
+  const said2 = await st(() => ({ levels: JSON.stringify(state.levels), notes: ['finishA', 'finishB'].map(id => document.querySelector(`#${id} .feel-note`).textContent) }));
+  assert(said2.levels === '{"wayne":{"k":1.1,"easy":0},"dave":{"k":0.9,"easy":0}}', 'Wayne up to 1.1, Dave down to 0.9: ' + said2.levels);
+  assert(said2.notes[0] === 'Noted. Your reps go up a notch next time.' && said2.notes[1] === 'Noted. Your reps come down a notch next time.', JSON.stringify(said2.notes));
+  // the next EMOM: the same moves for both, Wayne's reps above Dave's
+  await p.click('#btnStart');
+  await p.click('#pathBuild'); await p.click('#btnBuild');
+  const reps = () => st(() => {
+    const n = (r) => parseInt(r, 10);
+    const plainCtx = { ...buildCtx(state.workout, INTERVALS.emom), level: undefined };
+    const by = {};
+    state.sequence.filter(x => x.emom).forEach(x => ['a', 'b'].forEach(w => {
+      const e = by[x[w].id] || (by[x[w].id] = { plain: n(describeEx(x[w].id, plainCtx).reps) });
+      e[w] = n(x[w].reps);
+    }));
+    return { by, scales: JSON.stringify(state.workout.request.repScales), ids: state.workout.exerciseIds.join(), seed: state.workout.seed,
+             seq: state.sequence.filter(x => x.emom).map(x => `${x.a.id} ${x.a.reps} / ${x.b.id} ${x.b.reps}`).join('|') };
+  });
+  const lv = await reps();
+  const both = Object.values(lv.by).filter(e => e.a !== undefined && e.b !== undefined);
+  assert(lv.scales === '{"wayne":1.1,"dave":0.9}', 'the build carries each person\'s level by name: ' + lv.scales);
+  assert(both.length && both.every(e => e.a >= e.plain && e.plain >= e.b) && both.some(e => e.a > e.b),
+         "two Too easy taps put Wayne's EMOM reps above Dave's on the same moves: " + JSON.stringify(lv.by));
+  const plainIds = await st((seed) => buildWorkout({ ...state.workout.request, repScales: undefined }, seed, { recent: state.workout.request.recent }).exerciseIds.join(), lv.seed);
+  assert(plainIds === lv.ids, 'and the levels change the reps only, never the moves');
+  const lineFor = (w) => st((w) => {
+    const i = state.sequence.findIndex(x => x.emom && x[w].more);
+    if (i < 0) return null;
+    seekTo(i); render();
+    return els['level' + w.toUpperCase()].textContent;
+  }, w);
+  const lines = [await lineFor('a'), await lineFor('b')];
+  assert(/^\+\d+( reps?| each side|s|s each side): you said too easy$/.test(lines[0]) && /^−\d+( reps?| each side|s|s each side): you said cooked$/.test(lines[1]),
+         'each card says why its target moved: ' + JSON.stringify(lines));
+  assert((await previewText()).includes('(Wayne '), 'the preview gives each of them their reps');
+  // a favourite plays back with the same reps for each; swapped round, each keeps their own; a new mate gets the plain targets
+  await st(() => { seekTo(0); render(); });
+  await p.click('#btnSave');
+  await p.click('#btnBack'); await p.click('#pathLibrary');
+  await p.click('.workout-card:has-text("☆")');
+  assert((await reps()).seq === lv.seq, 'the favourite replays the same moves and the same reps for each person');
+  await p.click('#btnBack');
+  await p.click('#pathBuild'); await p.fill('#nameA', 'Dave'); await p.fill('#nameB', 'Sam'); await p.click('#btnSetupBack');
+  await p.click('#pathLibrary'); await p.click('.workout-card:has-text("☆")');
+  assert(await st(() => personScale(state.workout, 'a') === 0.9 && personScale(state.workout, 'b') === undefined),
+         "with Dave in Wayne's spot he keeps his own level, and Sam, new, gets the plain targets");
+  // a link carries the levels by name: on the other device they reach those people only, and its own levels stay out of it
+  const linked = await st(() => {
+    state.nameA = 'Wayne'; state.nameB = 'Dave';
+    const named = sharePayload(state.workout).request.repScales;
+    state.nameA = 'Dave'; state.nameB = ''; state.levels['#b'] = { k: 1.3, easy: 0 }; state.levels.dave = { k: 0.7, easy: 0 };
+    openSharedLink('#w=' + encodeShare(JSON.stringify(sharePayload({ ...state.workout, repScales: { wayne: 1.1, dave: 0.9 } }))));
+    const got = { named: JSON.stringify(named), a: personScale(state.workout, 'a'), b: personScale(state.workout, 'b'), req: JSON.stringify(state.workout.request.repScales) };
+    delete state.levels['#b']; state.levels.dave = { k: 0.9, easy: 0 };
+    const spot = sharePayload({ ...state.workout, repScales: { '#a': 1.2 }, request: { ...state.workout.request, repScales: { '#a': 1.2 } } }).request;
+    got.spot = 'repScales' in spot;
+    return got;
+  });
+  assert(linked.named === '{"wayne":1.1,"dave":0.9}' && linked.a === 0.9 && linked.b === undefined && linked.req === '{"wayne":1.1,"dave":0.9}' && !linked.spot,
+         "a link keeps each named person's level, gives it to that person on the other device, adds none of its own, and leaves levels by spot behind: " + JSON.stringify(linked));
+  // tidy up: the favourite saved here gone, no names, short bursts, a workout going
+  await st(() => { state.saved.shift(); savePrefs(); });
+  await p.click('#btnBack');
+  await p.click('#pathBuild'); await p.fill('#nameA', ''); await p.fill('#nameB', '');
+  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click('#btnBuild'); await p.click('#btnStart');
+  ok("finish: the minutes, the blocks and any skipped; How was that? once each, kept with the session and taken back with a second tap; two Too easy raise Wayne's EMOM reps above Dave's on the same moves, said on the card; favourites, swaps, new mates and links keep each person's own reps");
+
   step = 'Mix: EMOM, short bursts and AMRAP in exactly 30 minutes';
   await leaveStarted(); await p.click('#pathBuild');
   await p.click('#timePicker .chip:text-is("30 min")');
@@ -1313,6 +1443,7 @@ try {
   await p.click('#btnProgramBack');
   const homeDay = await p.$eval('#todayCard', e => e.textContent);
   assert(homeDay.includes('Week 1, Day 1') && homeDay.includes('Paddle power'), "home shows today's session: " + homeDay.slice(0, 80));
+  assert((await p.$eval('#todayCard .day-timing', e => e.textContent)) === '30s on, 30s off this week', "the day card says this week's split");
   assert((await p.$eval('#pathProgramGo', e => e.textContent)) === 'Surf Fit · Week 1 of 6 →', 'the Programs card says where you are up to');
   await p.click('#todayCard .link-btn:has-text("Something else today")');
   assert(await p.$('#todayCard #pathBuild') && !(await p.$('#todayCard .program-go:has-text("today")')), 'something else today swaps in a built workout');
@@ -1350,6 +1481,27 @@ try {
   assert(day1.goal === 'surf' && day1.focus === 'paddle' && day1.style === 'long' && day1.min === 15,
          'day 1 is a 15-minute surf paddle session: ' + JSON.stringify(day1));
   assert(day1.scale === 0.8, 'week 1 starts lighter: ' + day1.scale);
+  // the timed days build too: week 1's long efforts are 30s on, 30s off, week 5's 45s on, 15s off, every block still 4 minutes
+  const split = () => st(() => {
+    const work = state.sequence.filter(x => x.kind === 'work'), rest = state.sequence.filter(x => x.kind === 'rest');
+    const perBlock = {};
+    state.sequence.filter(x => x.kind === 'work' || x.kind === 'rest').forEach(x => { perBlock[x.blockIdx] = (perBlock[x.blockIdx] || 0) + x.duration; });
+    return { work: [...new Set(work.map(x => x.duration))].join(), rest: [...new Set(rest.map(x => x.duration))].join(),
+             blocks: Object.values(perBlock), request: JSON.stringify(state.workout.request.workRest),
+             preview: document.getElementById('previewList').textContent, blurb: state.workout.blurb };
+  });
+  const wk1 = await split();
+  assert(wk1.work === '30' && wk1.rest === '30' && wk1.blocks.every(t => t === 240) && wk1.request === '{"long":[30,30]}',
+         'Surf Fit week 1: long efforts at 30s on, 30s off, in four-minute blocks: ' + JSON.stringify(wk1));
+  assert(wk1.preview.includes('Long efforts, 4 × 30s') && wk1.blurb.includes('30s work · 30s rest'), 'and the preview and blurb say so: ' + wk1.blurb);
+  await st(() => { state.programMinutes = 15; startProgramDay(PROGRAMS[0], programDay(PROGRAMS[0], 28)); });
+  const wk5 = await split();
+  assert(wk5.work === '45' && wk5.rest === '15' && wk5.blocks.every(t => t === 240) && wk5.request === '{"long":[45,15]}',
+         'week 5 (day 29): 45s on, 15s off: ' + JSON.stringify(wk5));
+  await st(() => { state.programMinutes = 15; startProgramDay(PROGRAMS[0], programDay(PROGRAMS[0], 8)); });
+  const wk2pop = await split();
+  assert(wk2pop.work === '20' && wk2pop.rest === '10' && wk2pop.request === '{"short":[20,10]}', 'and week 2 Pop-ups & legs 20s on, 10s off: ' + JSON.stringify(wk2pop));
+  await st(() => { state.programMinutes = 15; startProgramDay(PROGRAMS[0], programDay(PROGRAMS[0], 0)); });
   assert((await p.$eval('#workoutTitle', e => e.textContent)) === 'Paddle power', "the workout goes by the day's name, as on home and in history");
   // skipping through without ever pressing Start doesn't count as the day done
   const skipToEnd = async () => { while (await st(() => !isFinished())) await p.click('#btnSkip'); };
@@ -1373,8 +1525,13 @@ try {
              gone: ['btnSkip', 'btnReset', 'btnShuffle', 'previewCard', 'circuitA', 'counterA', 'circuitB', 'counterB', 'btnNextBlock'].filter(shown) };
   });
   assert(fin.done === 'Done' && fin.again && fin.share && !fin.gone.length, 'the finish screen offers Done, Start over and Share, and nothing else: ' + JSON.stringify(fin));
-  const finTotal = await p.$eval('#totalTime', e => e.textContent);
-  assert(/^Total (\d+:\d\d) \/ \1$/.test(finTotal), 'the finish screen has the whole session on the clock: ' + finTotal);
+  // what was done: skipped straight through after Start, next to nothing, and the program day ticked off
+  const summary = await st(() => ({ total: document.getElementById('totalTime').textContent, top: document.getElementById('blockName').textContent,
+    want: `Total ${fmt(Math.round(timeDone()))} / ${fmt(state.totalDuration)}`, n: state.workout.blocks.length,
+    lines: [...document.querySelectorAll('#roundDots .finish-line')].map(e => e.textContent) }));
+  assert(summary.total === summary.want && summary.total.startsWith('Total 0:0'), 'the finish clock says how much of it ran, not the whole: ' + JSON.stringify(summary));
+  assert(summary.top === 'Workout complete. Nice work.' && summary.lines[0] === `Under a minute done · 0 of ${summary.n} blocks, ${summary.n} skipped`
+         && summary.lines[1] === 'Day 1 of 42 done. Next: Pop-ups & legs', 'and the summary says the minutes, the blocks skipped and the next day: ' + JSON.stringify(summary.lines));
   await p.click('#timerCard');
   assert(await st(() => !state.running && isFinished()), 'a tap on the finished timer does nothing');
   await p.click('#btnStart');
@@ -1661,7 +1818,9 @@ try {
     prefs.saved = prefs.saved.slice(1);
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
-  await p.waitForFunction(() => JSON.parse(localStorage.getItem('fit-prefs-2')).schema === 2, null, { timeout: 5000 }).catch(() => {});
+  // (until this tab has written back: a read here can still see the copy from before the stale one lands)
+  await p.waitForFunction(() => { const x = JSON.parse(localStorage.getItem('fit-prefs-2')); return x.schema === 2 && 'beepOnSilent' in x; },
+                          null, { timeout: 5000 }).catch(() => {});
   const merged = await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     return { first: prefs.history[0].key, n: prefs.history.length, mem: state.history.length, saved: prefs.saved.length === state.saved.length,
@@ -1669,6 +1828,10 @@ try {
   });
   assert(merged.first === newest && merged.n === merged.mem && merged.saved && merged.beep && !merged.dupes,
          "an older tab's stale save is merged in and written back with this tab's sessions and settings: " + JSON.stringify(merged));
+  // a level set in the other tab (a finish screen there) comes across with the history
+  await tab2.evaluate(() => { state.levels.tabtwo = { k: 1.2, easy: 0 }; savePrefs(); });
+  await p.waitForFunction(() => state.levels.tabtwo && state.levels.tabtwo.k === 1.2, null, { timeout: 5000 });
+  await st(() => { delete state.levels.tabtwo; savePrefs(); });
   await tab2.close();
   ok('two tabs: each takes in the other\'s history as it saves, so neither writes over the other; a stale save from a tab on the older version is merged, not taken');
 
@@ -1684,7 +1847,10 @@ try {
     const fileText = fs.readFileSync(await download.path(), 'utf8');
     const backup = JSON.parse(fileText);
     const mine = await st(() => ({ keys: PERSISTED, history: state.history.length, saved: state.saved.length,
-                                   places: state.gearSets.map(g => g.name).join('|'), summary: dataSummary(state) }));
+                                   places: state.gearSets.map(g => g.name).join('|'), summary: dataSummary(state),
+                                   levels: JSON.stringify(state.levels) }));
+    assert(mine.keys.includes('levels') && JSON.stringify(backup.prefs.levels) === mine.levels && mine.levels.includes('"wayne"'),
+           "the file holds each person's level too: " + JSON.stringify(backup.prefs.levels));
     assert(backup.kind === 'fit-backup' && mine.keys.every(k => k in backup.prefs) && backup.prefs.history.length === mine.history
            && backup.prefs.saved.length === mine.saved && mine.history > 0,
            `the file holds every setting, session and favourite: ${backup.prefs.history.length} of ${mine.history} sessions, ${backup.prefs.saved.length} of ${mine.saved} favourites`);
@@ -1735,9 +1901,10 @@ try {
     await f.click('#btnRestoreText');
     await f.click('#btnRestoreYes');
     const moved = await f.evaluate(() => ({ history: state.history.length, saved: state.saved.length, places: state.gearSets.map(g => g.name).join('|'),
-      asked: state.gearAsked, name: document.getElementById('nameA').value === state.nameA, people: state.people }));
+      asked: state.gearAsked, name: document.getElementById('nameA').value === state.nameA, people: state.people, levels: JSON.stringify(state.levels) }));
     assert(moved.history === mine.history && moved.saved === mine.saved && moved.places === mine.places && moved.asked && moved.name && moved.people === 1,
            'Replace brings every session, favourite, place and setting across, checked: ' + JSON.stringify(moved));
+    assert(moved.levels === mine.levels, "and each person's level: " + moved.levels);
     assert((await said()).startsWith('Restored: ') && await f.$('#btnPutBack'), 'it says so, and offers Put it back');
     assert(await f.$$eval('.workout-card:has-text("☆")', els => els.length) === mine.saved, 'the favourites are on the page');
     await (await f.$$('.workout-card:has-text("☆")'))[1].click();
@@ -1768,9 +1935,16 @@ try {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     prefs.people = 7; prefs.minutes = 13; prefs.textScale = 'big'; prefs.blockedTags = 'nope';
     prefs.history.push(null, 'junk'); prefs.saved.push({ name: 'no seed' }); prefs.filterFocus = 'nowhere'; prefs.muteAudio = 'yes';
+    prefs.levels = { ...prefs.levels, huge: { k: 5 }, odd: 'x', '': { k: 1.1 }, kept: { k: 1.2, easy: 1 } };
+    prefs.history[0].feel = { a: 'meh', b: 'cooked' };
+    if (prefs.history[1]) prefs.history[1].feel = 'nope';
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
   await p.goto(URL);
+  const junk = await st(() => ({ levels: state.levels, feel: [state.history[0].feel, state.history[1] && state.history[1].feel] }));
+  assert(JSON.stringify(junk.levels.kept) === '{"k":1.2,"easy":1}' && !junk.levels.huge && !junk.levels.odd && !('' in junk.levels) && junk.levels.wayne,
+         'levels out of range or the wrong shape are dropped, the rest kept: ' + JSON.stringify(junk.levels));
+  assert(JSON.stringify(junk.feel[0]) === '{"b":"cooked"}' && junk.feel[1] === undefined, 'and so are answers that are not one of the three: ' + JSON.stringify(junk.feel));
   assert(await st(() => state.people === 1 && state.minutes === 20 && state.textScale === 1 && Array.isArray(state.blockedTags)),
          'junk preference values fell back to defaults (one person)');
   assert(await st(() => state.saved.length === 2), 'saved favourites survived the reload');
