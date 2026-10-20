@@ -215,6 +215,9 @@ function cleanPrefs(p) {
 // it whenever PERSISTED gains a key: an older tab's save leaves the key
 // out, and taken as current it would wipe it (3: each person's levels).
 const PREFS_SCHEMA = 3;
+// From 2 on, a tab hears the others' saves (see below), so its lists are
+// as new as anyone's.
+const HEARS_SCHEMA = 2;
 function currentPrefs() {
   const out = { schema: PREFS_SCHEMA };
   PERSISTED.forEach(k => { out[k] = state[k]; });
@@ -233,16 +236,20 @@ function savePrefs() {
 // over them. Settings stay as they are here until a reload, so a workout
 // on screen isn't changed under you.
 //
-// A tab still on the version before this one hears nothing, so what it
-// writes is the copy it loaded when it opened. That gets added to this
-// tab's lists rather than taking their place, and saved straight back, so
-// a session or program day done here isn't lost to it.
+// A tab from before that hears nothing, so what it writes is the copy it
+// loaded when it opened. That gets added to this tab's lists rather than
+// taking their place, and saved straight back, so a session or program
+// day done here isn't lost to it.
+//
+// A tab on the last release (schema 2) hears, so its lists are taken as
+// they are, sessions it finished and favourites it took out with them. It
+// doesn't know the levels and leaves them out: they stay as they are here,
+// and are saved straight back.
 window.addEventListener('storage', (e) => {
   if (e.key !== PREFS_KEY || !e.newValue) return;
   let p, theirs;
   try { p = JSON.parse(e.newValue); theirs = cleanPrefs(p); } catch (err) { return; }
-  const older = !(p.schema >= PREFS_SCHEMA);
-  if (older) {
+  if (!(p.schema >= HEARS_SCHEMA)) {
     mergeOlderSave(theirs);
     savePrefs();
   } else {
@@ -250,7 +257,8 @@ window.addEventListener('storage', (e) => {
     state.saved = theirs.saved;
     state.programs = theirs.programs;
     // levels move on with the history, as a session finishes
-    state.levels = theirs.levels;
+    if (p.levels !== undefined) state.levels = theirs.levels;
+    else savePrefs();
   }
   // redraw whatever lists them
   if (state.view === 'welcome') renderToday();
@@ -456,7 +464,7 @@ const els = {
   previewList: $('previewList'),
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'), btnShare: $('btnShare'),
   btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'), btnAgain: $('btnAgain'),
-  workoutNote: $('workoutNote'),
+  workoutNote: $('workoutNote'), goingNote: $('goingNote'),
   showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio'),
   beepOnSilent: $('beepOnSilent'), silentToggle: $('silentToggle'), silentHint: $('silentHint')
 };
@@ -837,7 +845,17 @@ function goWelcome() {
 function renderToday() {
   fillToday();
   const line = resumeLine();
-  if (line) els.todayCard.prepend(line);
+  if (!line) return;
+  els.todayCard.prepend(line);
+  // with today's program day waiting to be resumed, Resume is the way on:
+  // its Start, which builds the day afresh, becomes a small link
+  const run = readRun(), ps = programStatus(PROGRAMS[0]);
+  const go = els.todayCard.querySelector('.program-go:not(.today-go)');
+  if (go && run && run.programRun && ps && !ps.finished
+      && run.programRun.id === PROGRAMS[0].id && run.programRun.n === ps.n) {
+    go.className = 'link-btn today-fresh';
+    go.textContent = 'Start a fresh one instead';
+  }
 }
 function fillToday() {
   const card = els.todayCard;
@@ -1671,16 +1689,21 @@ function savedCard(saved) {
 // WORKOUT VIEW
 // =====================================================================
 // A note that asks for a tap to go again ("Back to 7:30. Tap Resume when
-// you're ready.") goes as soon as the clock does.
-let noteGoesOnStart = false;
+// you're ready.") sits under the block's name, on the first screen, and
+// goes as soon as the clock does. On a phone on its side the ask makes way
+// (the button is just under it), and so does an EMOM's hint (css).
 function noteUntilGoing(text) {
-  els.workoutNote.textContent = text;
-  noteGoesOnStart = true;
+  els.goingNote.textContent = text ? `${text} ` : '';
+  if (text) {
+    const tap = document.createElement('span');
+    tap.className = 'going-tap';
+    tap.textContent = `Tap ${els.btnStart.textContent} when you're ready.`;
+    els.goingNote.appendChild(tap);
+  }
+  els.goingNote.hidden = !text;
+  els.workoutView.classList.toggle('going-noted', !!text);
 }
-function clearGoingNote() {
-  if (noteGoesOnStart) els.workoutNote.textContent = '';
-  noteGoesOnStart = false;
-}
+const clearGoingNote = () => noteUntilGoing('');
 
 function openWorkout(workout) {
   stopTimer();
@@ -1722,7 +1745,7 @@ function openWorkout(workout) {
   els.btnSave.textContent = alreadySaved ? '★ Saved' : '☆ Save as favourite';
   els.btnSave.disabled = alreadySaved;
   els.workoutNote.textContent = '';
-  noteGoesOnStart = false;
+  clearGoingNote();
 
   if (state.sequence[0]) enterPhaseVisual(state.sequence[0].kind, state.remainingInPhase);
   renderPreview();
@@ -2465,7 +2488,7 @@ function finish() {
   els.workoutView.classList.toggle('unstarted', !state.started || endedEarly());
   // what it said before the end (Back to 7:30, Tap Resume) is done with
   els.workoutNote.textContent = '';
-  noteGoesOnStart = false;
+  clearGoingNote();
   els.timerCard.className = 'timer-card';
   setText(els.phaseLabel, 'Done');
   els.timeDisplay.textContent = '✓';
@@ -2473,7 +2496,10 @@ function finish() {
   // skipped (the last tick can land a fraction short of the end, and that
   // isn't "19:59 / 20:00")
   els.totalTime.textContent = `Total ${fmt(Math.round(timeDone()))} / ${fmt(state.totalDuration)}`;
-  setText(els.blockName, !state.started ? 'The end of the workout' : endedEarly() ? 'Session ended early' : 'Workout complete. Nice work.');
+  // skipped through on a program day still ticks the day off (see
+  // programDoneLine below), so the top says that too
+  setText(els.blockName, !state.started ? 'The end of the workout'
+    : endedEarly() ? (programDoneLine() ? 'Ended early, day ticked off' : 'Session ended early') : 'Workout complete. Nice work.');
   els.roundDots.innerHTML = '';
   finishSummary().forEach(text => {
     const line = document.createElement('div');
@@ -2627,33 +2653,31 @@ function tapFeel(who, feel) {
   renderFinishPeople();
   if (keyboard) els['finish' + who.toUpperCase()].querySelector(`[data-feel="${feel}"]`).focus();
 }
-// What an answer does, said under it.
+// What an answer does, said under it. A session all on the clock (Short
+// bursts, Long efforts) has no reps for a level to change, so it says
+// when the change shows.
 function feelNote(who) {
   const feel = state.feel[who];
   if (!feel) return '';
   const key = levelKey(who);
   const level = ownKey(state.levels, key) ? state.levels[key] : { k: 1, easy: 0 };
   const before = feelBefore[who] ? feelBefore[who].k : 1;
+  const next = hadReps(state.workout) ? 'next time' : 'next time there are reps to do';
   if (feel === 'right') return 'Noted. Your reps stay as they are.';
   if (feel === 'easy') {
-    if (level.k > before) return 'Noted. Your reps go up a notch next time.';
+    if (level.k > before) return `Noted. Your reps go up a notch ${next}.`;
     if (level.k >= LEVEL_MAX) return 'Noted. Your reps are already as high as they go.';
     return 'Noted. Say it again next time and your reps go up a notch.';
   }
-  return level.k < before ? 'Noted. Your reps come down a notch next time.' : 'Noted. Your reps are already as low as they go.';
+  return level.k < before ? `Noted. Your reps come down a notch ${next}.` : 'Noted. Your reps are already as low as they go.';
 }
+// Whether any of a workout runs to reps (EMOM, AMRAP, For Time).
+const hadReps = (w) => !!w && sectionsOf(w).some(sec => !!(INTERVALS[sec.intervalId] || {}).reps);
 
 function skipBlock() {
   if (!state.sequence.length) return;
   const cur = state.sequence[state.currentIdx];
   if (!cur) return;
-  // a scored block skipped before anyone logged a score shows as skipped
-  // in history, not as 0 rounds or capped
-  const s = state.scores[cur.blockIdx];
-  if ((cur.amrap || cur.forTime) && !(s && (s.a || s.b))) {
-    state.scores[cur.blockIdx] = { a: 0, b: 0, skipped: true };
-    saveScores();
-  }
   const from = Math.min(elapsedNow(), state.totalDuration);
   let target = state.currentIdx + 1;
   if (cur.kind === 'warmup' || cur.kind === 'cooldown') {
@@ -2669,9 +2693,17 @@ function skipBlock() {
   // what the finish screen says was skipped: the block (or stretch), unless
   // it was scored (a For Time finished early, say) or as good as done, and
   // the time
+  const s = state.scores[cur.blockIdx];
   const scored = (cur.amrap || cur.forTime) && s && (s.a || s.b);
-  const what = cur.kind === 'stretch' ? cur.stretchIdx
-    : (cur.kind === 'work' || cur.kind === 'rest') && !scored && skipsBlock(cur, target, from) ? cur.blockIdx : undefined;
+  const leftOut = (cur.kind === 'work' || cur.kind === 'rest') && !scored && skipsBlock(cur, target, from);
+  // a scored block left out before anyone logged a score says skipped, in
+  // history and on the finish screen, not 0 rounds or capped; one as good
+  // as done keeps what was logged, as if it had run out
+  if ((cur.amrap || cur.forTime) && leftOut) {
+    state.scores[cur.blockIdx] = { a: 0, b: 0, skipped: true };
+    saveScores();
+  }
+  const what = cur.kind === 'stretch' ? cur.stretchIdx : leftOut ? cur.blockIdx : undefined;
   if (what !== undefined && !state.skipped.includes(what)) state.skipped.push(what);
   state.skippedSec += Math.max(0, startOf(target) - from);
   if (target >= state.sequence.length) {
@@ -2983,18 +3015,21 @@ function phaseWhere(p) {
 }
 
 // Where a phase starts, for the note after picking up a session: "round 5
-// of block 2", "warm-up move 3", or just "block 2" at its first round.
+// of block 2" ("minute 2" in an EMOM, as its bar counts), "warm-up move
+// 3", or just "block 2" at its first round.
 function phaseStart(p) {
   const block = `block ${p.blockIdx + 1}`;
   if (p.kind === 'warmup') return p.warmIdx ? `warm-up move ${p.warmIdx + 1}` : 'the warm-up';
   if (p.kind === 'cooldown') return p.coolIdx ? `cool-down stretch ${p.coolIdx + 1}` : 'the cool-down';
   if (p.kind === 'rest') return `the rest after round ${p.round} of ${block}`;
-  if (p.kind === 'work' && p.round > 1) return `round ${p.round} of ${block}`;
+  if (p.kind === 'work' && p.round > 1) return `${p.emom ? 'minute' : 'round'} ${p.round} of ${block}`;
   return phaseWhere(p);
 }
 
 // At the top of the Today card while there's a session to pick up:
-// "Resume Paddle power, block 2, 8:20 in", with Resume and Discard.
+// "Resume Paddle power from 8:00, block 2", with Resume and Discard. The
+// time is where Resume picks up (the start of the round it was in), so
+// the timer says the same.
 function resumeLine() {
   const s = readRun();
   const built = s && rebuildRun(s);
@@ -3004,7 +3039,8 @@ function resumeLine() {
   box.className = 'today-resume';
   const text = document.createElement('div');
   text.className = 'resume-text';
-  text.textContent = `Resume ${day ? day.day : built.w.name}, ${phaseWhere(built.seq[s.idx])}, ${fmt(s.elapsed)} in`;
+  const from = built.seq.slice(0, s.idx).reduce((t, p) => t + p.duration, 0);
+  text.textContent = `Resume ${day ? day.day : built.w.name} from ${fmt(from)}, ${phaseWhere(built.seq[s.idx])}`;
   const go = document.createElement('button');
   go.id = 'btnResumeRun';
   go.textContent = 'Resume';
@@ -3050,7 +3086,7 @@ function resumeRun() {
   seekTo(s.idx);
   enterPhaseVisual(state.sequence[s.idx].kind, state.remainingInPhase);
   render();
-  noteUntilGoing(`Picked up at ${fmt(state.elapsedTotal)}, the start of ${phaseStart(state.sequence[s.idx])}. Tap ${els.btnStart.textContent} when you're ready.`);
+  noteUntilGoing(`Picked up at ${fmt(state.elapsedTotal)}, the start of ${phaseStart(state.sequence[s.idx])}.`);
 }
 
 // =====================================================================
@@ -3317,6 +3353,8 @@ function dataSection() {
   // out of sight rather than display: none, which some iPhones won't open
   const file = document.createElement('input');
   file.type = 'file';
+  // so an iPhone goes straight to Files, not Photos (the backup is a .json)
+  file.accept = '.json,application/json,text/plain';
   file.id = 'restoreFile';
   file.className = 'file-input';
   file.tabIndex = -1;
@@ -3355,7 +3393,10 @@ function dataSection() {
     p1.textContent = found;
     const p2 = document.createElement('p');
     p2.className = 'picker-hint';
-    p2.textContent = `It replaces everything here now: ${dataSummary(currentPrefs())}.`;
+    // a new device has only the defaults (the Home it makes for itself)
+    const here = currentPrefs();
+    const blank = !here.gearAsked && !here.history.length && !here.saved.length && !Object.keys(here.programs).length;
+    p2.textContent = blank ? 'Nothing is saved here yet.' : `It replaces everything here now: ${dataSummary(here)}.`;
     const row = document.createElement('div');
     row.className = 'data-actions';
     const go = document.createElement('button');
@@ -3371,13 +3412,15 @@ function dataSection() {
     check.append(p1, p2, row);
     check.scrollIntoView({ block: 'nearest' });
   };
-  // the page again, with what's here now and what was done
+  // the page again, with what's here now and what was done, where it's
+  // said (the sessions and favourites now above it move it down the page)
   const done = (text) => {
     restoreOpen = false;
     dataSaid = text;
     state.filterFocus = 'all';
     renderFocusFilter();
     renderLibrary();
+    $('yourData').scrollIntoView({ block: 'start' });
   };
   const offer = (got) => {
     say('');
@@ -4100,7 +4143,7 @@ els.btnAwayBack.addEventListener('click', () => {
   placeAt(back);
   render();
   saveRun();
-  noteUntilGoing(`Back to ${fmt(back)}. Tap ${els.btnStart.textContent} when you're ready.`);
+  noteUntilGoing(`Back to ${fmt(back)}.`);
 });
 els.btnAwayKept.addEventListener('click', () => {
   hideAway();

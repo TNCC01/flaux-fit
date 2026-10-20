@@ -694,8 +694,9 @@ try {
       savePrefs(); renderToday();
     }, was.seed);
     const line = await r.$eval('#todayCard .today-resume .resume-text', e => e.textContent);
-    const mmss = `${Math.floor(snap.elapsed / 60)}:${String(Math.floor(snap.elapsed % 60)).padStart(2, '0')}`;
-    assert(line === `Resume ${was.name}, block 2, ${mmss} in`, 'the Today card offers it by name, block and time: ' + line);
+    const startAt = `${Math.floor(at.start / 60)}:${String(Math.floor(at.start % 60)).padStart(2, '0')}`;
+    assert(snap.elapsed - at.start >= 69 && line === `Resume ${was.name} from ${startAt}, block 2`,
+           'the Today card offers it by name, and the time and block Resume picks up at (the start of the block, not 70s on): ' + line);
     assert(await r.$eval('#todayCard', e => e.firstElementChild.classList.contains('today-resume')), 'at the top of the card');
     assert(await r.$('#btnResumeRun:text-is("Resume")') && await r.$('#btnDiscardRun:text-is("Discard")'), 'with Resume and Discard');
     await r.click('#btnResumeRun');
@@ -703,22 +704,25 @@ try {
       elapsed: state.elapsedTotal, ids: state.workout.exerciseIds.join(','), seed: state.workout.seed,
       scores: JSON.stringify(state.scores), pick: JSON.stringify(state.pick), button: document.getElementById('btnStart').textContent,
       a: document.querySelector('#counterA .count-now b').textContent, b: document.querySelector('#counterB .count-now b').textContent,
-      badge: document.getElementById('peopleBadge').textContent, note: document.getElementById('workoutNote').textContent }));
+      badge: document.getElementById('peopleBadge').textContent, note: document.getElementById('goingNote').textContent,
+      total: document.getElementById('totalTime').textContent }));
     assert(back.view === 'workoutView' && !back.running && back.button === 'Resume', 'Resume opens the workout, paused: ' + JSON.stringify(back));
     assert(back.idx === at.i && back.elapsed === at.start, `at the start of the block it was in (${back.elapsed}s, block began ${at.start}s)`);
     assert(back.ids === was.ids && back.seed === was.seed, 'the same exercises');
     assert(back.scores === was.scores && back.pick === was.pick && back.a === '2' && back.b === '1', 'with the scores and the lap pick: ' + back.scores);
-    const startAt = `${Math.floor(at.start / 60)}:${String(Math.floor(at.start % 60)).padStart(2, '0')}`;
     assert(back.badge === 'Wayne & Dave' && back.note === `Picked up at ${startAt}, the start of block 2. Tap Resume when you're ready.`,
            'for the same two people, saying where it picked up: ' + back.note);
+    assert(back.total.startsWith(`Total ${startAt} /`), 'the timer opens at the time the card said: ' + back.total);
+    const noteBox = await r.$eval('#goingNote', e => { const b = e.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom), innerHeight]; });
+    assert(noteBox[0] >= 0 && noteBox[1] <= noteBox[2] && noteBox[1] > noteBox[0], 'and the note is on the first screen of a 390 x 844 phone: ' + noteBox);
     // where a phase starts, as the note says it: the round, move or stretch, or the block at its first
     const places = await ev(() => [{ kind: 'work', blockIdx: 1, round: 5 }, { kind: 'work', blockIdx: 1, round: 1 }, { kind: 'work', amrap: true, blockIdx: 2 },
       { kind: 'rest', blockIdx: 0, round: 8 }, { kind: 'warmup', warmIdx: 0 }, { kind: 'warmup', warmIdx: 2 }, { kind: 'cooldown', coolIdx: 2 },
-      { kind: 'stretch', stretchIdx: 2 }, { kind: 'blockrest', blockIdx: 0 }].map(phaseStart).join('|'));
-    assert(places === 'round 5 of block 2|block 2|block 3|the rest after round 8 of block 1|the warm-up|warm-up move 3|cool-down stretch 3|stretch 3|the rest before block 2',
+      { kind: 'stretch', stretchIdx: 2 }, { kind: 'blockrest', blockIdx: 0 }, { kind: 'work', emom: true, blockIdx: 1, round: 2 }].map(phaseStart).join('|'));
+    assert(places === 'round 5 of block 2|block 2|block 3|the rest after round 8 of block 1|the warm-up|warm-up move 3|cool-down stretch 3|stretch 3|the rest before block 2|minute 2 of block 2',
            'the note names the round, move or stretch it went back to: ' + places);
     await r.click('#btnStart');
-    const going = await ev((seed) => ({ note: document.getElementById('workoutNote').textContent, running: state.running,
+    const going = await ev((seed) => ({ note: document.getElementById('goingNote').hidden ? '' : 'shown', running: state.running,
       rows: state.history.filter(h => h.key === `gen:${seed}`).length, fresh: Date.now() - state.history.find(h => h.key === `gen:${seed}`).at < 60000 }), was.seed);
     assert(going.running && going.note === '', 'once it is going again, the note asking for Resume goes: ' + JSON.stringify(going));
     assert(going.rows === 1 && going.fresh, 'and it carries on as the same session in history, four hours on: ' + JSON.stringify(going));
@@ -803,8 +807,11 @@ try {
     await r.click('#todayCard .program-go'); await r.click('#btnStart');
     await r.reload();
     const dayLine = await r.$eval('#todayCard .today-resume .resume-text', e => e.textContent);
-    assert(/^Resume Paddle power, the warm-up, 0:0\d in$/.test(dayLine), 'offered by the day\'s name: ' + dayLine);
+    assert(dayLine === 'Resume Paddle power from 0:00, the warm-up', 'offered by the day\'s name: ' + dayLine);
     assert(await r.$('#todayCard .today-resume + .card-tagline:has-text("Week 1, Day 1")'), "above today's session on the card");
+    // the day's own Start would build it afresh: with Resume there, it's a small link
+    assert(!(await r.$('#todayCard .program-go')) && await r.$('#todayCard .link-btn.today-fresh:text-is("Start a fresh one instead")')
+           && await r.$('#todayCard button:text-is("I surfed today")'), "Resume is the one big button for the day, and a fresh start is a link");
     await r.click('#btnResumeRun');
     assert(await ev(() => state.programRun && state.programRun.n === 0 && document.getElementById('workoutTitle').textContent === 'Paddle power'),
            'the program day comes back with it');
@@ -850,10 +857,12 @@ try {
     await r.click('#btnAwayBack');
     const gone = await clock();
     assert(!gone.running && !gone.bar && gone.elapsed === backAt, `Go back: paused where you left (${gone.elapsed.toFixed(1)}s)`);
-    assert((await r.$eval('#workoutNote', e => e.textContent)) === `Back to ${leftAt}. Tap Resume when you're ready.`, 'and says so');
+    assert((await r.$eval('#goingNote', e => e.textContent)) === `Back to ${leftAt}. Tap Resume when you're ready.`, 'and says so');
+    assert(await r.$eval('#goingNote', e => { const b = e.getBoundingClientRect(); return !e.hidden && b.top >= 0 && b.bottom <= innerHeight; }),
+           'where it can be seen, not under the buttons');
     assert(await r.$eval('#btnStart', e => e.offsetParent !== null && e.textContent === 'Resume'), 'with Resume back to tap');
     await r.click('#btnStart');
-    assert((await r.$eval('#workoutNote', e => e.textContent)) === '', 'and once it is going again, the note goes');
+    assert(await r.$eval('#goingNote', e => e.hidden), 'and once it is going again, the note goes');
     const e2 = (await clock()).elapsed;
     await away(30000);
     assert((await clock()).bar, 'away 30s again, it asks again');
@@ -1355,7 +1364,21 @@ try {
   await p.click('#counterA .count-more');
   assert(await p.evaluate((b) => state.history[0].scores[b].a === 1, blk), 'and one round is one round, not 4');
   await p.click('#btnStart');                                   // pause
-  ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it; skipped blocks read "–", show no Last time, and the lap goes after; Start over counts from 0`);
+  // an AMRAP skipped with no rounds logged: with most of it done it counts as done and reads 0 rounds,
+  // with most of it to go it's skipped and reads skipped, so the summary and the rows agree
+  const agree = await st((done) => {
+    const i = state.sequence.findIndex(x => x.amrap && x.blockIdx !== done);
+    const b = state.sequence[i].blockIdx, dur = state.sequence[i].duration;
+    const look = () => ({ skipped: JSON.stringify(state.skipped), row: finishScores('a').find(r => r.startsWith(`Block ${b + 1} `)),
+                          line: finishSummary()[0], history: !!state.history[0].scores[b].skipped });
+    const at = (part) => { delete state.scores[b]; saveScores(); state.skipped = []; placeAt(startOf(i) + dur * part); skipBlock(); return look(); };
+    return { b, late: at(0.6), early: at(0.4) };
+  }, blk);
+  assert(agree.late.skipped === '[]' && agree.late.row === `Block ${agree.b + 1} AMRAP: 0 rounds` && !agree.late.line.includes('skipped') && !agree.late.history,
+         'skipped with 40% of it left and no rounds: a block done, 0 rounds: ' + JSON.stringify(agree.late));
+  assert(agree.early.skipped === `[${agree.b}]` && agree.early.row === `Block ${agree.b + 1} AMRAP: skipped` && agree.early.line.includes('1 skipped') && agree.early.history,
+         'skipped with 60% of it left: a block skipped, and its row says so: ' + JSON.stringify(agree.early));
+  ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it; skipped blocks read "–", show no Last time, and the lap goes after; Start over counts from 0; a skip's row and the summary agree`);
 
   step = 'For Time: rounds of a lap against a cap, Done logs the time';
   await leaveStarted(); await pickInterval('For Time');
@@ -1437,12 +1460,12 @@ try {
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
   await p.click('#btnSkip');
   assert(await st(() => { saveRun(); return JSON.stringify(readRun().skipped); }) === '[0]', 'a session saved part-way keeps what was skipped');
-  await st(() => noteUntilGoing("Back to 7:30. Tap Pause when you're ready."));      // as if it had been, a note from before the end
+  await st(() => noteUntilGoing('Back to 7:30.'));      // as if it had been, a note from before the end
   await runOut();
   const fin1 = await st(() => ({ lines: [...document.querySelectorAll('#roundDots .finish-line')].map(e => e.textContent),
     total: document.getElementById('totalTime').textContent, n: state.workout.blocks.length, whole: fmt(state.totalDuration),
     done: fmt(Math.round(timeDone())), near: Math.abs(timeDone() - (state.totalDuration - 240)) < 3, min: Math.floor(Math.round(timeDone()) / 60),
-    note: document.getElementById('workoutNote').textContent,
+    note: document.getElementById('workoutNote').textContent + (document.getElementById('goingNote').hidden ? '' : document.getElementById('goingNote').textContent),
     asks: ['finishA', 'finishB'].map(id => document.querySelector(`#${id} .feel-ask`) && document.querySelector(`#${id} .feel-ask`).textContent),
     chips: [...document.querySelectorAll('#finishA .feel-chip')].map(c => c.textContent).join('|') }));
   assert(fin1.lines.length === 1 && fin1.lines[0] === `${fin1.min} min done · ${fin1.n - 1} of ${fin1.n} blocks, 1 skipped`,
@@ -1491,6 +1514,17 @@ try {
   const said2 = await st(() => ({ levels: JSON.stringify(state.levels), notes: ['finishA', 'finishB'].map(id => document.querySelector(`#${id} .feel-note`).textContent) }));
   assert(said2.levels === '{"wayne":{"k":1.1,"easy":0},"dave":{"k":0.9,"easy":0}}', 'Wayne up to 1.1, Dave down to 0.9: ' + said2.levels);
   assert(said2.notes[0] === 'Noted. Your reps go up a notch next time.' && said2.notes[1] === 'Noted. Your reps come down a notch next time.', JSON.stringify(said2.notes));
+  // a session all on the clock has no reps for that to change, so it says when it shows
+  const timedNotes = await st(() => {
+    const w = state.workout;
+    state.workout = { ...w, intervalId: 'short' };
+    const out = ['a', 'b'].map(feelNote);
+    state.workout = w;
+    return { out, mix: hadReps({ sections: [{ intervalId: 'short' }, { intervalId: 'amrap' }] }), long: hadReps({ intervalId: 'long', blocks: [] }) };
+  });
+  assert(timedNotes.out[0] === 'Noted. Your reps go up a notch next time there are reps to do.'
+         && timedNotes.out[1] === 'Noted. Your reps come down a notch next time there are reps to do.' && timedNotes.mix && !timedNotes.long,
+         'after Short bursts it says the reps change next time there are some: ' + JSON.stringify(timedNotes));
   // the next EMOM: the same moves for both, Wayne's reps above Dave's
   await p.click('#btnStart');
   await p.click('#pathBuild'); await p.click('#btnBuild');
@@ -1764,7 +1798,7 @@ try {
     want: `Total ${fmt(Math.round(timeDone()))} / ${fmt(state.totalDuration)}`, n: state.workout.blocks.length,
     lines: [...document.querySelectorAll('#roundDots .finish-line')].map(e => e.textContent) }));
   assert(summary.total === summary.want && summary.total.startsWith('Total 0:0'), 'the finish clock says how much of it ran, not the whole: ' + JSON.stringify(summary));
-  assert(summary.top === 'Session ended early' && summary.lines[0] === `Under a minute done · 0 of ${summary.n} blocks, ${summary.n} skipped`
+  assert(summary.top === 'Ended early, day ticked off' && summary.lines[0] === `Under a minute done · 0 of ${summary.n} blocks, ${summary.n} skipped`
          && summary.lines[1] === 'Day 1 of 42 done. Next: Pop-ups & legs', 'and the summary says it ended early, the minutes, the blocks skipped and the next day: ' + JSON.stringify(summary));
   assert(await st(() => !document.querySelector('.feel-ask') && document.getElementById('workoutView').classList.contains('unstarted')),
          "with next to nothing done, nobody is asked how it was, so a tap can't move their level");
@@ -2068,17 +2102,36 @@ try {
   await tab2.evaluate(() => { state.levels.tabtwo = { k: 1.2, easy: 0 }; savePrefs(); });
   await p.waitForFunction(() => state.levels.tabtwo && state.levels.tabtwo.k === 1.2, null, { timeout: 5000 });
   await st(() => { delete state.levels.tabtwo; savePrefs(); });
-  // a tab still on the last release (schema 2, no levels) saving leaves this tab's levels as they are
-  await st(() => { state.levels.keepme = { k: 0.8, easy: 0 }; savePrefs(); });
+  // a tab still on the last release (schema 2, no levels) saving leaves this tab's levels as they are,
+  // and its lists are taken as they are: it hears this tab, so they're as new as anyone's
+  const old2 = await st(() => {
+    state.levels.keepme = { k: 0.8, easy: 0 };
+    const h = state.history[0];
+    h.completed = false; delete h.scores;
+    savePrefs();
+    return { key: h.key, saved: state.saved.map(x => x.seed), fav: state.saved[0] };
+  });
+  assert(old2.saved.length >= 1, 'a favourite to take out: ' + old2.saved);
+  // there, the session runs to the end with 2 rounds logged in block 1, and a favourite is taken out
   await tab2.evaluate(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     prefs.schema = 2; delete prefs.levels;
+    Object.assign(prefs.history[0], { completed: true, scores: [{ a: 2, b: 0, t: 'amrap' }, { a: 0, b: 0, t: 'amrap' }] });
+    prefs.saved = prefs.saved.slice(1);
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
   await p.waitForFunction(() => { const x = JSON.parse(localStorage.getItem('fit-prefs-2')); return x.schema === 3; }, null, { timeout: 5000 });
   const lv2 = await st(() => ({ mem: JSON.stringify(state.levels.keepme), stored: JSON.stringify((JSON.parse(localStorage.getItem('fit-prefs-2')).levels || {}).keepme) }));
   assert(lv2.mem === '{"k":0.8,"easy":0}' && lv2.stored === lv2.mem, "a save from a tab on the last release leaves the levels here, and they're written back: " + JSON.stringify(lv2));
-  await st(() => { delete state.levels.keepme; savePrefs(); });
+  const took = await st((k) => {
+    const stored = JSON.parse(localStorage.getItem('fit-prefs-2'));
+    const pick = (list) => { const h = list.find(x => x.key === k); return h && `${h.completed}:${h.scores ? h.scores[0].a : '-'}`; };
+    return { mem: pick(state.history), stored: pick(stored.history), saved: state.saved.map(x => x.seed).join(), storedSaved: stored.saved.map(x => x.seed).join() };
+  }, old2.key);
+  assert(took.mem === 'true:2' && took.stored === 'true:2', "the session it finished stays finished, with its 2 rounds, here and in storage: " + JSON.stringify(took));
+  assert(took.saved === old2.saved.slice(1).join() && took.storedSaved === took.saved, 'and the favourite it took out stays out: ' + JSON.stringify(took));
+  // (and back as it was, for the steps after)
+  await st((fav) => { delete state.levels.keepme; state.saved.unshift(fav); savePrefs(); }, old2.fav);
   await tab2.close();
   ok('two tabs: each takes in the other\'s history as it saves, so neither writes over the other; a stale save from a tab on the older version is merged, not taken');
 
@@ -2139,8 +2192,9 @@ try {
     await f.fill('#restoreText', `Here's my FIT: ${JSON.stringify(spoilt)} cheers`);
     await f.click('#btnRestoreText');
     const found = await f.$eval('.restore-check', e => e.textContent);
-    assert(found.includes(`This backup has ${mine.summary}, saved `) && found.includes('It replaces everything here now: no sessions'),
-           'it says what it found, and what it would replace: ' + found);
+    const replaces = await f.$eval('.restore-check .picker-hint', e => e.textContent);
+    assert(found.includes(`This backup has ${mine.summary}, saved `) && replaces === 'Nothing is saved here yet.',
+           'it says what it found, and that a new device has nothing to replace (not the Home it made for itself): ' + found);
     assert(/^\d+ sessions?, 2 favourites, \d places? \(Home[^)]*\) and Surf Fit (week \d|finished)$/.test(mine.summary),
            'sessions, favourites, places by name and where the program is up to: ' + mine.summary);
     await f.click('#btnRestoreNo');
@@ -2153,6 +2207,11 @@ try {
            'Replace brings every session, favourite, place and setting across, checked: ' + JSON.stringify(moved));
     assert(moved.levels === mine.levels, "and each person's level: " + moved.levels);
     assert((await said()).startsWith('Restored: ') && await f.$('#btnPutBack'), 'it says so, and offers Put it back');
+    const box = (sel) => f.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.top, b.bottom, innerHeight]; });
+    const onScreen = async (sel) => { const [top, bottom, ih] = await box(sel); return top >= 0 && bottom <= ih && bottom > top; };
+    assert(await onScreen('#yourData .data-note') && await onScreen('#btnPutBack'),
+           'where it can be seen, with Put back, though the sessions and favourites above it moved it down the page: '
+           + JSON.stringify([await box('#yourData .data-note'), await box('#btnPutBack')]));
     assert(await f.$$eval('.workout-card:has-text("☆")', els => els.length) === mine.saved, 'the favourites are on the page');
     await (await f.$$('.workout-card:has-text("☆")'))[1].click();
     assert(await f.evaluate(() => state.workout.exerciseIds.join(',')) === idsA, 'favourite A opens on the other device with the same moves');
@@ -2166,6 +2225,8 @@ try {
     await f.click('#btnRestoreYes');
     assert(await f.evaluate(() => state.history.length === 0 && !localStorage.getItem('fit-prefs-2-before-restore')), 'Put it back puts back what was there');
     assert(!(await f.$('#btnPutBack')) && (await said()).startsWith('Put back: '), 'and is used up');
+    assert(await onScreen('#yourData .data-note'), 'saying so on screen');
+    assert(await f.$eval('#restoreFile', e => e.accept) === '.json,application/json,text/plain', 'the file picker asks for the backup, so an iPhone opens Files, not Photos');
     // from a file, the same way
     await f.click('#btnRestore');
     await f.setInputFiles('#restoreFile', { name: 'FIT backup.json', mimeType: 'application/json', buffer: Buffer.from(fileText) });

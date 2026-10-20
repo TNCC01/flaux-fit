@@ -555,7 +555,8 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .card-actions .card-remove { margin-top: 0; }
 .card-remove[disabled] { opacity: 0.5; text-decoration: none; cursor: default; }
 /* Your data, at the bottom of Saved & ready-made (YOUR DATA in js/app.js) */
-.data-section { padding-top: 0.9rem; border-top: 1px solid var(--border); }
+/* room at the foot, so what a restore says isn't on the screen's edge */
+.data-section { padding: 0.9rem 0 1.5rem; border-top: 1px solid var(--border); }
 .data-about { color: var(--muted); font-size: 0.95rem; line-height: 1.45; padding: 0 0.25rem; max-width: 40rem; }
 .data-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .data-actions button { font-size: 1rem; padding: 0.75rem 1rem; }
@@ -645,6 +646,9 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .round-count .of { color: var(--muted); font-weight: 700; }
 .remaining-tag { color: var(--muted); font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
 .round-hint { color: var(--muted); font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
+/* after Resume or Go back, where it picked up, until the clock goes */
+.going-note { color: var(--accent-b); font-size: 0.95rem; font-weight: 700; line-height: 1.35; }
+.going-note[hidden] { display: none; }
 .seg-row { display: flex; gap: 0.28rem; }
 .seg { flex: 1; height: 14px; border-radius: 4px; background: rgba(148,163,184,0.22); }
 .seg.done { background: var(--muted); }
@@ -1050,8 +1054,10 @@ body.show-alternatives .alternative.has-alt { display: block; }
     flex: 1 1 0; aspect-ratio: auto; max-height: none; min-height: 4.5rem; margin-top: 0.5rem;
   }
   /* the question after time away is taller than the top bar it covers,
-     so an EMOM's hint makes way for it */
-  #workoutView.asking-away .round-hint { display: none; }
+     so an EMOM's hint makes way for it, as it does for where Resume picked
+     up, which leaves its "Tap Resume" to the button under it */
+  #workoutView.asking-away .round-hint, #workoutView.going-noted .round-hint, .going-tap { display: none; }
+  .going-note { font-size: 0.85rem; line-height: 1.3; }
 }
 /* a small phone on its side (375 tall): a little closer again, so an
    EMOM's two-line hint still leaves the buttons under the timer */

@@ -77,7 +77,8 @@ efforts still leave 15 seconds of the minute. The levels go on the
 workout's request by name, so a favourite comes back with the same reps
 for each person, Wayne keeps his own if he and Dave swap spots, and a new
 mate gets the plain targets. The classics and stretch routines don't use
-levels.
+levels. After a session all on the clock (Short bursts, Long efforts) the
+answer says the reps change "next time there are reps to do".
 
 In an AMRAP each block becomes one four-minute lap of its exercises, each
 at about two thirds of its EMOM target since they're done back to back.
@@ -216,7 +217,9 @@ rather than hardcoded.
   FIT asks the browser to keep its storage (`navigator.storage.persist`).
   Two tabs open at once take each other's history, favourites and program
   progress as they save, so neither writes over the other; a tab still on
-  an older version has its stale copy merged in rather than taken. On an
+  an older version has its stale copy merged in rather than taken, and one
+  on the last release (which hears the others but has no levels) has its
+  lists taken, with this tab's levels kept and written back. On an
   iPhone or iPad the home-screen app keeps its own storage, separate from
   Safari's, and the Add to Home Screen hint says so and says how to bring
   your data across
@@ -240,7 +243,10 @@ rather than hardcoded.
   the pasted text, runs it through the same checks as the stored
   settings, says what it found ("12 sessions, 2 favourites, 2 places
   (Home, Mate's place) and Surf Fit week 3") against what's there now, and
-  asks before replacing anything. What it replaced is kept, so **Put back
+  asks before replacing anything ("Nothing is saved here yet" on a new
+  device). The file picker asks for the backup, so an iPhone opens Files
+  rather than Photos. Once restored, the page goes to where it says so.
+  What it replaced is kept, so **Put back
   what was here before** undoes it until the next restore. The first-visit
   question links straight to Restore, for the home-screen app (which
   starts empty) or a new iPad
@@ -261,19 +267,23 @@ rather than hardcoded.
   & legs"). Then How was that? on each person's card (see Levels), kept
   with the session in history. Skipping to the end without ever pressing
   Start doesn't count as a session done, and the screen says so; skipped
-  through inside a minute, it says the session ended early and doesn't
+  through inside a minute, it says the session ended early ("Ended early,
+  day ticked off" on a program day, which still moves on) and doesn't
   ask how it was. A block counts as skipped when a round of it (or most
   of its time) is left out, not when the skip comes in its last rest or
-  last few seconds. Shuffle builds at each person's level today, whatever
+  last few seconds; an AMRAP or For Time left out with no score says
+  skipped, one as good as done keeps what was logged. Shuffle builds at each person's level today, whatever
   the favourite or link it came from was built at
 - Never loses your place. A session under way is saved as it goes (every
   five seconds, and on a pause, a skip, a score and whenever the app goes
   out of view), under its own key rather than with the settings. After a
   reload, or a phone that closed the tab, the Today card offers "Resume
-  Paddle power, block 2, 8:20 in" with Resume and Discard for twelve
-  hours: Resume builds the same workout again, for the same people, and
-  picks up at the start of the round, move or stretch it was in, paused,
-  and says so ("Picked up at 9:30, the start of round 5 of block 2"),
+  Paddle power from 8:00, block 2" with Resume and Discard for twelve
+  hours (on a program day, the day's own Start becomes a small "Start a
+  fresh one instead"): Resume builds the same workout again, for the same
+  people, and picks up at the start of the round, move or stretch it was
+  in, which is the time the card gives, paused, and says so under the
+  block's name ("Picked up at 9:30, the start of round 5 of block 2"),
   with its scores, lap picks and program day. It isn't offered when FIT opens on a shared link, and
   it's cleared by finishing, Reset, Start over and two taps on Menu. Back
   after more than 20 seconds away with the clock running, FIT stops where
@@ -363,8 +373,10 @@ A genuine bug fails once and stays put rather than reloading forever.
 Nothing is saved until the stored settings have been read, so a page
 that broke on its way up can never write a new visitor's defaults over
 everything kept. When `PERSISTED` gains a key, bump `PREFS_SCHEMA`, so a
-save from a tab still on the last release (which leaves the key out) is
-merged rather than taken whole.
+save from a tab still on the last release (which leaves the key out) can
+be told apart: its lists are taken (it hears the others' saves, so they're
+current), and what it leaves out (now the levels: the storage listener in
+`js/app.js` checks for them) is kept from this tab and written back.
 
 ## 3D movements
 
