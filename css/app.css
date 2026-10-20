@@ -312,12 +312,20 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 /* pinned to the bottom with Start when the card is taller than its content */
 .today-style { color: var(--muted); font-size: 0.95rem; line-height: 1.4; margin-top: auto; padding-top: 0.5rem; }
 .today-style .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; }
+/* FIT's pick in a sentence, with Choose myself, pinned there in its place
+   with the goal line close under it */
+.today-how { color: var(--muted); font-size: 0.9rem; line-height: 1.4; margin-top: auto; padding-top: 0.5rem; }
+.today-how .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; font-size: inherit; }
+.today-how + .today-style { margin-top: 0; padding-top: 0; }
 .today-go, .today-card .program-go { font-size: 1.3rem; padding: 1.1rem; margin-top: 0.2rem; }
 /* a small phone (375 x 667): a little closer, so Start stays on the first
    screen with a program line, two places and things left out */
 @media (max-height: 700px) {
   .today-card { gap: 0.3rem; }
-  .today-go, .today-card .program-go { padding: 0.9rem; }
+  .today-go, .today-card .program-go { padding: 0.75rem; }
+  .today-top { padding-bottom: 0.35rem; margin-bottom: 0; }
+  .today-how { font-size: 0.85rem; line-height: 1.35; padding-top: 0.25rem; }
+  .today-how + .today-style { margin-top: -0.15rem; }
 }
 
 /* ============== Pickers ============== */
@@ -392,6 +400,9 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .interval-name { font-size: 1.15rem; font-weight: 800; }
 .interval-sub { color: var(--teal-bright); font-weight: 700; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
 .interval-blurb { color: var(--muted); font-size: 0.9rem; line-height: 1.35; font-weight: 500; }
+/* FIT picks, and Choose myself under it, across the whole row */
+.interval-card.fit-picks, .styles-toggle { grid-column: 1 / -1; }
+.interval-grid .styles-toggle { justify-self: start; min-height: 44px; padding: 0 0.2rem; margin: -0.2rem 0; }
 
 /* ============== Body map ============== */
 .bodymap-wrap { display: flex; justify-content: center; padding: 0.35rem 0 0.85rem; }
@@ -1079,13 +1090,15 @@ body.show-alternatives .alternative.has-alt { display: block; }
     flex: 1 1 0; aspect-ratio: auto; max-height: none; min-height: 4.5rem; margin-top: 0.5rem;
   }
   /* the question after time away is taller than the top bar it covers,
-     so an EMOM's hint makes way for it, as it does for where Resume picked
-     up, which leaves its "Tap Resume" to the button under it */
-  #workoutView.asking-away .round-hint, #workoutView.going-noted .round-hint, .going-tap { display: none; }
+     so the line on how a style works makes way for it, as it does for
+     where Resume picked up, which leaves its "Tap Resume" to the button
+     under it */
+  #workoutView.asking-away .round-hint, #workoutView.going-noted .round-hint,
+  #workoutView.asking-away .round-how, #workoutView.going-noted .round-how, .going-tap { display: none; }
   .going-note { font-size: 0.85rem; line-height: 1.3; }
 }
-/* a small phone on its side (375 tall): a little closer again, so an
-   EMOM's two-line hint still leaves the buttons under the timer */
+/* a small phone on its side (375 tall): a little closer again, so the
+   two-line how-to of a style still leaves the buttons under the timer */
 @media (orientation: landscape) and (max-height: 380px) {
   #workoutView > .block-info { padding: 0.4rem 0.7rem; gap: 0.25rem; }
   .round-hint { font-size: 0.8rem; line-height: 1.25; }

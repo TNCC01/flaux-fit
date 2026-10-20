@@ -174,7 +174,14 @@ const activeView = () => st(() => document.querySelector('.view.active').id);
 const previewText = () => p.$$eval('#previewList li', els => els.map(e => e.textContent.trim()).join('|'));
 // Rounds in the first block of the built sequence: 8 for short bursts, 4 for long efforts.
 const rounds = () => st(() => state.sequence.filter(x => x.kind === 'work' && x.blockIdx === 0).length);
-const pickInterval = async (label) => { await p.click('#pathBuild'); await p.click(`.interval-card:has-text("${label}")`); };
+// A style to choose in setup (not FIT picks, which names one too).
+const styleCard = (label) => `.interval-card:not(.fit-picks):has(.interval-name:text-is("${label}"))`;
+// Setup, and a style chosen: while FIT picks, the styles open under Choose myself.
+const pickInterval = async (label) => {
+  await p.click('#pathBuild');
+  if (await p.$('.styles-toggle[aria-expanded="false"]')) await p.click('.styles-toggle');
+  await p.click(styleCard(label));
+};
 // Exact name match: "Power Hour" also appears in Half Power's tagline.
 const card = (name) => `.workout-card:not(.history-card):has(.card-name:text-is("${name}"))`;
 const toggleAllGear = async () => { for (const g of GEAR) await p.click(`#equipmentPicker .chip:has-text("${g}")`); };
@@ -251,26 +258,164 @@ try {
       return { view: document.querySelector('.view.active').id, people: state.people, kb: loadsFor(state.weights).kb15,
                on: [...card.querySelectorAll('.chip.active')].map(c => c.textContent).join(','),
                places: !!card.querySelector('.chip[data-pick^="gear-"]'),
-               style: card.querySelector('.today-style').textContent,
+               style: card.querySelector('.today-style').textContent, how: (card.querySelector('.today-how') || {}).textContent,
                go: card.querySelector('.today-go').getBoundingClientRect().bottom, height: innerHeight };
     });
     assert(home.view === 'welcomeView' && home.people === 1 && home.kb === '12kg', 'one person and the 12kg bell: ' + JSON.stringify(home));
     assert(home.on === '20 min,1 person', 'the Today card starts on 20 minutes, one person: ' + home.on);
     assert(!home.places, 'with one place there is no "Training at" row');
-    assert(home.style.startsWith('Short bursts · General fitness'), 'one line says the style and the goal: ' + home.style);
+    assert(home.how === 'FIT picks Short bursts: go hard for 20s, rest 10s, 8 rounds a block. Choose myself',
+           "FIT picks a newcomer's style, and says how it works: " + home.how);
+    assert(home.style.startsWith('General fitness · '), 'the line under it says the goal: ' + home.style);
     assert(home.go <= home.height, `Start is on the first screen (bottom ${Math.round(home.go)} of ${home.height})`);
     await f.click('#todayCard .chip:text-is("15 min")');
     assert(await f.evaluate(() => state.minutes) === 15, 'a time chip sets the minutes');
     await f.click('#todayCard .today-go');
     const built = await f.evaluate(() => ({ view: document.querySelector('.view.active').id, people: state.people,
       min: state.workout.request.minutes, total: state.totalDuration, plan: planBlocks(15, INTERVALS.short).total,
-      badge: document.getElementById('peopleBadge').textContent }));
-    assert(built.view === 'workoutView' && built.people === 1 && built.min === 15 && built.badge === '1 person',
-           'Start builds a solo 15-minute workout: ' + JSON.stringify(built));
+      badge: document.getElementById('peopleBadge').textContent, style: state.workout.request.intervalId }));
+    assert(built.view === 'workoutView' && built.people === 1 && built.min === 15 && built.badge === '1 person' && built.style === 'short',
+           'Start builds a solo 15-minute workout in the style FIT picked: ' + JSON.stringify(built));
     assert(built.total === built.plan, `and it runs as long as a 15-minute build does: ${built.total}s, planned ${built.plan}s`);
     await fresh.close();
   }
   ok('a newcomer: just me and a 12kg bell, then 15 min and Start on the home card builds a solo session');
+
+  step = 'FIT picks the style: one card, said with how it works, a new style each session, and Choose myself for the rest';
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const f = await ctx.newPage();
+    f.on('pageerror', e => errors.push('fit picks: ' + e));
+    f.on('console', m => { if (m.type() === 'error') errors.push('fit picks: ' + m.text()); });
+    const ev = (fn, arg) => f.evaluate(fn, arg);
+    const picker = () => ev(() => {
+      const t = document.querySelector('#intervalPicker .styles-toggle');
+      return { cards: [...document.querySelectorAll('#intervalPicker .interval-card')].map(c => c.querySelector('.interval-name').textContent).join('|'),
+               active: [...document.querySelectorAll('#intervalPicker .interval-card.active')].map(c => c.querySelector('.interval-name').textContent).join('|'),
+               blurb: document.querySelector('#intervalPicker .fit-picks .interval-blurb').textContent,
+               toggle: t ? `${t.textContent}:${t.getAttribute('aria-expanded')}` : '', mix: !document.getElementById('mixPicker').hidden,
+               height: Math.round(document.getElementById('intervalPicker').getBoundingClientRect().height),
+               dim: [...document.querySelectorAll('#timePicker .chip.dim')].length, auto: state.styleAuto, style: state.intervalStyle };
+    });
+    const howLine = () => f.$eval('#todayCard .today-how', e => e.textContent).catch(() => null);
+    await f.goto(URL);
+    await f.click('#btnGearDone');
+    assert(await ev(() => state.styleAuto === true && JSON.parse(localStorage.getItem('fit-picks-1')) === true), 'a new user starts on FIT picks, kept under its own key too');
+    // setup: one card, FIT's pick and how it works, the styles closed under Choose myself
+    await f.click('#pathBuild');
+    const shut = await picker();
+    assert(shut.cards === 'FIT picks: Short bursts' && shut.active === shut.cards, 'setup shows one style card, FIT picks, chosen: ' + shut.cards);
+    assert(shut.blurb === 'Go hard for 20s, rest 10s, 8 rounds a block.', 'with how its pick works, in a sentence: ' + shut.blurb);
+    assert(shut.toggle === 'Choose myself:false' && shut.height < 260, `and Choose myself, closed: a short row, not six cards (${shut.height}px)`);
+    await f.click('#intervalPicker .styles-toggle');
+    const open = await picker();
+    assert(open.cards === 'FIT picks: Short bursts|Short bursts|Long efforts|EMOM|AMRAP|For Time|Mix' && open.active === 'FIT picks: Short bursts'
+           && open.toggle === 'Hide the styles:true', 'Choose myself opens the five styles and Mix under it, FIT picks still on: ' + JSON.stringify(open));
+    // choosing one turns FIT picks off, and the styles stay open; FIT picks turns it back on and closes them
+    await f.click(styleCard('EMOM'));
+    const chose = await picker();
+    assert(!chose.auto && chose.style === 'emom' && chose.active === 'EMOM' && chose.cards.split('|').length === 7 && chose.toggle === '',
+           'choosing EMOM: FIT picks off, the styles stay open with EMOM on: ' + JSON.stringify(chose));
+    await f.click('#btnSetupBack');
+    assert(!(await howLine()) && (await f.$eval('#todayCard .today-style', e => e.textContent)).startsWith('EMOM · General fitness · '),
+           'home says the style chosen, with no FIT line');
+    await f.click('#pathBuild');
+    assert((await picker()).cards.split('|').length === 7, 'with a style chosen, setup opens with the styles showing');
+    await f.click('#intervalPicker .fit-picks');
+    const backOn = await picker();
+    assert(backOn.auto && backOn.style === 'emom' && backOn.cards === 'FIT picks: Short bursts' && backOn.toggle === 'Choose myself:false',
+           'tapping FIT picks puts it back and closes the styles, keeping EMOM for a classic: ' + JSON.stringify(backOn));
+    // Mix's minimum time: a mix chosen dims the short times and raises the minutes; FIT picks has no floor
+    await f.click('#timePicker .chip:text-is("15 min")');
+    await f.click('#intervalPicker .styles-toggle');
+    await f.click(styleCard('Mix'));
+    const mixed = await picker();
+    assert(!mixed.auto && mixed.mix && mixed.dim > 0 && await ev(() => state.minutes === 25), 'Mix chosen at 15 min: 25 min and the shorter times dimmed: ' + JSON.stringify(mixed));
+    await f.click('#intervalPicker .fit-picks');
+    const free = await picker();
+    assert(free.auto && !free.mix && free.dim === 0 && await ev(() => state.mixOn === true), 'FIT picks again: no time is dimmed and the mix setup is hidden, kept for later: ' + JSON.stringify(free));
+    await f.click('#timePicker .chip:text-is("10 min")');
+    assert(await ev(() => state.minutes === 10) && !(await picker()).cards.includes('Mix'), 'and 10 minutes can be picked, with a single style');
+    await f.click('#timePicker .chip:text-is("20 min")');
+    await f.click('#btnSetupBack');
+    // Choose myself on the Today card opens setup at the styles
+    await f.click('#btnChooseStyle');
+    const at = await ev(() => ({ view: document.querySelector('.view.active').id,
+      top: Math.round(document.getElementById('intervalPicker').getBoundingClientRect().top), height: innerHeight }));
+    assert(at.view === 'setupView' && at.top >= 0 && at.top < at.height / 2 && (await picker()).cards.split('|').length === 7,
+           'Choose myself on home opens setup at the styles, open: ' + JSON.stringify(at));
+    await f.click('#btnSetupBack');
+    // the pick moves on with each session started, and Start builds what the line says
+    const order = [];
+    for (let i = 0; i < 6; i++) {
+      const line = await howLine();
+      await f.click('#todayCard .today-go');
+      const got = await ev(() => ({ id: state.workout.intervalId, req: state.workout.request.intervalId, label: INTERVALS[state.workout.intervalId].label }));
+      assert(line.startsWith(`FIT picks ${got.label}: `) && got.req === got.id, `the line said "${line}" and Start built ${got.id}`);
+      await f.click('#btnStart');
+      await leaveStarted(f);
+      order.push(got.id);
+    }
+    assert(order.join() === 'short,long,emom,amrap,fortime,short', 'each session a style not done lately, never the same twice running: ' + order);
+    assert(await ev(() => state.intervalStyle === 'emom'), "and what FIT picks never changes the style chosen in setup");
+    // a long session: a steadier style or a mix, and a mix only when it fits
+    await f.click('#todayCard .time-chips .chip:text-is("45 min")');
+    const long = await howLine();
+    assert(long === 'FIT picks a mix: EMOM, Short bursts and AMRAP, with a short break between each. Choose myself', 'at 45 min, a mix: ' + long);
+    await f.click('#todayCard .today-go');
+    const mixBuilt = await ev(() => ({ id: state.workout.intervalId, mix: (state.workout.mix || []).join(), total: state.totalDuration }));
+    assert(mixBuilt.id === 'mix' && mixBuilt.mix === 'emom,short,amrap' && mixBuilt.total === 45 * 60, 'and Start builds that mix, 45:00: ' + JSON.stringify(mixBuilt));
+    // shuffled, it keeps the style; saved, it comes back as it was, whatever FIT would pick by then
+    await f.click('#btnShuffle');
+    assert(await ev(() => state.workout.intervalId === 'mix'), 'Shuffle keeps the style');
+    await f.click('#btnSave');
+    const saved = await ev(() => ({ seed: state.workout.seed, ids: state.workout.exerciseIds.join() }));
+    await f.click('#btnStart'); await leaveStarted(f);
+    assert(!(await howLine()).includes('a mix'), 'with the mix just done, FIT picks something else: ' + await howLine());
+    await f.click('#pathLibrary');
+    await f.click('.workout-card:has-text("☆")');
+    assert(await ev((s) => state.workout.seed === s.seed && state.workout.exerciseIds.join() === s.ids && state.workout.intervalId === 'mix', saved),
+           'the favourite reopens as the mix it was saved as');
+    await f.click('#btnBack');
+    // a classic runs in the style chosen in setup, not FIT's pick
+    await f.click('#pathLibrary');
+    assert(await f.$eval(`${card('Power Hour')} .card-style`, e => e.textContent) === 'EMOM', 'a classic card says the style chosen in setup');
+    await f.click(card('Power Hour'));
+    assert(await ev(() => state.sequence.filter(x => x.kind === 'work' && x.blockIdx === 0).every(x => x.emom)), 'and runs as it');
+    await f.click('#btnBack');
+    // it lasts: a reload, a backup and a restore, an old backup, and a save from a tab on the last release
+    await f.reload();
+    assert(await ev(() => state.styleAuto === true), 'FIT picks survives a reload');
+    const kept = await ev(() => {
+      const text = backupText();
+      const inBackup = JSON.parse(text).prefs.styleAuto;
+      state.styleAuto = false; savePrefs();
+      replaceData(readBackup(text).prefs, true);
+      const old = (style, auto) => {
+        const o = JSON.parse(text);
+        delete o.prefs.styleAuto; o.prefs.schema = 4; o.prefs.intervalStyle = style; o.prefs.mixOn = false;
+        if (auto !== undefined) o.prefs.styleAuto = auto;
+        return readBackup(JSON.stringify(o)).prefs.styleAuto;
+      };
+      return { inBackup, restored: state.styleAuto, oldEmom: old('emom'), oldShort: old('short'), junk: old('short', 'yes') };
+    });
+    assert(kept.inBackup === true && kept.restored === true, 'a backup has it, and a restore brings it back: ' + JSON.stringify(kept));
+    assert(kept.oldEmom === false && kept.oldShort === true && kept.junk === true,
+           'a backup from before FIT picked: a style chosen is kept, the one setup started on is FIT picks, and junk goes by the style: ' + JSON.stringify(kept));
+    await ev(() => {
+      const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      delete prefs.styleAuto; prefs.schema = 4;
+      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+    });
+    await f.reload();
+    assert(await ev(() => state.styleAuto === true && state.intervalStyle === 'emom'),
+           'a save from a tab on the last release, with EMOM chosen once, leaves FIT picks on (its own key says so)');
+    await ev(() => { localStorage.removeItem('fit-picks-1'); });
+    await f.reload();
+    assert(await ev(() => state.styleAuto === false && state.intervalStyle === 'emom'), 'and with no key beside it, the style chosen before is kept');
+    await ctx.close();
+  }
+  ok('FIT picks: a new user gets one style card, with how its pick works and Choose myself; choosing one turns it off, tapping it turns it back on; no time floor; a different style each session, the one the line said, a mix only when long enough; favourites, Shuffle and the classics keep their own style; it survives a reload, a backup, an old backup and a tab on the last release');
 
   step = 'a returning phone user with a program day, two places and leave-outs still has Start on the first screen';
   {
@@ -310,6 +455,7 @@ try {
     const other = await fold();
     assert(other.go <= other.height && other.text.includes('Build a workout'), `the built workout's Start is on the first screen too (bottom ${Math.round(other.go)})`);
     assert(await r.$eval('#pathBuild', e => e.getBoundingClientRect().height >= 44), 'Change is 44px tall to tap');
+    assert(await r.$eval('#btnChooseStyle', e => e.getBoundingClientRect().height >= 44), "and so is FIT's Choose myself");
     await r.reload();
     assert((await r.$eval('#todayCard', e => e.textContent)).includes('Build a workout'), 'a reload the same day keeps the built workout');
     await r.evaluate(() => {
@@ -657,7 +803,7 @@ try {
   ok('weights: the heaviest bell and the one nearest two thirds of it fill the roles, the bar shows its load');
 
   step = 'classic under long efforts, then the timer survives a suspension';
-  await p.click('.interval-card:has-text("Long efforts")');
+  await p.click(styleCard('Long efforts'));
   await p.click('#btnSetupBack'); await p.click('#pathLibrary');
   assert(await p.$eval(`${card('Power Hour')} .card-style`, e => e.textContent) === 'Long efforts', 'the classic card says the style it will run as');
   assert(await p.$(card('Sunrise Stretch')) && !(await p.$(`${card('Sunrise Stretch')} .card-style`)), 'a stretch routine has no style to show');
@@ -694,6 +840,9 @@ try {
     const offered = () => r.$('#todayCard .today-resume');
     const view = () => ev(() => document.querySelector('.view.active').id);
     await r.goto(URL);
+    // saved before FIT picked, with AMRAP chosen: it stays AMRAP
+    assert(await ev(() => state.styleAuto === false) && !(await r.$('#todayCard .today-how'))
+           && (await r.$eval('#todayCard .today-style', e => e.textContent)).startsWith('AMRAP · '), 'a returning user who had chosen AMRAP keeps it');
     assert(!(await offered()), 'nothing to pick up to begin with');
     await r.click('#todayCard .today-go');
     assert(!(await kept()), 'opening a workout saves nothing until it starts');
@@ -1647,7 +1796,12 @@ try {
   assert(/^(\d+ reps|\d+s? each side|\d+s|.+)$/.test(shown) && shown.length > 0, `reps on the card, got "${shown}"`);
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'EMOM', 'the timer says EMOM');
   assert(/Minute/.test(await p.$eval('#roundDots', e => e.textContent)), 'counts minutes, not rounds');
-  assert((await p.$eval('#roundDots', e => e.textContent)).includes("Do the reps, then rest till the minute's up"), 'and says how an EMOM works');
+  assert((await p.$eval('#roundDots .round-hint', e => e.textContent)) === 'Do the reps, then rest till the next minute.', 'and the first block says how an EMOM works');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work' && x.blockIdx === 0 && x.round === 4)); render(); });
+  assert(await p.$('#roundDots .round-hint'), 'through every minute of it');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work' && x.blockIdx === 1)); render(); });
+  assert(!(await p.$('#roundDots .round-hint')) && /Minute 1/.test(await p.$eval('#roundDots', e => e.textContent)), 'and once is enough: block 2 just counts the minutes');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
   assert((await p.$eval('#upcoming', e => e.textContent)).includes(' · '), 'up next names the reps');
   const [repsPx, namePx] = await st(() => ['repsA', 'exerciseA'].map(id => parseFloat(getComputedStyle(document.getElementById(id)).fontSize)));
   assert(repsPx >= namePx, `the reps are as big as the name (${repsPx}px, name ${namePx}px)`);
@@ -1666,6 +1820,16 @@ try {
   await p.click('#btnStart');
   const blk = await st(() => { const i = state.sequence.findIndex(x => x.amrap); seekTo(i); render(); return state.sequence[i].blockIdx; });
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'AMRAP', 'the timer says AMRAP');
+  const amrapSaid = await st((b) => {
+    const said = () => document.getElementById('roundDots').textContent;
+    const first = said();
+    seekTo(state.sequence.findIndex(x => x.amrap && x.blockIdx > b)); render();
+    const later = said();
+    seekTo(state.sequence.findIndex(x => x.amrap && x.blockIdx === b)); render();
+    return { first, later };
+  }, blk);
+  assert(amrapSaid.first === 'As many rounds as you can in 4 minutes: tap +1 each round.' && amrapSaid.later === 'As many rounds as you can in 4 min',
+         'the first AMRAP says how it works, the next just what it is: ' + JSON.stringify(amrapSaid));
   const shows = (id) => p.$eval(id, e => getComputedStyle(e).display !== 'none');
   assert(await shows('#circuitA') && await shows('#counterA'), 'the lap and the counter show');
   await p.click('#counterA .count-more'); await p.click('#counterA .count-more'); await p.click('#counterA .count-less');
@@ -1721,7 +1885,7 @@ try {
          'skipped with 60% of it left: a block skipped, and its row says so: ' + JSON.stringify(agree.early));
   ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it; skipped blocks read "–", show no Last time, and the lap goes after; Start over counts from 0; a skip's row and the summary agree`);
 
-  step = 'For Time: rounds of a lap against a cap, Done logs the time';
+  step = 'For Time: rounds of a lap against a cap, counted for you, the last one logs the time';
   await leaveStarted(); await pickInterval('For Time');
   await p.click('#btnBuild');
   const ft = await st(() => {
@@ -1736,9 +1900,38 @@ try {
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'For time', 'the timer says For time');
   assert(await p.$eval('#timeDisplay', e => e.textContent) === '1:10', 'and counts up: ' + await p.$eval('#timeDisplay', e => e.textContent));
   assert(/rounds of/i.test(await p.$eval('#circuitA', e => e.textContent)), 'the card says how many rounds');
+  assert(await p.$eval('#roundDots', e => e.textContent) === 'Race the rounds, tapping +1 after each, with a 4-minute cap.', 'the first For Time says how it works');
+  // FIT counts the rounds: +1 after each, the last one is Done and logs the time
+  const ftRounds = await st(() => state.sequence[state.currentIdx].a.lapRounds);
+  const count = (w = 'A') => p.evaluate((w) => {
+    const c = document.getElementById('counter' + w);
+    return { now: c.querySelector('.count-now').textContent.trim(), more: (c.querySelector('.count-more') || {}).textContent,
+             less: !!(c.querySelector('.count-less[data-step="-1"]') || {}).disabled };
+  }, w);
+  const first = await count();
+  assert(first.now === `1 of ${ftRounds} rounds` && first.more === '+1 round' && first.less, 'it starts on round 1, with +1 round and nothing to take off: ' + JSON.stringify(first));
+  const bFirst = await st(() => state.people === 2) ? await count('B') : null;
   await p.click('#counterA .count-more');
-  assert(await p.evaluate((b) => state.history[0].scores[b].a === 70, ftBlk), 'Done logs 1:10');
+  assert((await count()).now === `2 of ${ftRounds} rounds`, '+1 round moves it on to round 2');
+  assert(await st((b) => JSON.parse(localStorage.getItem('fit-run-1')).laps[b].a === 1, ftBlk), 'and a reload would keep the count');
+  await p.click('#counterA .count-less');
+  assert((await count()).now === `1 of ${ftRounds} rounds`, '− takes a tap back');
+  for (let i = 1; i < ftRounds; i++) await p.click('#counterA .count-more');
+  const lastRound = await count();
+  assert(lastRound.now === `${ftRounds} of ${ftRounds} rounds` && lastRound.more === 'Done', 'on the last round the button is Done: ' + JSON.stringify(lastRound));
+  assert(await p.evaluate((b) => !(state.history[0].scores && state.history[0].scores[b] && state.history[0].scores[b].a), ftBlk), 'no time yet');
+  if (bFirst) assert(JSON.stringify(await count('B')) === JSON.stringify(bFirst), "the other person's count is their own");
+  await p.click('#counterA .count-more');
+  assert(await p.evaluate((b) => state.history[0].scores[b].a === 70, ftBlk), 'Done on the last round logs 1:10');
   assert((await p.$eval('#counterA', e => e.textContent)).includes('1:10'), 'the card shows the time');
+  await p.click('#counterA .count-less');
+  const undone = await count();
+  assert(undone.now === `${ftRounds} of ${ftRounds} rounds` && undone.more === 'Done' && await p.evaluate((b) => !state.history[0].scores[b].a, ftBlk),
+         'the undo takes the time off and goes back to the last round: ' + JSON.stringify(undone));
+  await p.click('#counterA .count-more');
+  assert(await p.evaluate((b) => state.history[0].scores[b].a === 70, ftBlk), 'and Done logs it again');
+  assert(await st(() => JSON.stringify(cleanRun({ ...JSON.parse(localStorage.getItem('fit-run-1')), laps: { 0: { a: -1 }, 1: { a: 2.5 }, x: { a: 1 }, 2: { a: 2, b: 1 } } }).laps)) === '{"2":{"a":2,"b":1}}',
+         'a saved count that is not a whole number of rounds is let go');
   if (await st(() => state.people === 1)) {
     assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Rest', 'once done, the rest of the cap is rest');
   }
@@ -1749,7 +1942,7 @@ try {
          'and reads "–", not capped: ' + await st(() => scoreLine(state.history[0])));
   await p.click('#btnStart');                                   // pause
   await st(() => { state.intervalStyle = 'short'; savePrefs(); });
-  ok('For Time: the clock counts up, Done logs the time to history and the cap turns to rest; a skipped block reads "–"');
+  ok('For Time: the first block says how it works, the clock counts up, FIT counts the rounds (+1, − and Done on the last), Done logs the time to history and the cap turns to rest, the undo goes back to the last round; a skipped block reads "–"');
 
   step = 'history keeps who trained, so a score stays with its person after a rename';
   await leaveStarted(); await pickInterval('AMRAP');
@@ -1781,14 +1974,14 @@ try {
   assert(aLast.includes('Last time 0') && bLast.includes('Last time 3'), `swapped, Dave's 3 follows him to B: "${aLast}" / "${bLast}"`);
   await p.click('#btnBack');
   await p.click('#pathBuild'); await p.fill('#nameA', ''); await p.fill('#nameB', '');
-  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click(styleCard('Short bursts'));
   await p.click('#btnBuild'); await p.click('#btnStart');
   ok('history keeps the names: a rename leaves the score with Dave, a new name gets no "Last time", and a swap follows the person');
 
   step = 'the finish screen says what was done, and each person says how it was';
   await leaveStarted();
   await p.click('#pathBuild'); await p.fill('#nameA', 'Wayne'); await p.fill('#nameB', 'Dave');
-  await p.click('.interval-card:has-text("EMOM")');
+  await p.click(styleCard('EMOM'));
   await p.click('#btnBuild');
   assert(await st(() => state.people === 2 && state.workout.request.repScales === undefined && !Object.keys(state.levels).length),
          'before anyone has said, a build carries no levels');
@@ -1937,14 +2130,14 @@ try {
   await st(() => { state.saved.shift(); savePrefs(); });
   await p.click('#btnBack');
   await p.click('#pathBuild'); await p.fill('#nameA', ''); await p.fill('#nameB', '');
-  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click(styleCard('Short bursts'));
   await p.click('#btnBuild'); await p.click('#btnStart');
   ok("finish: the minutes, the blocks and any skipped; How was that? once each, kept with the session and taken back with a second tap; two Too easy raise Wayne's EMOM reps above Dave's on the same moves, said on the card; favourites, swaps, new mates and links keep each person's own reps");
 
   step = 'Mix: EMOM, short bursts and AMRAP in exactly 30 minutes';
   await leaveStarted(); await p.click('#pathBuild');
   await p.click('#timePicker .chip:text-is("30 min")');
-  await p.click('.interval-card:has-text("Two or three styles")');
+  await p.click(styleCard('Mix'));
   // start from nothing, then tap the styles in order
   for (const id of await st(() => state.mixStyles.slice())) {
     await p.click(`.mix-chip:has-text("${await p.evaluate(i => INTERVALS[i].label, id)}")`);
@@ -1967,10 +2160,22 @@ try {
   await st(() => { seekTo(state.sequence.findIndex(x => x.changeover)); render(); });
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Change over', 'the changeover says so');
   assert((await p.$eval('#roundDots', e => e.textContent)).includes('Short bursts'), 'and explains the next style');
+  // each section says how its style works as it starts, and only then
+  const sectionSaid = await st(() => state.sequence.filter(x => x.kind === 'work').map(x => {
+    seekTo(state.sequence.indexOf(x)); render();
+    const how = document.querySelector('#roundDots .round-hint, #roundDots .round-how');
+    return `${x.blockIdx}:${how ? how.textContent : ''}`;
+  }).filter((x, i, all) => x !== all[i - 1]));
+  const firsts = await st(() => state.workout.sections.map(x => x.start));
+  const howSaid = sectionSaid.filter(x => !/^\d+:$/.test(x));
+  assert(howSaid.length === 3 && howSaid.every((x, i) => x.startsWith(`${firsts[i]}:`))
+         && howSaid[0].endsWith(':Do the reps, then rest till the next minute.') && howSaid[1].endsWith(':Go hard for 20s, rest 10s, 8 rounds a block.')
+         && /^\d+:As many rounds as you can in \d+ minutes: tap \+1 each round\.$/.test(howSaid[2]),
+         "the first block of each section says how its style works, the others don't: " + sectionSaid.join(' | '));
   await p.click('#btnBack');
   assert((await p.$eval('#todayCard .today-style', e => e.textContent)).startsWith('Mix: EMOM, Short bursts, AMRAP · '), 'the home card names the mix');
   await p.click('#pathBuild');
-  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click(styleCard('Short bursts'));
   assert(await st(() => !state.mixOn), 'picking a single style turns the mix off');
   await p.click('#timePicker .chip:text-is("20 min")');
   await p.click('#btnBuild');
@@ -1980,7 +2185,7 @@ try {
   await p.click('#btnBack'); await p.click('#pathBuild');
   assert(await st(() => state.minutes === 20 && !state.mixOn), 'starting from one style at 20 minutes');
   const dimmed = (sel) => p.$$eval(`${sel} .chip.dim`, els => els.map(e => e.textContent).join(','));
-  await p.click('.interval-card:has-text("Two or three styles")');
+  await p.click(styleCard('Mix'));
   assert(await st(() => mixMinimumMinutes(state.mixStyles)) === 25, 'EMOM, short bursts and AMRAP need 25 minutes');
   assert(await st(() => state.minutes) === 25, 'turning Mix on raises 20 minutes to the 25 it needs');
   assert(await dimmed('#timePicker') === '10 min,15 min,20 min', 'the shorter times are dimmed: ' + await dimmed('#timePicker'));
@@ -2012,7 +2217,7 @@ try {
   assert(refused.top >= 0 && refused.bottom < refused.h + 1 && refused.gap >= 0 && refused.gap < 60,
          `and the reason is on screen just under the button: ${JSON.stringify(refused)}`);
   await st(() => { state.excluded = []; savePrefs(); });
-  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click(styleCard('Short bursts'));
   assert(await dimmed('#timePicker') === '' && await p.$eval('#timeHint', e => e.hidden), 'one style: every time is on offer again');
   await p.click('#timePicker .chip:text-is("20 min")');
   await p.click('#btnBuild');
@@ -2426,7 +2631,7 @@ try {
   await listenFor(p, null);
   await tab2.evaluate(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
-    delete prefs.schema; delete prefs.beepOnSilent; delete prefs.todayOther; delete prefs.sound; delete prefs.voice;
+    delete prefs.schema; delete prefs.beepOnSilent; delete prefs.todayOther; delete prefs.sound; delete prefs.voice; delete prefs.styleAuto;
     prefs.history = prefs.history.slice(1);           // opened before the newest session
     prefs.saved = prefs.saved.slice(1);
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
@@ -2435,7 +2640,7 @@ try {
   const merged = await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     return { first: prefs.history[0].key, n: prefs.history.length, mem: state.history.length, saved: prefs.saved.length === state.saved.length,
-             beep: 'beepOnSilent' in prefs && 'sound' in prefs && 'voice' in prefs, dupes: new Set(prefs.history.map(h => h.key + h.at)).size !== prefs.history.length };
+             beep: 'beepOnSilent' in prefs && 'sound' in prefs && 'voice' in prefs && prefs.styleAuto === state.styleAuto, dupes: new Set(prefs.history.map(h => h.key + h.at)).size !== prefs.history.length };
   });
   assert(merged.first === newest && merged.n === merged.mem && merged.saved && merged.beep && !merged.dupes,
          "an older tab's stale save is merged in and written back with this tab's sessions and settings: " + JSON.stringify(merged));
@@ -2627,17 +2832,20 @@ try {
   ok('Your data: a dated backup file, the same on the clipboard (or in a box without one), and a restore by file or paste from the first-visit question that says what it found, asks, cleans what it takes, and can be put back');
 
   step = 'corrupt preferences fall back, favourites persist';
+  // FIT picks off, with the style setup starts on: read from that alone it would be on
+  const picksWas = await st(() => { state.styleAuto = false; state.intervalStyle = 'short'; state.mixOn = false; savePrefs(); return state.styleAuto; });
   await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     prefs.people = 7; prefs.minutes = 13; prefs.textScale = 'big'; prefs.blockedTags = 'nope';
-    prefs.history.push(null, 'junk'); prefs.saved.push({ name: 'no seed' }); prefs.filterFocus = 'nowhere'; prefs.muteAudio = 'yes'; prefs.sound = 'loud'; prefs.voice = 'maybe';
+    prefs.history.push(null, 'junk'); prefs.saved.push({ name: 'no seed' }); prefs.filterFocus = 'nowhere'; prefs.muteAudio = 'yes'; prefs.sound = 'loud'; prefs.voice = 'maybe'; prefs.styleAuto = 'maybe';
     prefs.levels = { ...prefs.levels, huge: { k: 5 }, odd: 'x', '': { k: 1.1 }, kept: { k: 1.2, easy: 1 } };
     prefs.history[0].feel = { a: 'meh', b: 'cooked' };
     if (prefs.history[1]) prefs.history[1].feel = 'nope';
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
   await p.goto(URL);
-  const junk = await st(() => ({ levels: state.levels, feel: [state.history[0].feel, state.history[1] && state.history[1].feel] }));
+  const junk = await st(() => ({ levels: state.levels, feel: [state.history[0].feel, state.history[1] && state.history[1].feel], picks: state.styleAuto }));
+  assert(junk.picks === picksWas, 'FIT picks that is not on or off comes from its own key: ' + junk.picks);
   assert(JSON.stringify(junk.levels.kept) === '{"k":1.2,"easy":1}' && !junk.levels.huge && !junk.levels.odd && !('' in junk.levels) && junk.levels.wayne,
          'levels out of range or the wrong shape are dropped, the rest kept: ' + JSON.stringify(junk.levels));
   assert(JSON.stringify(junk.feel[0]) === '{"b":"cooked"}' && junk.feel[1] === undefined, 'and so are answers that are not one of the three: ' + JSON.stringify(junk.feel));

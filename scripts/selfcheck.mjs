@@ -776,6 +776,82 @@ let exported = 0;
   }
 }
 
+// ------------------------------------------------------- 8f. FIT picks
+// Left to FIT, the style is worked out from the time, the goal and the
+// sessions before, with nothing random: the same three always pick the
+// same style (so the home card names what Start builds). Whatever the
+// sessions were, the pick fits the minutes (a mix only from half an hour,
+// and only one that fits; a long session a steadier style), builds to the
+// second, and changes from one session to the next, going round every
+// style on offer before any comes back (in another order after a mix,
+// which counts as each style in it too). And each style says how it works
+// in one plain sentence, with the seconds it really runs at.
+let picksChecked = 0;
+{
+  const fitPicks = A.fitPicks, styleHow = A.styleHow;
+  const all = [...Object.keys(INTERVALS), 'mix'];
+  const asSession = (p) => (p.intervalId === 'mix' ? ['mix', ...p.mix] : [p.intervalId]);
+  // some sessions before: none, the program's, random ones (seeded), stretching and junk
+  const rand = (() => { let x = 7; return () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648; })();
+  const histories = [[], [['long']], [['short'], ['short'], ['emom']], [['mix', 'emom', 'amrap'], ['fortime']], [null, 'junk', ['toString'], []]];
+  for (let i = 0; i < 20; i++) histories.push(Array.from({ length: Math.floor(rand() * 14) }, () => asSession(
+    (() => { const id = all[Math.floor(rand() * all.length)]; return id === 'mix' ? { intervalId: 'mix', mix: ['emom', 'short', 'amrap'] } : { intervalId: id }; })())));
+  for (const goal of ['general', 'surf']) {
+    for (const minutes of minutesList) {
+      const pool = new Set();
+      for (const h of histories) {
+        const label = `FIT picks, ${goal}, ${minutes} min after ${JSON.stringify(h)}`;
+        const pick = fitPicks(minutes, goal, h);
+        picksChecked++;
+        if (JSON.stringify(fitPicks(minutes, goal, JSON.parse(JSON.stringify(h)))) !== JSON.stringify(pick)) fail(`${label}: picks differently the second time`);
+        const ok = pick && (pick.intervalId === 'mix' ? Array.isArray(pick.mix) && pick.mix.length >= 2 && pick.mix.every(id => INTERVALS[id]) : INTERVALS[pick.intervalId] && pick.mix === undefined);
+        if (!ok) { fail(`${label}: not a style: ${JSON.stringify(pick)}`); continue; }
+        pool.add(pick.intervalId);
+        if (pick.intervalId === 'mix' && (minutes < 30 || planMix(minutes, pick.mix).error)) fail(`${label}: a mix that doesn't fit`);
+        if (minutes >= 45 && !['long', 'emom', 'mix'].includes(pick.intervalId)) fail(`${label}: ${pick.intervalId} for three quarters of an hour or more`);
+        const w = generateWorkout({ minutes, people: 2, intervalId: pick.intervalId, mix: pick.mix, goal: goal === 'surf' ? 'surf' : undefined,
+          regions: REGION_IDS, equipment: ALL_EQUIP, excluded: [], blockedTags: [], seed: 500 + picksChecked, recent: [] });
+        if (w.error) { fail(`${label}: ${w.error}`); continue; }
+        const secs = w.sections || [{ intervalId: w.intervalId, count: w.blocks.length, minutes: 0, blockRestSec: w.blockRestSec }];
+        const real = w.warmupSec + w.cooldownSec + (secs.length - 1) * (w.changeoverSec || 0) + secs.reduce((t, x) => t + sectionSeconds(x), 0);
+        if (real !== minutes * 60) fail(`${label}: builds ${real}s, not ${minutes * 60}s`);
+        if (w.request.intervalId !== pick.intervalId || JSON.stringify(w.request.mix) !== JSON.stringify(pick.mix)) fail(`${label}: the build's request doesn't keep the style`);
+        // and the same request and seed build it again exactly, as a favourite or a link does
+        const again = generateWorkout({ ...w.request, equipment: ALL_EQUIP, excluded: [], seed: w.seed });
+        if (again.error || again.exerciseIds.join() !== w.exerciseIds.join() || JSON.stringify(again.sections) !== JSON.stringify(w.sections)) fail(`${label}: its request and seed build something else`);
+      }
+      // session after session: never the same twice running, and round every style on offer before one comes back
+      const offered = all.filter(id => id === 'mix' ? minutes >= 30 : minutes < 45 || id === 'long' || id === 'emom');
+      let h = [];
+      const run = [];
+      for (let n = 0; n < offered.length * 2; n++) {
+        const pick = fitPicks(minutes, goal, h);
+        run.push(pick.intervalId);
+        h = [asSession(pick), ...h];
+      }
+      const label = `FIT picks, ${goal}, ${minutes} min, session after session (${run.join(',')})`;
+      if (run.some((id, n) => n && id === run[n - 1])) fail(`${label}: the same style twice running`);
+      if (new Set(run.slice(0, offered.length)).size !== offered.length) fail(`${label}: doesn't go round every style before one comes back`);
+      if (new Set(run.slice(offered.length)).size !== offered.length) fail(`${label}: doesn't keep going round every style`);
+      if (minutes < 30 && pool.has('mix')) fail(`${label}: a mix under half an hour`);
+    }
+  }
+  // a first session is a timed style, and a mix counts as each style in it
+  if (fitPicks(20, 'general', []).intervalId !== 'short' || fitPicks(20, 'surf', []).intervalId !== 'long') fail('FIT picks: a first session should be short bursts, or for surfing long efforts');
+  if (['emom', 'short', 'amrap'].includes(fitPicks(20, 'general', [['mix', 'emom', 'short', 'amrap'], ['long']]).intervalId)) fail('FIT picks: just after a mix, it picks a style from the mix');
+  // how each style works: one sentence, plain, with the real numbers
+  const said = [...Object.values(INTERVALS).map(iv => [iv.id, styleHow(iv)]),
+    ['long at 45/15', styleHow(withWorkRest(INTERVALS.long, { long: [45, 15] }))],
+    ['AMRAP in a 7-minute section', styleHow(sectionInterval({ intervalId: 'amrap', start: 0, count: 1, minutes: 7, blockRestSec: 0 }))],
+    ['For Time in a 6-minute section', styleHow(sectionInterval({ intervalId: 'fortime', start: 0, count: 1, minutes: 6, blockRestSec: 0 }))]];
+  said.forEach(([id, text]) => {
+    if (typeof text !== 'string' || !/^[A-Z].{20,90}\.$/.test(text) || /[—–]|\.\s+[A-Z]|undefined|NaN/.test(text)) fail(`styleHow ${id}: not one plain sentence: "${text}"`);
+  });
+  const want = { short: '20s, rest 10s, 8 rounds', long: '40s, rest 20s, 4 rounds', 'long at 45/15': '45s, rest 15s, 4 rounds',
+                 amrap: 'in 4 minutes', 'AMRAP in a 7-minute section': 'in 7 minutes', fortime: '4-minute cap', 'For Time in a 6-minute section': '6-minute cap' };
+  said.forEach(([id, text]) => { if (want[id] && !text.includes(want[id])) fail(`styleHow ${id}: should say "${want[id]}": "${text}"`); });
+}
+
 // ---------------------------------- 9. exclusions are actually respected
 const someIds = ids.filter(id => !EXERCISES[id].equipment.length).slice(0, 40);
 const wEx = generateWorkout({
@@ -1090,6 +1166,7 @@ console.log(`mixed sessions     ${mixBuilt} built, ${mixRefused} correctly refus
 console.log(`surf fitness       ${surfBuilt} sessions, surf exercises only, pop-ups and paddling in each`);
 console.log(`programs           ${programDays} program-day builds, every day at every length, leave-outs kept`);
 console.log(`export script      ${exported} exports, every style, lengths match the timer`);
+console.log(`FIT picks          ${picksChecked} picks: the same each time, fit the minutes, build to the second, go round every style`);
 console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused, ${exact} to the second`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 console.log(`frozen favourites  ${frozenChecked} built and frozen, the same run after thawing; the golden one unchanged`);

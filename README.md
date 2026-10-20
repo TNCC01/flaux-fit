@@ -17,7 +17,9 @@ has three cards:
 
 - **Today** (Build a workout): how long you've got and how many of you,
   filled in from last time, where you're training once there's more than
-  one place, a line with the style and goal, and Start. **Change** opens
+  one place, FIT's pick of style with how it works in a sentence ("FIT
+  picks Long efforts: work steady for 40s, rest 20s, 4 rounds a block.")
+  and **Choose myself**, a line with the goal, and Start. **Change** opens
   the full setup: what it's for, how many of you, your gear, how long
   you've got and the style. Target areas and anything you'd rather not do
   sit under **More options**, closed by default, with a line saying what's
@@ -29,8 +31,8 @@ has three cards:
   card says where you're up to ("Surf Fit · week 2 of 6").
 - **Saved & ready-made**: your favourites and recent sessions, the 16 named
   classics, and the stretch routines (the Stretching filter shows just
-  those). A classic runs in the style last picked in setup, and its card
-  says which. At the bottom, **Your data**: back it up, or move it to
+  those). A classic runs in the style last chosen in setup (Short bursts
+  until you choose one), never FIT's pick, and its card says which. At the bottom, **Your data**: back it up, or move it to
   another device or into the home-screen app.
 
 Built workouts are **generated on the spot** rather than
@@ -44,6 +46,29 @@ testing, back-to-back 30-minute sessions share under a quarter of their
 movements.
 
 ## Workout styles
+
+**FIT picks** the style unless you choose one (`fitPicks` in
+`js/workouts.js`). It goes by the time and the sessions in history: of
+the styles that suit the time, the one you've gone longest without, so it
+changes from one session to the next and goes round every style before
+one comes back (a mix counts as each style in it). A first session is
+short bursts (long efforts for surfing). From 30 minutes a mix is on
+offer too (EMOM, short bursts and AMRAP; for surfing Surf Fit's EMOM and
+AMRAP), and from 45 only the steadier styles, long efforts, EMOM or a
+mix. Nothing random goes into it, so the style the home card names is the
+one Start builds, and the build keeps it in its request: a favourite, a
+link or a session picked up later runs that style, whatever FIT would
+pick by then. In setup, FIT picks is one card with today's pick and how it
+works, and **Choose myself** opens the five styles and Mix under it.
+Choosing one turns FIT picks off (its card stays at the top to go back
+to). A new visitor starts on FIT picks; someone who had chosen a style
+before (anything but short bursts, or a mix) keeps it.
+
+The first block of each style in a session says how it works, under the
+round count ("Do the reps, then rest till the next minute.") or for an
+AMRAP or For Time in place of its line ("As many rounds as you can in 4
+minutes: tap +1 each round."), with the session's real numbers; a mix says
+it for each section as it starts.
 
 All five run a **240-second block**, so switching between them never
 changes how long a workout takes, only how each minute is spent. The two
@@ -143,9 +168,12 @@ across the whole session, not chosen per section.
 
 For Time uses the same laps with a set amount of work: 3 rounds of a lap
 of three or more exercises, 4 of two, 5 of one, which lands around three
-minutes for most people. The clock counts up, each person taps Done when
-they finish (the time is saved like an AMRAP score, and shows as "Last
-time" next go), and once everyone's done the rest of the four-minute cap
+minutes for most people. The clock counts up and FIT counts the rounds,
+so nobody keeps count while puffing: each person's card says the round
+they're on ("2 of 3 rounds"), with +1 round after each (and − for a stray
+tap), and the last one is Done, which logs the time (saved like an AMRAP
+score, and shown as "Last time" next go; the undo goes back to the last
+round). Once everyone's done the rest of the four-minute cap
 counts down as rest. Miss the cap and it's logged as capped. A block
 skipped before anyone scores shows as "–" in history, not 0 or capped.
 
@@ -409,6 +437,9 @@ current), and what it leaves out (now the levels: the storage listener in
 `js/app.js` checks for them) is kept from this tab and written back. With
 no tab of this release open to do that, the levels come from their own
 key (`LEVELS_KEY`, which older releases never write) at the next load.
+Settings an older tab doesn't know (the voice switch, FIT picks) stay as
+they are in this tab, and are kept under their own keys too (`VOICE_KEY`,
+`PICKS_KEY`), so the next load reads them from there.
 
 ## 3D movements
 

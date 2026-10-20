@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v15';
+const RELEASE = 'fit-v16';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -72,6 +72,10 @@ const state = {
   gearSets: [],
   gearSetId: null,
   minutes: 20,
+  // FIT picks the style for a built workout (see FIT PICKS in
+  // js/workouts.js) until you choose one; the one chosen is kept here, and
+  // a classic always runs in it
+  styleAuto: true,
   intervalStyle: DEFAULT_INTERVAL,
   // what the session is for: general fitness, or surfing (see SURF_GROUPS)
   goal: 'general',
@@ -137,7 +141,7 @@ const state = {
   todayOther: null
 };
 
-const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'levels', 'gearSets', 'gearSetId',
+const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'styleAuto', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'levels', 'gearSets', 'gearSetId',
   'regions', 'blockedTags', 'excluded', 'sound', 'voice', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked', 'todayOther'];
 
@@ -159,9 +163,10 @@ function loadPrefs() {
     const p = JSON.parse(raw);
     const s = cleanPrefs(p);
     // a save from an older release leaves the levels out (see LEVELS_KEY),
-    // and the voice switch (see VOICE_KEY)
+    // the voice switch (see VOICE_KEY) and FIT picks (see PICKS_KEY)
     if (!hasLevels(p)) s.levels = storedLevels() || s.levels;
     if (!hasVoice(p)) s.voice = storedVoice() ?? s.voice;
+    if (!hasPicks(p)) s.styleAuto = storedPicks() ?? s.styleAuto;
     Object.assign(state, s);
   } catch (e) { /* corrupt store: fall back to defaults */ } finally { prefsLoaded = true; }
 }
@@ -187,6 +192,11 @@ function cleanPrefs(p) {
   if (typeof s.gearSetId !== 'string') s.gearSetId = null;
   if (!INTERVALS[s.intervalStyle]) s.intervalStyle = DEFAULT_INTERVAL;
   s.mixOn = s.mixOn === true;
+  // FIT picks, or a style chosen. A save from before FIT picked (an old
+  // backup, or one with no PICKS_KEY beside it) goes by its style: one
+  // other than the style setup starts on, or a mix, was chosen, and is kept.
+  s.styleAuto = typeof p.styleAuto === 'boolean' ? p.styleAuto
+    : !(s.mixOn || s.intervalStyle !== DEFAULT_INTERVAL);
   if (!GOALS.some(g => g.id === s.goal)) s.goal = 'general';
   if (!plain(s.programs)) s.programs = {};
   Object.keys(s.programs).forEach(id => {
@@ -255,8 +265,8 @@ function cleanLevels(x) {
 // (or a later one) from one made by a tab still running an older FIT. Up
 // it whenever PERSISTED gains a key: an older tab's save leaves the key
 // out, and taken as current it would wipe it (3: each person's levels; 4:
-// the sound choice and the voice).
-const PREFS_SCHEMA = 4;
+// the sound choice and the voice; 5: FIT picks).
+const PREFS_SCHEMA = 5;
 // From 2 on, a tab hears the others' saves (see below), so its lists are
 // as new as anyone's.
 const HEARS_SCHEMA = 2;
@@ -292,11 +302,24 @@ function storedVoice() {
     return typeof v === 'boolean' ? v : null;
   } catch (e) { return null; }
 }
+// And FIT picks (5): a tab on an older release saves the style it shows,
+// and nothing to say FIT picks, which read from the style alone (see
+// cleanPrefs) would turn it off for anyone who had chosen a style before.
+const PICKS_KEY = 'fit-picks-1';
+const PICKS_SCHEMA = 5;
+const hasPicks = (p) => p.schema >= PICKS_SCHEMA && typeof p.styleAuto === 'boolean';
+function storedPicks() {
+  try {
+    const v = JSON.parse(localStorage.getItem(PICKS_KEY));
+    return typeof v === 'boolean' ? v : null;
+  } catch (e) { return null; }
+}
 function savePrefs() {
   if (!prefsLoaded) return;
   try {
     localStorage.setItem(LEVELS_KEY, JSON.stringify(state.levels));
     localStorage.setItem(VOICE_KEY, JSON.stringify(state.voice));
+    localStorage.setItem(PICKS_KEY, JSON.stringify(state.styleAuto));
   } catch (e) { /* as below */ }
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(currentPrefs()));
@@ -319,9 +342,9 @@ function savePrefs() {
 //
 // The first two don't know the levels, and leave them out: they're taken
 // from their own key (LEVELS_KEY), or stay as they are here, and are
-// saved straight back. None of them know the voice switch, a setting, so
-// it stays as it is here, and the next load finds it under its own key
-// (VOICE_KEY).
+// saved straight back. None of them know the voice switch or FIT picks,
+// settings, so they stay as they are here, and the next load finds them
+// under their own keys (VOICE_KEY, PICKS_KEY).
 window.addEventListener('storage', (e) => {
   if (e.key !== PREFS_KEY || !e.newValue) return;
   let p, theirs;
@@ -339,10 +362,11 @@ window.addEventListener('storage', (e) => {
     state.levels = storedLevels() || state.levels;
     savePrefs();
   }
-  // redraw whatever lists them
+  // redraw whatever lists them, and FIT's pick, which goes by the sessions
   if (state.view === 'welcome') renderToday();
   else if (state.view === 'library') renderLibrary();
   else if (state.view === 'program') renderProgram();
+  else if (state.view === 'setup') renderIntervalPicker();
 });
 // An older tab's lists (checked, see cleanPrefs) added to this tab's: its
 // sessions not already here (the same session, reopened within the merge
@@ -620,8 +644,13 @@ function buildSequence(workout, people) {
     });
     const total = workout.blocks.length;
     const secs = sectionsOf(workout);
+    // the first block of each style says how the style works (see styleHow),
+    // once a session: each section of a mix as it starts
+    const explained = new Set();
     secs.forEach((sec, secIdx) => {
       const iv = sectionInterval(sec, workout.workRest);
+      const explain = explained.has(iv.id) ? undefined : styleHow(iv);
+      explained.add(iv.id);
       // each person's own context, so their level reaches their reps only
       const ctxA = buildCtx(workout, iv, 'a'), ctxB = buildCtx(workout, iv, 'b');
       // between the sections of a mix: a longer break that says what's next
@@ -642,16 +671,16 @@ function buildSequence(workout, people) {
           const lapB = isDuo ? amrapCircuits(block, ctxB, true).b : null;
           const carry = (lap) => lap && { ...lap[0], circuit: lap, lapRounds: iv.forTime ? forTimeRounds(lap.length, iv.workSec) : 0 };
           seq.push({ kind: 'work', amrap: !!iv.amrap, forTime: !!iv.forTime, duration: iv.workSec,
-                     blockIdx, totalBlocks: total, name: label, a: carry(lapA), b: carry(lapB) });
+                     blockIdx, totalBlocks: total, name: label, explain: i ? undefined : explain, a: carry(lapA), b: carry(lapB) });
         }
         for (let round = 1; !iv.lap && round <= iv.rounds; round++) {
           // the same moves either way: duo() is deterministic, only the targets differ
           const w = isDuo ? { a: block.duo(round, ctxA).a, b: block.duo(round, ctxB).b } : { a: block.solo(round, ctxA), b: null };
           seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round, emom: !!iv.reps,
-                     totalBlocks: total, totalRounds: iv.rounds, name: label, a: w.a, b: w.b });
+                     totalBlocks: total, totalRounds: iv.rounds, name: label, explain: i ? undefined : explain, a: w.a, b: w.b });
           // an EMOM's rest is whatever is left of the minute, not a phase of its own
           if (iv.restSec > 0) seq.push({ kind: 'rest', duration: iv.restSec, blockIdx, round,
-                     totalBlocks: total, totalRounds: iv.rounds, name: label,
+                     totalBlocks: total, totalRounds: iv.rounds, name: label, explain: i ? undefined : explain,
                      ...pair({ name: 'Rest', display: 'Rest', cue: 'Breathe', alt: '', img: null }) });
         }
         if (i < sec.count - 1) {
@@ -1302,6 +1331,16 @@ function fillToday() {
     timeChips(TIME_OPTIONS, state.minutes, m => { state.minutes = m; savePrefs(); renderToday(); }, floor));
   if (floor > TIME_OPTIONS[0]) card.append(programHint(mixFloorText(floor)));
   card.append(...peopleGearRows(true, renderToday));
+  // FIT's pick and how it works, with the way to choose your own
+  if (state.styleAuto) {
+    const how = document.createElement('div');
+    how.className = 'today-how';
+    how.textContent = `${fitPicksLine(buildStyle())} `;
+    const mine = linkButton('Choose myself', () => openSetup({ styles: true }));
+    mine.id = 'btnChooseStyle';
+    how.appendChild(mine);
+    card.append(how);
+  }
   // everything else comes from last time, and Change opens the full setup
   const style = document.createElement('div');
   style.className = 'today-style';
@@ -1320,11 +1359,21 @@ function fillToday() {
   });
   card.append(style, go);
 }
-// "Short bursts · General fitness", plus target areas or things left out
+// "FIT picks Short bursts: go hard for 20s, rest 10s, 8 rounds a block.",
+// or "FIT picks a mix: EMOM, Short bursts and AMRAP, ..."
+function fitPicksLine(st) {
+  if (st.intervalId === 'mix') {
+    const names = st.mix.map(id => INTERVALS[id].label);
+    return `FIT picks a mix: ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}, with a short break between each.`;
+  }
+  const how = styleHow(INTERVALS[st.intervalId]);
+  return `FIT picks ${INTERVALS[st.intervalId].label}: ${how[0].toLowerCase()}${how.slice(1)}`;
+}
+// "Short bursts · General fitness" (with FIT picking, the line above says
+// the style, so "General fitness"), plus target areas or things left out
 // when they're set, so a choice from last time can't catch you out.
 function todayStyleText() {
-  const parts = [state.mixOn ? `Mix: ${state.mixStyles.map(id => INTERVALS[id].label).join(', ')}` : currentInterval().label,
-                 GOALS.find(g => g.id === state.goal).label];
+  const parts = [state.styleAuto ? null : styleName(buildStyle()), GOALS.find(g => g.id === state.goal).label].filter(Boolean);
   if (state.goal !== 'surf' && state.regions.length < REGIONS.length) {
     parts.push(REGIONS.filter(r => state.regions.includes(r.id)).map(r => r.label).join(', '));
   }
@@ -1346,14 +1395,18 @@ function linkButton(text, onClick) {
   return b;
 }
 
-function openSetup() {
+// Setup, with the styles to choose from open when Choose myself opened it,
+// and brought into view.
+function openSetup(opts = {}) {
   // Back returns to the Programs screen when its Change opened setup
   state.setupFrom = state.view === 'program' ? 'program' : 'welcome';
   setMoreOptions(false);
+  stylesOpen = !!opts.styles;
   els.btnBuild.textContent = 'Build my workout';
   els.buildNote.textContent = '';
   renderSetup();
   setView('setup');
+  if (opts.styles) els.intervalPicker.closest('.picker-row').scrollIntoView({ block: 'start' });
 }
 
 // =====================================================================
@@ -1549,7 +1602,7 @@ function renderTimePicker() {
       state.minutes = m;
       savePrefs();
       renderTimePicker();
-      renderMixPicker();
+      renderIntervalPicker();     // FIT's pick goes by the time too
     });
     b.textContent = `${m} min`;
     b.setAttribute('aria-pressed', String(state.minutes === m));
@@ -1560,10 +1613,14 @@ function renderTimePicker() {
   els.timeHint.textContent = els.timeHint.hidden ? '' : mixFloorText(floor);
 }
 
+// FIT picks first, with today's pick and how it works; the styles to
+// choose from yourself, Mix included, open under it (Choose myself), and
+// stay open once one is chosen. Tapping FIT picks closes them again.
+let stylesOpen = false;
 function renderIntervalPicker() {
   els.intervalPicker.innerHTML = '';
-  const card = (on, name, sub, blurb, pick) => {
-    const b = tappable('interval-card' + (on ? ' active' : ''), () => {
+  const card = (on, name, sub, blurb, pick, extra = '') => {
+    const b = tappable('interval-card' + (on ? ' active' : '') + extra, () => {
       pick(); fitMixMinutes(); savePrefs(); renderIntervalPicker(); renderTimePicker();
     });
     b.innerHTML = `
@@ -1573,21 +1630,38 @@ function renderIntervalPicker() {
     b.setAttribute('aria-pressed', String(on));
     els.intervalPicker.appendChild(b);
   };
-  Object.keys(INTERVALS).forEach(id => {
-    const iv = INTERVALS[id];
-    card(!state.mixOn && state.intervalStyle === id, iv.label, `${iv.sub}${iv.reps ? '' : ` × ${iv.rounds} rounds`}`,
-         iv.blurb, () => { state.intervalStyle = id; state.mixOn = false; });
-  });
-  card(state.mixOn, 'Mix', 'Two or three styles in one session',
-       'Pick the styles in the order you want them. The time is shared out so the whole session fits.',
-       () => { state.mixOn = true; });
+  const pick = fitPicks(state.minutes, state.goal, recentStyles());
+  card(state.styleAuto, `FIT picks: ${pick.intervalId === 'mix' ? 'Mix' : styleName(pick)}`,
+       pick.intervalId === 'mix' ? pick.mix.map(id => INTERVALS[id].label).join(', ') : 'A different style each session',
+       styleSentence(pick), () => { state.styleAuto = true; stylesOpen = false; }, ' fit-picks');
+  const open = stylesOpen || !state.styleAuto;
+  // the styles to choose from, behind a link while FIT picks
+  if (state.styleAuto) {
+    const more = linkButton(open ? 'Hide the styles' : 'Choose myself', () => {
+      stylesOpen = !stylesOpen;
+      renderIntervalPicker();
+    });
+    more.className = 'link-btn styles-toggle';
+    more.setAttribute('aria-expanded', String(open));
+    els.intervalPicker.appendChild(more);
+  }
+  if (open) {
+    Object.keys(INTERVALS).forEach(id => {
+      const iv = INTERVALS[id];
+      card(!state.styleAuto && !state.mixOn && state.intervalStyle === id, iv.label, `${iv.sub}${iv.reps ? '' : ` × ${iv.rounds} rounds`}`,
+           iv.blurb, () => { state.styleAuto = false; state.intervalStyle = id; state.mixOn = false; });
+    });
+    card(!state.styleAuto && state.mixOn, 'Mix', 'Two or three styles in one session',
+         'Pick the styles in the order you want them. The time is shared out so the whole session fits.',
+         () => { state.styleAuto = false; state.mixOn = true; });
+  }
   renderMixPicker();
 }
 
 // The styles in a mix, tapped in order (1, 2, 3), and how the time works out.
 function renderMixPicker() {
-  els.mixPicker.hidden = !state.mixOn;
-  if (!state.mixOn) return;
+  els.mixPicker.hidden = state.styleAuto || !state.mixOn;
+  if (els.mixPicker.hidden) return;
   els.mixPicker.innerHTML = '<div class="weight-label">Styles, in order</div>';
   const chips = document.createElement('div');
   chips.className = 'chip-row';
@@ -1613,9 +1687,10 @@ function renderMixPicker() {
 }
 // With Mix on, the shortest time on offer the mix fits in. Shorter time
 // chips are dimmed, and turning Mix on or adding a style raises the minutes
-// to it, so a build can't fail for want of time.
+// to it, so a build can't fail for want of time. FIT only picks a mix that
+// fits, so with FIT picking there's no floor.
 function mixFloor(s = state) {
-  if (!s.mixOn || s.mixStyles.length < 2) return 0;
+  if (s.styleAuto || !s.mixOn || s.mixStyles.length < 2) return 0;
   const min = mixMinimumMinutes(s.mixStyles);
   return (min && TIME_OPTIONS.find(m => m >= min)) || 0;
 }
@@ -1764,17 +1839,40 @@ function renderExcludeCount() {
 // BUILDING A WORKOUT
 // =====================================================================
 function requestFromState() {
+  const style = buildStyle();
   return {
     minutes: state.minutes,
     people: state.people,
-    intervalId: state.mixOn ? 'mix' : state.intervalStyle,
-    mix: state.mixOn ? state.mixStyles.slice() : undefined,
+    intervalId: style.intervalId,
+    mix: style.mix,
     goal: state.goal === 'surf' ? 'surf' : undefined,
     regions: state.regions.slice(),
     blockedTags: state.blockedTags.slice(),
     repScales: personalScales()
   };
 }
+
+// The style a build gets: FIT's pick for the time, the goal and the
+// sessions before (see FIT PICKS in js/workouts.js), or the one chosen in
+// setup. { intervalId } or { intervalId: 'mix', mix }.
+function buildStyle() {
+  if (state.styleAuto) return fitPicks(state.minutes, state.goal, recentStyles());
+  return state.mixOn ? { intervalId: 'mix', mix: state.mixStyles.slice() } : { intervalId: state.intervalStyle };
+}
+// The styles of the sessions in history, newest first, as FIT picks reads
+// them: a mix as 'mix' and the styles in it, and stretching left out.
+function recentStyles() {
+  return state.history
+    .filter(h => ownKey(INTERVALS, h.intervalId) || h.intervalId === 'mix')
+    .filter(h => !STRETCH_ROUTINES.some(x => x.id === h.workoutId))
+    .map(h => (h.intervalId === 'mix' ? ['mix', ...((h.request && Array.isArray(h.request.mix)) ? h.request.mix : [])] : [h.intervalId]));
+}
+// A style as it reads on screen: "Long efforts", or "Mix: EMOM, Short
+// bursts, AMRAP"; and how it works, in a sentence (see styleHow).
+const styleName = (st) => (st.intervalId === 'mix' ? `Mix: ${st.mix.map(id => INTERVALS[id].label).join(', ')}` : INTERVALS[st.intervalId].label);
+const styleSentence = (st) => (st.intervalId === 'mix'
+  ? `${st.mix.length === 3 ? 'Three' : 'Two'} styles in one session, with a short break between each.`
+  : styleHow(INTERVALS[st.intervalId]));
 
 // Equipment and exclusions always come from live state, never from a stored
 // request: a favourite reopened with the kettlebells switched off has to
@@ -2097,7 +2195,7 @@ function savedCard(saved) {
 // A note that asks for a tap to go again ("Back to 7:30. Tap Resume when
 // you're ready.") sits under the block's name, on the first screen, and
 // goes as soon as the clock does. On a phone on its side the ask makes way
-// (the button is just under it), and so does an EMOM's hint (css).
+// (the button is just under it), and so does how a style works (css).
 function noteUntilGoing(text) {
   els.goingNote.textContent = text ? `${text} ` : '';
   if (text) {
@@ -2115,8 +2213,10 @@ function openWorkout(workout) {
   stopTimer();
   state.workout = workout;
   state.sequence = buildSequence(workout, state.people);
-  // AMRAP rounds counted this session, and what this workout scored last time
+  // AMRAP rounds counted this session (and For Time's times, and the
+  // rounds done towards them), and what this workout scored last time
   state.scores = {};
+  state.laps = {};
   state.pick = {};
   state.skipped = [];
   state.skippedSec = 0;
@@ -2277,9 +2377,10 @@ window.addEventListener('fitdeck-ready', () => {
 
 // ----------------------------------------------------- AMRAP and For Time
 // The card lists the lap. Tapping an exercise in it shows that one's
-// figure and cue; above it, AMRAP counts rounds and For Time has a Done
-// button that logs the time. Either score is saved with the session in
-// history, so the next go can be compared against it.
+// figure and cue; above it, AMRAP counts rounds, and For Time counts them
+// to the number to do, so nobody has to keep count while puffing: +1 round
+// after each, and on the last one Done logs the time. Either score is saved
+// with the session in history, so the next go can be compared against it.
 function renderCircuit(w, ex, phase) {
   const W = w.toUpperCase();
   const list = els['circuit' + W], counter = els['counter' + W];
@@ -2300,7 +2401,7 @@ function renderCircuit(w, ex, phase) {
         <span class="lap-reps">${esc(x.reps)}</span> <span class="lap-name">${esc(x.display || x.name)}</span>
       </li>`).join('');
   }
-  if (phase.forTime) return renderDone(w, counter, k);
+  if (phase.forTime) return renderDone(w, counter, k, ex.lapRounds);
   if (!phase.amrap) return;
   const n = (state.scores[k] && state.scores[k][w]) || 0;
   const last = state.lastScores && state.lastScores[k] && state.lastScores[k][w];
@@ -2312,20 +2413,27 @@ function renderCircuit(w, ex, phase) {
     <div class="count-now"><b>${n}</b> ${n === 1 ? 'round' : 'rounds'}${last != null ? `<span>Last time ${last}</span>` : ''}</div>
     <button class="count-more" data-step="1">+1 round</button>`;
 }
-// For Time: a Done button until it's tapped, then the time (and an undo).
-function renderDone(w, counter, k) {
+// For Time: the round you're on ("2 of 3 rounds"), +1 round after each and
+// Done on the last, which logs the time; then the time, and an undo that
+// goes back to the last round.
+function renderDone(w, counter, k, rounds) {
   const t = (state.scores[k] && state.scores[k][w]) || 0;
+  const n = lapsDone(k, w, rounds);
   const last = state.lastScores && state.lastScores[k] && state.lastScores[k][w];
-  const key = `t${k}:${t}:${last ?? ''}`;
+  const key = `t${k}:${t}:${n}/${rounds}:${last ?? ''}`;
   if (counter.dataset.key === key) return;
   counter.dataset.key = key;
   const lastLine = last ? `<span>Last time ${fmt(last)}</span>` : '';
+  const final = n >= rounds - 1;
   counter.innerHTML = t
     ? `<button class="secondary count-less" data-step="undo" aria-label="Not done yet">↺</button>
        <div class="count-now"><b>${fmt(t)}</b> done, rest up${lastLine}</div>`
-    : `<div class="count-now"><b>Go</b> finish the rounds${lastLine}</div>
-       <button class="count-more" data-step="done">Done</button>`;
+    : `<button class="secondary count-less" data-step="-1" aria-label="Take one round off"${n ? '' : ' disabled'}>−</button>
+       <div class="count-now"><b>${n + 1}</b> of ${rounds} rounds${lastLine}</div>
+       <button class="count-more" data-step="1"${final ? ' aria-label="Done: that was the last round"' : ''}>${final ? 'Done' : '+1 round'}</button>`;
 }
+// For Time rounds finished so far, below the number to do.
+const lapsDone = (k, w, rounds) => Math.min(Math.max(0, rounds - 1), (state.laps[k] && state.laps[k][w]) || 0);
 // Seconds into the current phase.
 const phaseElapsed = (phase) => Math.max(0, phase.duration - state.remainingInPhase);
 // Everyone on the card has logged a For Time finish.
@@ -2357,9 +2465,16 @@ function onCounterTap(e) {
   if (!phase || !(phase.amrap || phase.forTime)) return;
   const s = state.scores[phase.blockIdx] || (state.scores[phase.blockIdx] = { a: 0, b: 0 });
   const step = b.dataset.step;
-  if (step === 'done') s[w] = Math.max(1, Math.round(phaseElapsed(phase)));
-  else if (step === 'undo') s[w] = 0;
-  else s[w] = Math.max(0, s[w] + +step);
+  if (phase.forTime) {
+    // the rounds go up to the last; finishing that one is the time
+    const rounds = phase[w].lapRounds;
+    const laps = state.laps[phase.blockIdx] || (state.laps[phase.blockIdx] = { a: 0, b: 0 });
+    const n = lapsDone(phase.blockIdx, w, rounds);
+    if (step === 'undo') s[w] = 0;
+    else if (step === '-1') laps[w] = Math.max(0, n - 1);
+    else if (n + 1 < rounds) laps[w] = n + 1;
+    else { laps[w] = rounds - 1; s[w] = Math.max(1, Math.round(phaseElapsed(phase))); }
+  } else s[w] = Math.max(0, s[w] + +step);
   delete s.skipped;                        // done after a reset, so not skipped after all
   saveScores();
   render();
@@ -2524,21 +2639,23 @@ function renderSegBar(current, total, kind, unit = 'Round') {
   els.roundDots.appendChild(segRow);
 }
 
+// The round, minute or move it's up to, and in the first block of a style
+// how the style works (phase.explain, see buildSequence): under the count,
+// or for an AMRAP or For Time, which have no count, in place of its line.
 function renderRoundDots(phase) {
   els.roundDots.innerHTML = '';
   if (phase.amrap || phase.forTime) {
     const label = document.createElement('div');
-    label.className = 'round-count';
-    label.textContent = phase.forTime ? `Finish the rounds, ${fmtMin(phase.duration)} cap`
-      : `As many rounds as you can in ${fmtMin(phase.duration)}`;
+    label.className = phase.explain ? 'round-count round-how' : 'round-count';
+    label.textContent = phase.explain || (phase.forTime ? `Finish the rounds, ${fmtMin(phase.duration)} cap`
+      : `As many rounds as you can in ${fmtMin(phase.duration)}`);
     els.roundDots.appendChild(label);
   } else if (phase.totalRounds) {
     renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
-    // an EMOM's rest is the rest of the minute, which nothing else says
-    if (phase.emom) {
+    if (phase.explain) {
       const how = document.createElement('div');
       how.className = 'round-hint';
-      how.textContent = "Do the reps, then rest till the minute's up";
+      how.textContent = phase.explain;
       els.roundDots.appendChild(how);
     }
   } else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind, 'Stretch');
@@ -2869,6 +2986,7 @@ function resetWorkout() {
   hideAway();
   if (state.started) clearRun();
   state.scores = {};
+  state.laps = {};
   state.pick = {};
   state.skipped = [];
   state.skippedSec = 0;
@@ -3343,7 +3461,7 @@ function saveRun() {
     workoutId: w.generated ? null : w.id, intervalId: intervalFor(w).id,
     people: state.people, names: { a: state.nameA || '', b: state.nameB || '' },
     programRun: state.programRun || null,
-    elapsed, idx, scores: state.scores, pick: state.pick, lastScores: state.lastScores || null,
+    elapsed, idx, scores: state.scores, laps: state.laps, pick: state.pick, lastScores: state.lastScores || null,
     skipped: state.skipped, skippedSec: state.skippedSec
   };
   try { localStorage.setItem(RUN_KEY, JSON.stringify(snap)); } catch (e) { /* private mode or full: nothing to pick up later */ }
@@ -3384,6 +3502,13 @@ function cleanRun(s) {
   }
   const pick = {};
   if (plain(s.pick)) Object.entries(s.pick).forEach(([k, v]) => { if (whole(v)) pick[k] = v; });
+  // For Time rounds done (saved before they were counted: none)
+  const laps = {};
+  if (plain(s.laps)) {
+    Object.entries(s.laps).forEach(([k, v]) => {
+      if (/^\d+$/.test(k) && plain(v) && whole(v.a || 0) && whole(v.b || 0)) laps[k] = { a: v.a || 0, b: v.b || 0 };
+    });
+  }
   const last = (x) => (count(x) ? x : undefined);
   const names = plain(s.names) ? s.names : {};
   const name = (x) => (typeof x === 'string' ? x.slice(0, 14) : '');
@@ -3395,7 +3520,7 @@ function cleanRun(s) {
     workoutId: s.workoutId, intervalId: typeof s.intervalId === 'string' ? s.intervalId : null,
     names: { a: name(names.a), b: name(names.b) },
     programRun: prog ? { id: s.programRun.id, n: s.programRun.n } : null,
-    scores, pick,
+    scores, laps, pick,
     lastScores: Array.isArray(s.lastScores) ? s.lastScores.map(x => (plain(x) ? { a: last(x.a), b: last(x.b) } : null)) : null,
     // saved before the finish screen counted skips: none
     skipped: Array.isArray(s.skipped) ? [...new Set(s.skipped.filter(whole))].slice(0, 60) : [],
@@ -3496,6 +3621,7 @@ function resumeRun() {
   if (entry && s.savedAt - entry.at < RUN_MAX_AGE_MS) entry.at = Date.now();
   openWorkout(built.w);
   state.scores = s.scores;
+  state.laps = s.laps;
   state.pick = s.pick;
   state.lastScores = s.lastScores;
   state.skipped = s.skipped;

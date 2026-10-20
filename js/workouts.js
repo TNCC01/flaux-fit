@@ -24,7 +24,7 @@
 
 // Which release this file is from, sw.js's VERSION: js/app.js won't run
 // beside a file from another one (see the check at its top).
-const WORKOUTS_RELEASE = 'fit-v15';
+const WORKOUTS_RELEASE = 'fit-v16';
 
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',
@@ -48,6 +48,19 @@ const DEFAULT_INTERVAL = 'short';
 // Every block is this long whichever interval you pick.
 const blockSeconds = (iv) => iv.rounds * (iv.workSec + iv.restSec);
 const ownKey = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+
+// How a style works, in one plain sentence: under FIT's pick at home and
+// in setup, and on the timer the first time a session runs the style. iv
+// is the interval as it runs (a program week's split, see withWorkRest,
+// or a mix's section, see sectionInterval), so the numbers are the real
+// ones.
+function styleHow(iv) {
+  const min = Math.round(iv.workSec / 60);
+  if (iv.forTime) return `Race the rounds, tapping +1 after each, with a ${min}-minute cap.`;
+  if (iv.amrap) return `As many rounds as you can in ${min} minute${min === 1 ? '' : 's'}: tap +1 each round.`;
+  if (iv.reps) return 'Do the reps, then rest till the next minute.';
+  return `${iv.id === 'long' ? 'Work steady' : 'Go hard'} for ${iv.workSec}s, rest ${iv.restSec}s, ${iv.rounds} rounds a block.`;
+}
 
 // A program week can run a timed style at its own split of the same block
 // (Surf Fit's long efforts go from 30s on, 30s off to 45s on, 15s off).
@@ -990,3 +1003,49 @@ function programStyle(day, minutes) {
   return { intervalId: day.mix[0], short: true };
 }
 
+
+// ---------------------------------------------------------------------
+// FIT PICKS
+// Left to FIT, a built session's style is picked for you: one that suits
+// the time, and of those the one you've gone longest without, so it
+// changes from one session to the next. A mix counts as each style in it
+// as well, and stretching as none. Nothing random goes into it: the same
+// time, goal and sessions pick the same style, so the style the home card
+// names is the one Start builds. The build keeps it in its request, so a
+// favourite, a link or a session picked up later rebuilds that style,
+// whatever FIT would pick by then.
+//   recent: the styles of your sessions, newest first, each a list:
+//   ['long'], or a mix as ['mix', 'emom', 'short', 'amrap'].
+// Returns { intervalId } or { intervalId: 'mix', mix }.
+// ---------------------------------------------------------------------
+// the order a tie goes in (a first session takes the first): the timed
+// styles first, as they need nothing explained but Go and Rest
+const FIT_PICKS_ORDER = {
+  general: ['short', 'long', 'emom', 'amrap', 'fortime', 'mix'],
+  // Surf Fit's week: paddling, pop-ups, then the rest
+  surf: ['long', 'short', 'emom', 'fortime', 'amrap', 'mix']
+};
+// FIT's own mix: the first one setup offers, or for surfing the Engine day's
+const FIT_PICKS_MIX = { general: ['emom', 'short', 'amrap'], surf: ['emom', 'amrap'] };
+const FIT_PICKS_MIX_FROM = 30;      // minutes: shorter sessions get one style
+const FIT_PICKS_STEADY_FROM = 45;   // minutes: longer ones a steadier style or a mix
+const FIT_PICKS_LOOKBACK = 12;      // sessions
+function fitPicks(minutes, goal, recent) {
+  const kind = goal === 'surf' ? 'surf' : 'general';
+  const mix = FIT_PICKS_MIX[kind];
+  const mixMin = mixMinimumMinutes(mix);
+  // a mix only when there's time for it to be one (and it fits, see
+  // planMix); and three quarters of an hour of short bursts, AMRAPs or
+  // races against the clock is a lot to ask, so a long session doesn't
+  const fits = (id) => (id === 'mix'
+    ? minutes >= FIT_PICKS_MIX_FROM && !!mixMin && minutes >= mixMin
+    : minutes < FIT_PICKS_STEADY_FROM || id === 'long' || id === 'emom');
+  const back = (Array.isArray(recent) ? recent : []).slice(0, FIT_PICKS_LOOKBACK);
+  // how many sessions back each style was last done; never, past the end
+  const ago = (id) => {
+    const i = back.findIndex(r => Array.isArray(r) && r.includes(id));
+    return i < 0 ? back.length : i;
+  };
+  const id = FIT_PICKS_ORDER[kind].filter(fits).reduce((best, x) => (ago(x) > ago(best) ? x : best));
+  return id === 'mix' ? { intervalId: 'mix', mix: mix.slice() } : { intervalId: id };
+}
