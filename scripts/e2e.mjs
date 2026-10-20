@@ -162,6 +162,8 @@ try {
   assert((await p.$eval('#pathProgramGo', e => e.textContent)) === 'Start Surf Fit →', 'before a program starts, the card says how to start one');
   assert(!(await p.$('#welcomeFoot')), 'no jargon footer');
   assert(await p.$eval('#installHint', e => e.hidden), 'install hint is hidden on a desktop UA');
+  assert((await p.$eval('#installHint', e => e.textContent)).replace(/\s+/g, ' ').includes('the home-screen app keeps its own history'),
+         'the install hint says the home-screen app keeps its own data');
   ok('welcome: the Today card, Programs and Saved & ready-made; no footer, no iOS install hint on desktop');
 
   step = 'quick build, long efforts, save, start';
@@ -597,6 +599,40 @@ try {
   await st(() => { state.intervalStyle = 'short'; savePrefs(); });
   ok('For Time: the clock counts up, Done logs the time to history and the cap turns to rest; a skipped block reads "–"');
 
+  step = 'history keeps who trained, so a score stays with its person after a rename';
+  await leaveStarted(); await pickInterval('AMRAP');
+  await p.click('#peoplePicker .chip[data-people="2"]');
+  await p.fill('#nameA', 'Dave'); await p.fill('#nameB', 'Wayne');
+  await p.click('#btnBuild'); await p.click('#btnStart');
+  const amrapAt = () => st(() => { seekTo(state.sequence.findIndex(x => x.amrap)); render(); });
+  await amrapAt();
+  for (let i = 0; i < 3; i++) await p.click('#counterA .count-more');
+  await leaveStarted();
+  // Dave hands over to Sam
+  await p.click('#pathBuild'); await p.fill('#nameA', 'Sam'); await p.click('#btnSetupBack');
+  await p.click('#pathLibrary');
+  const named = await p.$eval('.history-card', e => ({ meta: e.querySelector('.card-meta').textContent.replace(/\s+/g, ' '),
+                                                       score: e.querySelector('.card-score').textContent }));
+  assert(named.meta.includes('Dave & Wayne') && named.meta.includes('· AMRAP'), 'the card says who trained and the style by name: ' + named.meta);
+  assert(named.score.startsWith('Rounds: Dave 3') && named.score.includes('Wayne 0') && !named.score.includes('Sam'),
+         'the score stays with Dave, not today\'s Person A: ' + named.score);
+  await p.click('.history-card');
+  await amrapAt();
+  const [samLast, wayneLast] = await Promise.all(['#counterA', '#counterB'].map(s => p.$eval(s, e => e.textContent)));
+  assert(!samLast.includes('Last time') && wayneLast.includes('Last time 0'), `Sam has no "Last time", Wayne has his own: "${samLast}" / "${wayneLast}"`);
+  // swapped round, each still sees their own
+  await p.click('#btnBack');
+  await p.click('#pathBuild'); await p.fill('#nameA', 'Wayne'); await p.fill('#nameB', 'Dave'); await p.click('#btnSetupBack');
+  await p.click('#pathLibrary'); await p.click('.history-card');
+  await amrapAt();
+  const [aLast, bLast] = await Promise.all(['#counterA', '#counterB'].map(s => p.$eval(s, e => e.textContent)));
+  assert(aLast.includes('Last time 0') && bLast.includes('Last time 3'), `swapped, Dave's 3 follows him to B: "${aLast}" / "${bLast}"`);
+  await p.click('#btnBack');
+  await p.click('#pathBuild'); await p.fill('#nameA', ''); await p.fill('#nameB', '');
+  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click('#btnBuild'); await p.click('#btnStart');
+  ok('history keeps the names: a rename leaves the score with Dave, a new name gets no "Last time", and a swap follows the person');
+
   step = 'Mix: EMOM, short bursts and AMRAP in exactly 30 minutes';
   await leaveStarted(); await p.click('#pathBuild');
   await p.click('#timePicker .chip:text-is("30 min")');
@@ -732,6 +768,93 @@ try {
   await p.click('#pathBuild'); await p.click('#btnBuild');     // the next step starts from a workout
   ok("Programs: today's session leads the home card; who and where change on the day card; Surf Fit day 1 builds lighter for week 1; skipping through without Start ticks nothing, a real finish does and Done goes back to the program; a surf counts as a day");
 
+  step = 'Programs: leave-outs carry over, a short Engine day still runs, a surf can be undone';
+  await p.click('#btnBack');
+  await p.click('#pathBuild'); await p.click('#btnMoreOptions');
+  await p.click('#tagPicker .chip:text-is("No jumping")');
+  assert(await st(() => state.blockedTags.join(',')) === 'impact', 'no jumping is on in Build a workout');
+  await p.click('#btnSetupBack');
+  // days 1 to 3 done yesterday, so day 4 (Engine) is today's, on the home card
+  await st(() => { const d = state.programs['surf-fit'].done; d.push({ n: 2, at: Date.now() }); d.forEach(x => { x.at -= 86400000; }); savePrefs(); renderToday(); });
+  const engineHome = await p.$eval('#todayCard', e => e.textContent);
+  assert(engineHome.includes('Week 1, Day 4') && engineHome.includes('Engine'), 'home leads with the Engine day: ' + engineHome.slice(0, 80));
+  assert((await p.$eval('#todayCard .program-out', e => e.textContent)) === 'Left out, as in Build a workout: no jumping. Change',
+         'the day card says what is left out, with a Change link');
+  assert((await p.$$('#todayCard .time-chips .chip')).length === 8, 'every length is on offer for the Engine day, 10 min included');
+  assert(!engineHome.includes('too short'), 'at its own 25 minutes the mix fits');
+  await p.click('#todayCard .time-chips .chip:text-is("10 min")');
+  assert((await p.$eval('#todayCard', e => e.textContent)).includes("10 min is too short for EMOM and AMRAP, so today it's just the EMOM."),
+         '10 min says what it runs as');
+  await p.click('#todayCard .program-go');
+  const shortDay = await st(() => ({ view: document.querySelector('.view.active').id, style: state.workout.request.intervalId,
+    min: state.workout.request.minutes, n: state.programRun && state.programRun.n, tags: state.workout.request.blockedTags.join(','),
+    jumps: state.workout.exerciseIds.filter(id => EXERCISES[id].tags.includes('impact')) }));
+  assert(shortDay.view === 'workoutView' && shortDay.style === 'emom' && shortDay.min === 10 && shortDay.n === 3,
+         'a 10-minute Engine day runs as an EMOM instead of refusing: ' + JSON.stringify(shortDay));
+  assert(shortDay.tags === 'impact' && !shortDay.jumps.length, 'and leaves out jumping: ' + JSON.stringify(shortDay));
+  await p.click('#btnBack');
+  assert(await activeView() === 'programView', 'back to the program');
+  assert(await p.$('.program-today .program-out .link-btn:text-is("Change")'), 'the program screen says what is left out too');
+  assert((await p.$$('.program-today .time-chips .chip')).length === 8, 'with all eight lengths');
+  await p.click('.program-today .program-go');
+  assert(await st(() => state.workout.request.intervalId === 'mix' && state.workout.request.mix.join(',') === 'emom,amrap'
+                        && state.workout.request.minutes === 25), 'at 25 minutes it is the full EMOM and AMRAP mix');
+  await p.click('#btnBack');
+  // the jumpiest day keeps to no jumping, and without the leave-out it would have jumped
+  const popJumps = (tags) => p.evaluate((t) => {
+    state.blockedTags = t;
+    const prog = PROGRAMS[0];
+    let n = 0;
+    for (let i = 0; i < 10; i++) { state.programMinutes = 20; startProgramDay(prog, programDay(prog, 1)); n += state.workout.exerciseIds.filter(id => EXERCISES[id].tags.includes('impact')).length; }
+    return n;
+  }, tags);
+  const jumpsOff = await popJumps(['impact']), jumpsOn = await popJumps([]);
+  assert(jumpsOff === 0 && jumpsOn > 0, `ten Pop-ups & legs days: ${jumpsOff} jumping moves with no jumping, ${jumpsOn} without it`);
+  await st(() => { state.blockedTags = ['impact']; savePrefs(); });
+  await p.click('#btnBack');
+  // "I surfed today" by mistake, then Undo, on the program screen and on home
+  await p.click('.program-today button:has-text("I surfed today")');
+  assert(await st(() => state.programs['surf-fit'].done.length === 4) && (await p.$eval('#programBody', e => e.textContent)).includes("Today's done"), 'a surf logged');
+  await p.click('#programNote .link-btn:text-is("Undo")');
+  assert(await st(() => state.programs['surf-fit'].done.length === 3) && await p.$('.program-today') && (await p.$eval('#programNote', e => e.textContent)) === '',
+         'Undo takes it back, and the Engine day is today again');
+  await p.click('#btnProgramBack');
+  await p.click('#todayCard button:has-text("I surfed today")');
+  assert((await p.$eval('#todayCard .today-line', e => e.textContent)).includes("today's done"), 'from home too');
+  await p.click('#welcomeNote .link-btn:text-is("Undo")');
+  assert(await st(() => state.programs['surf-fit'].done.length === 3) && (await p.$eval('#todayCard', e => e.textContent)).includes('Engine'),
+         'and Undo on home brings the Engine day back');
+  // tidy up: nothing left out, and today done (a surf), so home offers a built workout again
+  await st(() => { state.blockedTags = []; savePrefs(); renderToday(); });
+  assert(!(await p.$('#todayCard .program-out')), 'with nothing left out, no line');
+  await p.click('#todayCard button:has-text("I surfed today")');
+  ok(`Programs: No jumping reaches the program day and says so on both cards; Engine at 10 min is an EMOM, at 25 the mix; Pop-ups & legs had ${jumpsOn} jumping moves in ten builds without the leave-out, none with it; a surf can be undone`);
+
+  step = 'history: program days by name, 200 kept, two taps to clear';
+  await p.click('#pathLibrary');
+  const dayCard = await p.$eval('.history-card:has(.card-tagline:has-text("Surf Fit · Week 1, Day 1"))',
+    e => ({ name: e.querySelector('.card-name').textContent, meta: e.querySelector('.card-meta').textContent.replace(/\s+/g, ' ') }));
+  assert(dayCard.name === 'Paddle power' && dayCard.meta.includes('Long efforts'), 'a program day goes by its name and style: ' + JSON.stringify(dayCard));
+  // a long run of sessions: the newest 200 are kept, more than a 42-day program
+  await st(() => {
+    const h = state.history[0];
+    state.history = Array.from({ length: 250 }, (_, i) => ({ ...h, key: `old:${i}`, at: h.at - (i + 1) * 4 * 3600e3 }));
+    savePrefs();
+  });
+  await p.click(card('Power Hour')); await p.click('#btnStart');
+  assert(await st(() => state.history.length === 200 && state.history[0].key === 'id:power-hour' && state.history[199].key === 'old:198'),
+         'the newest 200 sessions are kept: ' + await st(() => state.history.length));
+  await leaveStarted(); await p.click('#pathLibrary');
+  await p.click('.section-action:has-text("Clear history")');
+  assert(await st(() => state.history.length === 200) && (await p.$eval('.section-action', e => e.textContent)) === 'Tap again to clear',
+         'one tap only asks');
+  await p.waitForTimeout(3100);
+  assert((await p.$eval('.section-action', e => e.textContent)) === 'Clear history', 'and the ask goes after three seconds');
+  await p.click('.section-action'); await p.click('.section-action');
+  assert(await st(() => state.history.length === 0) && !(await p.$('.section-title:has-text("Recent")')), 'two taps clear it');
+  await p.click(card('Power Hour'));                          // the next step starts from a workout
+  ok('history: a program day reads "Paddle power", 200 sessions kept, Clear history takes two taps');
+
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathLibrary');
   assert(await p.$('.section-title:text-is("Stretch & mobility")'), 'stretches have their own section');
@@ -790,6 +913,26 @@ try {
   note(`link is ${shareUrl.length} characters`);
   ok('share link rebuilds the same workout on a fresh device; classics and bad links handled');
 
+  step = 'two tabs open: one saving does not wipe what the other saved';
+  await p.click('#btnBack'); await p.click('#pathLibrary');
+  const cardsBefore = (await p.$$('.history-card')).length;
+  const tab2 = await context.newPage();
+  tab2.on('pageerror', e => errors.push('tab 2: ' + e));
+  tab2.on('console', m => { if (m.type() === 'error') errors.push('tab 2: ' + m.text()); });
+  await tab2.goto(URL);
+  await tab2.click('#todayCard .today-go'); await tab2.click('#btnStart');
+  const tab2Key = await tab2.evaluate(() => state.history[0].key);
+  await p.waitForFunction((n) => document.querySelectorAll('.history-card').length === n + 1, cardsBefore, { timeout: 5000 });
+  assert(await p.evaluate((k) => state.history[0].key === k, tab2Key), "the first tab takes in the second tab's session, and its open list shows it");
+  // the reproduced bug: one setup tap in the older tab used to write its stale copy back
+  await p.click('#btnLibraryBack');
+  await p.click('#todayCard .time-chips .chip:text-is("25 min")');
+  const storedKeys = await st(() => JSON.parse(localStorage.getItem('fit-prefs-2')).history.map(h => h.key));
+  assert(storedKeys.includes(tab2Key), "a save in the first tab keeps the second tab's session: " + storedKeys.length);
+  await p.click('#todayCard .time-chips .chip:text-is("20 min")');
+  await tab2.close();
+  ok('two tabs: each takes in the other\'s history as it saves, so neither writes over the other');
+
   step = 'corrupt preferences fall back, favourites persist';
   await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
@@ -832,6 +975,23 @@ try {
   assert(await st(() => !state.running), 'a tap on the timer pauses');
   await leaveStarted();
   ok('phone: no horizontal overflow; with two people the controls stay on screen and the timer pauses on a tap');
+
+  step = 'once a session is finished, FIT asks the browser to keep its storage';
+  await st(() => {
+    window.persistAsked = 0;
+    navigator.storage.persisted = () => Promise.resolve(false);
+    navigator.storage.persist = () => { window.persistAsked++; return Promise.resolve(true); };
+  });
+  await p.click('#todayCard .today-go'); await p.click('#btnStart');
+  assert(await st(() => window.persistAsked) === 0, 'starting a session does not ask');
+  while (await st(() => !isFinished())) await p.click('#btnSkip');
+  await p.waitForFunction(() => window.persistAsked === 1, null, { timeout: 2000 });
+  await p.click('#btnAgain');
+  while (await st(() => !isFinished())) await p.click('#btnSkip');
+  await p.waitForTimeout(100);
+  assert(await st(() => window.persistAsked) === 1, 'a finished session asks, once a visit');
+  await p.click('#btnStart');                                   // Done, home
+  ok('a finished session asks navigator.storage.persist() once a visit');
 
   step = 'the timer screen reads out its changes, and white text has the contrast';
   await p.click('#todayCard .today-go');

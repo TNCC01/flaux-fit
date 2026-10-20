@@ -6,7 +6,7 @@
 
 const TIME_OPTIONS = [10, 15, 20, 25, 30, 40, 45, 60];
 const RECENT_CAP = 60;          // exercise ids remembered for variety
-const HISTORY_CAP = 40;         // sessions kept in the history list
+const HISTORY_CAP = 200;        // sessions kept in the history list (a 42-day program and then some)
 // Re-opening the same workout inside this window updates its history entry
 // instead of adding another, so a reset or a second go is still one session.
 const HISTORY_MERGE_MS = 3 * 60 * 60 * 1000;
@@ -130,6 +130,28 @@ function savePrefs() {
     localStorage.setItem(PREFS_KEY, JSON.stringify(out));
   } catch (e) { /* private mode / quota: preferences just won't stick */ }
 }
+// Another tab saved (one left open from before, or the one a shared link
+// opened). Its history, favourites and program progress are the newest,
+// and already include this tab's (each tab hears the other's saves), so
+// take them in. Otherwise this tab's next save would write its older copy
+// over them. Settings stay as they are here until a reload, so a workout
+// on screen isn't changed under you.
+window.addEventListener('storage', (e) => {
+  if (e.key !== PREFS_KEY || !e.newValue) return;
+  let p;
+  try { p = JSON.parse(e.newValue); } catch (err) { return; }
+  if (!p || typeof p !== 'object') return;
+  if (Array.isArray(p.history)) state.history = p.history;
+  if (Array.isArray(p.saved)) state.saved = p.saved;
+  if (p.programs && typeof p.programs === 'object' && !Array.isArray(p.programs)) {
+    state.programs = Object.fromEntries(Object.entries(p.programs)
+      .filter(([id, x]) => PROGRAMS.some(q => q.id === id) && x && Array.isArray(x.done)));
+  }
+  // redraw whatever lists them
+  if (state.view === 'welcome') renderToday();
+  else if (state.view === 'library') renderLibrary();
+  else if (state.view === 'program') renderProgram();
+});
 
 // What a session is for. Surf fitness builds around paddling, pop-ups,
 // stance and shoulder care instead of target areas.
@@ -1143,7 +1165,16 @@ function renderLibrary() {
     const clear = document.createElement('button');
     clear.className = 'mini-btn section-action';
     clear.textContent = 'Clear history';
+    // two taps, like Reset, so one stray tap can't wipe every session
+    let clearTimer = null;
     clear.addEventListener('click', () => {
+      if (!clear.dataset.sure) {
+        clear.dataset.sure = '1';
+        clear.textContent = 'Tap again to clear';
+        clearTimer = setTimeout(() => { delete clear.dataset.sure; clear.textContent = 'Clear history'; }, 3000);
+        return;
+      }
+      clearTimeout(clearTimer);
       state.history = [];
       savePrefs();
       renderLibrary();
@@ -1189,14 +1220,14 @@ function namedCard(w) {
   return card;
 }
 
-// How a history entry's style reads: "Every minute on the minute", or for
-// a mix "Mix: EMOM, Short bursts, AMRAP".
+// How a history entry's style reads, by the name it's picked by: "Short
+// bursts", "EMOM", or for a mix "Mix: EMOM, Short bursts, AMRAP".
 function styleLabel(rec) {
   if (rec.intervalId === 'mix') {
     const list = (rec.request && rec.request.mix) || [];
     return `Mix: ${list.map(id => (INTERVALS[id] || {}).label).filter(Boolean).join(', ')}`;
   }
-  return (INTERVALS[rec.intervalId] || {}).sub || '';
+  return (INTERVALS[rec.intervalId] || {}).label || '';
 }
 
 // An AMRAP session's rounds, block by block ("Rounds: 4 · 5 · 4"), or a
@@ -1216,22 +1247,36 @@ function scoreLine(rec) {
   const row = (w) => scored.map(s => one(s, w)).join(' · ');
   const what = mixed ? 'Scores' : kind(scored[0]) === 'fortime' ? 'Times' : 'Rounds';
   const text = rec.people === 2
-    ? `${what}: ${personName('a')} ${row('a')}, ${personName('b')} ${row('b')}`
+    ? `${what}: ${nameIn(rec, 'a')} ${row('a')}, ${nameIn(rec, 'b')} ${row('b')}`
     : `${what}: ${row('a')}`;
   return `<div class="card-score">${esc(text)}</div>`;
+}
+// Who was A or B in a history entry: the name kept with it, or for older
+// entries that kept none, today's name.
+function nameIn(rec, which) {
+  if (!rec.names) return personName(which);
+  return rec.names[which] || (which === 'a' ? 'Person A' : 'Person B');
+}
+// "solo", "Wayne & Dave", or "2 people" when nobody was named (or the
+// entry is from before names were kept).
+function whoLabel(rec) {
+  if (rec.people === 1) return 'solo';
+  return rec.names && (rec.names.a || rec.names.b) ? `${nameIn(rec, 'a')} & ${nameIn(rec, 'b')}` : '2 people';
 }
 
 function historyCard(rec) {
   const wrap = document.createElement('div');
   wrap.className = 'workout-card history-card ' + (focusClassMap[rec.focus] || 'whole');
   const alreadySaved = rec.generated && state.saved.some(s => s.seed === rec.seed);
+  // a program day goes by its own name ("Pop-ups & legs"), not "Surf fitness · 20 min"
+  const prog = rec.program;
   wrap.innerHTML = `
-    <div class="card-name">${esc(rec.name)}</div>
-    <div class="card-tagline">${esc(whenLabel(rec.at))}</div>
+    <div class="card-name">${esc(prog ? prog.day : rec.name)}</div>
+    <div class="card-tagline">${esc(whenLabel(rec.at))}${prog ? ` · ${esc(prog.where)}` : ''}</div>
     <div class="card-meta">
       <span class="duration">${rec.minutes} min</span>
       <span>·</span>
-      <span>${rec.people === 1 ? 'solo' : '2 people'}</span>
+      <span>${esc(whoLabel(rec))}</span>
       <span>·</span>
       <span>${esc(styleLabel(rec))}</span>
     </div>
@@ -1261,6 +1306,7 @@ function historyCard(rec) {
         request: rec.request, savedOn: new Date().toLocaleDateString()
       });
       savePrefs();
+      keepStorage();
       renderLibrary();
     });
     actions.appendChild(save);
@@ -1315,7 +1361,7 @@ function openWorkout(workout) {
   state.pick = {};
   const before = state.history.find(h => h.key === historyKey(workout) && h.scores
     && h.intervalId === styleIdOf(workout));       // a classic can be run in any style
-  state.lastScores = before ? before.scores : null;
+  state.lastScores = before ? lastScoresFrom(before) : null;
   state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
   seekTo(0);
   state.running = false;
@@ -1350,6 +1396,18 @@ function openWorkout(workout) {
 function personName(which) {
   const raw = which === 'a' ? state.nameA : state.nameB;
   return (raw || '').trim() || (which === 'a' ? 'Person A' : 'Person B');
+}
+// Last time's scores, each moved to whoever made it: with Dave and Wayne
+// swapped round, each still sees their own, and a new name sees none. An
+// unnamed person only matches the same spot. Entries from before names
+// were kept go by spot.
+function lastScoresFrom(rec) {
+  if (!rec.names) return rec.scores;
+  const now = { a: (state.nameA || '').trim(), b: state.people === 2 ? (state.nameB || '').trim() : '' };
+  const spots = rec.people === 2 ? ['a', 'b'] : ['a'];
+  const from = (w) => [w, ...spots].find(v => spots.includes(v) && rec.names[v] === now[w] && (now[w] || v === w));
+  const fa = from('a'), fb = from('b');
+  return rec.scores.map(s => ({ ...s, a: fa ? s[fa] : undefined, b: fb ? s[fb] : undefined }));
 }
 
 function renderPreview() {
@@ -2114,11 +2172,24 @@ function recordHistory() {
     seed: w.seed || null,
     request: w.request || null,
     workoutId: w.generated ? null : w.id,
+    // who it was, so a score stays with the person who made it after a
+    // rename, and which program day, so the card can say so
+    names: { a: (state.nameA || '').trim(), b: state.people === 2 ? (state.nameB || '').trim() : '' },
+    program: programRunLabel(),
     at: now,
     completed: false
   });
   state.history = state.history.slice(0, HISTORY_CAP);
   savePrefs();
+}
+// The program day being run, as history keeps it: "Pop-ups & legs" and
+// where it sits ("Surf Fit · Week 1, Day 2"), or null for any other session.
+function programRunLabel() {
+  const run = state.programRun;
+  const prog = run && PROGRAMS.find(p => p.id === run.id);
+  if (!prog) return null;
+  const day = programDay(prog, run.n);
+  return { id: prog.id, n: run.n, day: day.name, where: `${prog.name} · Week ${day.week}, Day ${run.n + 1}` };
 }
 
 function markHistoryComplete() {
@@ -2126,6 +2197,22 @@ function markHistoryComplete() {
   if (!w) return;
   const entry = state.history.find(h => h.key === historyKey(w));
   if (entry && !entry.completed) { entry.completed = true; savePrefs(); }
+  keepStorage();
+}
+
+// Once there's something worth keeping (a finished session, a favourite, a
+// program under way), ask the browser not to clear FIT's storage to free up
+// space. Asked once a visit; a browser without it, or one that says no,
+// carries on as before.
+let storageAsked = false;
+function keepStorage() {
+  if (storageAsked || !navigator.storage || !navigator.storage.persist) return;
+  storageAsked = true;
+  try {
+    (navigator.storage.persisted ? navigator.storage.persisted() : Promise.resolve(false))
+      .then(on => on || navigator.storage.persist())
+      .catch(() => { /* not allowed here: localStorage still works */ });
+  } catch (e) { /* as above */ }
 }
 
 // Rebuild a workout from a history entry (or a saved favourite: same shape).
@@ -2285,12 +2372,13 @@ function renderProgram() {
       <div class="card-tagline">${esc(prog.tagline)}</div>
       <div class="card-blurb">${esc(prog.blurb)}</div>
       <div class="picker-label">Each week</div>${rhythm}
-      <div class="card-blurb">Reps start a little lighter and build every fortnight. Pick how long you've got each day.</div>`);
+      <div class="card-blurb">Rep targets start a little lighter and build over the ${prog.weeks} weeks. Pick how long you've got each day.</div>`);
     const go = document.createElement('button');
     go.textContent = `Start ${prog.name}`;
     go.addEventListener('click', () => {
       state.programs[prog.id] = { startedAt: Date.now(), done: [] };
       savePrefs();
+      keepStorage();
       renderProgram();
     });
     c.appendChild(go);
@@ -2299,7 +2387,7 @@ function renderProgram() {
 
   if (ps.finished) {
     const c = add(`<div class="card-name">${prog.weeks} weeks done</div>
-      <div class="card-blurb">That's the whole of ${esc(prog.name)}. Go again from the start, or keep using Surf fitness in Quick and Custom.</div>`);
+      <div class="card-blurb">That's the whole of ${esc(prog.name)}. Go again from the start, or keep choosing Surf fitness in Build a workout.</div>`);
     c.appendChild(restartButton(prog));
     return;
   }
@@ -2366,11 +2454,22 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
     <div class="card-name">${esc(day.name)}</div>
     <div class="card-blurb">${esc(day.about)}</div>`;
   if (!day.stretch) {
-    const min = day.mix ? (mixMinimumMinutes(day.mix) || 25) : 10;
-    const options = TIME_OPTIONS.filter(m => m >= min);
-    if (!options.includes(state.programMinutes)) state.programMinutes = options.includes(day.minutes) ? day.minutes : options[0];
+    if (!TIME_OPTIONS.includes(state.programMinutes)) state.programMinutes = TIME_OPTIONS.includes(day.minutes) ? day.minutes : 20;
     c.append(pickerLabel('How long have you got?'),
-      timeChips(options, state.programMinutes, m => { state.programMinutes = m; rerender(); }));
+      timeChips(TIME_OPTIONS, state.programMinutes, m => { state.programMinutes = m; rerender(); }));
+    // every length is on offer; a mix that won't fit says what it runs as
+    const style = programStyle(day, state.programMinutes);
+    if (style.short) {
+      c.append(programHint(`${state.programMinutes} min is too short for ${day.mix.map(id => INTERVALS[id].label).join(' and ')}, so today it's just the ${INTERVALS[style.intervalId].label}.`));
+    }
+    // the leave-outs from Build a workout apply here too, so say so
+    const out = leftOutList();
+    if (out) {
+      const line = programHint(`Left out, as in Build a workout: ${out}. `);
+      line.classList.add('program-out');
+      line.appendChild(linkButton('Change', () => { openSetup(); setMoreOptions(true); }));
+      c.append(line);
+    }
   }
   c.append(...peopleGearRows(!day.stretch, rerender, gearHint));
   const go = document.createElement('button');
@@ -2387,9 +2486,31 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
     st.done.push({ n: day.n, at: Date.now(), surfed: true });
     savePrefs();
     rerender();
-    note.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Saved & ready-made is good after a session.';
+    note.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Saved & ready-made is good after a session. ';
+    // a mis-tap can be taken back: only today's surf, and only the last one
+    note.appendChild(linkButton('Undo', () => {
+      const now = state.programs[prog.id];
+      const last = now && now.done[now.done.length - 1];
+      if (last && last.surfed && dayKey(last.at) === dayKey(Date.now())) { now.done.pop(); savePrefs(); }
+      note.textContent = '';
+      rerender();
+    }));
   });
   c.append(go, surfed);
+}
+function programHint(text) {
+  const el = document.createElement('div');
+  el.className = 'program-hint';
+  el.textContent = text;
+  return el;
+}
+// "no jumping, no floor work and 2 movements": what Build a workout leaves
+// out, or '' when nothing is.
+function leftOutList() {
+  const parts = EXCLUSION_TAGS.filter(t => state.blockedTags.includes(t.id)).map(t => t.label.toLowerCase());
+  const n = state.excluded.length;
+  if (n) parts.push(`${n} movement${n === 1 ? '' : 's'}`);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join('');
 }
 function pickerLabel(text) {
   const label = document.createElement('div');
@@ -2453,13 +2574,16 @@ function startProgramDay(prog, day) {
     openWorkout(w);
     return null;
   }
+  const minutes = state.programMinutes || day.minutes;
+  // a mix too long for the minutes runs as its first style (see programStyle)
+  const { intervalId, mix } = programStyle(day, minutes);
   const request = {
-    minutes: state.programMinutes || day.minutes,
+    minutes,
     people: state.people,
-    intervalId: day.mix ? 'mix' : day.style,
-    mix: day.mix ? day.mix.slice() : undefined,
+    intervalId, mix,
     goal: prog.goal, surfFocus: day.focus, repScale: day.repScale,
-    regions: REGIONS.map(r => r.id), blockedTags: []
+    // the leave-outs from Build a workout, the same as any other session
+    regions: REGIONS.map(r => r.id), blockedTags: state.blockedTags.slice()
   };
   const err = buildAndOpen(request);
   if (err) state.programRun = null;
@@ -2613,6 +2737,7 @@ els.btnSave.addEventListener('click', () => {
     savedOn: new Date().toLocaleDateString()
   });
   savePrefs();
+  keepStorage();
   els.btnSave.textContent = '★ Saved';
   els.btnSave.disabled = true;
 });

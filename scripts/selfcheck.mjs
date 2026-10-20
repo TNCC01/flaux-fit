@@ -29,7 +29,7 @@ const {
   EXERCISES, EQUIPMENT, REGIONS, EXCLUSION_TAGS, SINGLE_INSTANCE, STRETCHES,
   INTERVALS, CLASSICS, STRETCH_ROUTINES, DEFAULT_EQUIPMENT,
   describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits,
-  planMix, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, mixMinimumMinutes
+  planMix, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes
 } = A;
 
 const failures = [];
@@ -387,8 +387,10 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
 }
 
 // ------------------------------------------------------ 8d. programs
-// Every day of every program builds at every length the program screen
-// offers it, with every kit, and the build-up keeps targets sensible.
+// Every day of every program builds at every length (the program screen
+// offers them all; a mix too long for the time runs as its first style),
+// with every kit and every leave-out, and the build-up keeps targets
+// sensible.
 let programDays = 0;
 for (const prog of PROGRAMS) {
   const total = prog.weeks * prog.days.length;
@@ -403,15 +405,21 @@ for (const prog of PROGRAMS) {
     }
     const min = day.mix ? mixMinimumMinutes(day.mix) : 10;
     if (!min || min > day.minutes) fail(`${label}: suggests ${day.minutes} min but needs ${min}`);
-    for (const minutes of minutesList.filter(m => m >= (min || 10))) {
+    for (const minutes of minutesList) {
       const [equipLabel, equipment] = EQUIP_CASES[(n + minutes) % EQUIP_CASES.length];
-      const w = generateWorkout({ minutes, people: 2, intervalId: day.mix ? 'mix' : day.style, mix: day.mix,
-        goal: prog.goal, surfFocus: day.focus, repScale: day.repScale, equipment,
+      const blockedTags = TAG_CASES[(n + minutes) % TAG_CASES.length];
+      const { intervalId, mix, short } = programStyle(day, minutes);
+      if (!!short !== !!(day.mix && minutes < min)) fail(`${label}, ${minutes} min: ran as ${intervalId}, the mix needs ${min}`);
+      if (short && intervalId !== day.mix[0]) fail(`${label}, ${minutes} min: too short for the mix should run ${day.mix[0]}, got ${intervalId}`);
+      const w = generateWorkout({ minutes, people: 2, intervalId, mix,
+        goal: prog.goal, surfFocus: day.focus, repScale: day.repScale, equipment, blockedTags,
         regions: REGION_IDS, seed: 9000 + n * 100 + minutes, recent: [] });
-      if (w.error) { fail(`${label}, ${minutes} min, ${equipLabel}: ${w.error}`); continue; }
+      if (w.error) { fail(`${label}, ${minutes} min, ${equipLabel}, no:${blockedTags.join(',') || '-'}: ${w.error}`); continue; }
       programDays++;
       if (w.repScale !== day.repScale) fail(`${label}: the build-up didn't reach the workout`);
       checkBlocks(`${label}, ${minutes} min`, w, equipment);
+      const left = w.blocks.flatMap(b => b.ids).filter(id => EXERCISES[id].tags.some(t => blockedTags.includes(t)));
+      if (left.length) fail(`${label}, ${minutes} min: left out ${blockedTags.join(',')} but got ${left.join(', ')}`);
       const style = day.mix ? day.mix[0] : day.style;
       if (!INTERVALS[style].reps) continue;           // timed styles have no reps to scale
       const ctx = { ...ctxFor(style, equipment), repScale: day.repScale };
@@ -525,7 +533,7 @@ console.log(`3D movements       ${Object.keys(MOVES).length}, ${need.length} fil
 console.log(`classics           ${CLASSICS.length} + ${STRETCH_ROUTINES.length} stretch routines`);
 console.log(`mixed sessions     ${mixBuilt} built, ${mixRefused} correctly refused as too short`);
 console.log(`surf fitness       ${surfBuilt} sessions, surf exercises only, pop-ups and paddling in each`);
-console.log(`programs           ${programDays} program-day builds, every day at every length`);
+console.log(`programs           ${programDays} program-day builds, every day at every length, leave-outs kept`);
 console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 if (warnings.length) {

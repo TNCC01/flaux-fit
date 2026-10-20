@@ -80,16 +80,21 @@ external rotations, surf stance holds, deep squat holds, open-book
 rotations), and Surf Mobility in the stretch library covers hips, upper
 back, shoulders and ankles.
 
-**Programs** (a fifth path on the home screen) run a session a day that
+**Programs** (a card on the home screen) run a session a day that
 builds week by week. The first is **Surf Fit**, six weeks on a weekly
 rhythm: paddle power, pop-ups and legs, mobility, an engine mix (EMOM then
-AMRAP), paddle and shoulders, pop-ups and turns, and an easy day. Reps start
-at 80% and build each fortnight to 110% (`repScale`). Each day builds
-through the generator with the day's style and focus, at whatever length you
-pick, with today's people, gear and weights. Progress moves on when a day is
-done, not by the calendar, so a missed day waits; "I surfed today" counts a
-surf instead. The screen shows the week, the day, a streak and a strip of
-this week's days. Programs are defined in `PROGRAMS` in `js/workouts.js`.
+AMRAP), paddle and shoulders, pop-ups and turns, and an easy day. Rep
+targets start at 80% and build over the six weeks to 110% (`repScale`);
+timed days have no reps to scale. Each day builds through the generator
+with the day's style and focus, at whatever length you pick, with today's
+people, gear and weights, and leaves out whatever Build a workout leaves
+out (the day's card says what, with a Change link). Every length is on
+offer: picked shorter than its mix needs, the Engine day runs its EMOM on
+its own (`programStyle`). Progress moves on when a day is done, not by the
+calendar, so a missed day waits; "I surfed today" counts a surf instead,
+with an Undo straight after in case of a mis-tap. The screen shows the
+week, the day, a streak and a strip of this week's days. Programs are
+defined in `PROGRAMS` in `js/workouts.js`.
 
 **Mix** runs two or three of these styles back to back in one session,
 in the order you tap them, and still fits the minutes you picked exactly,
@@ -119,7 +124,7 @@ rather than hardcoded.
 
 ## What's in the library
 
-- **157 movements** across five body regions (chest & shoulders, back &
+- **183 movements** across five body regions (chest & shoulders, back &
   arms, core & abs, legs & glutes, cardio) and fourteen movement patterns
 - **A 3D figure for every movement**, shown on the workout card at its
   best angle. Drag sideways to turn it. Tap it and a sheet opens over the
@@ -152,9 +157,18 @@ rather than hardcoded.
 - Adjustable exercise text size, for reading across a room
 - Workout history, so a generated session you liked but forgot to save is
   still there afterwards, with one tap to reopen it or save it properly.
-  Deliberately browser-only: it sits in localStorage with the other
+  The last 200 sessions are kept, each with who trained (so a score stays
+  with the person who made it after a rename, and "Last time" follows the
+  person, not the spot) and, for a program day, its name and where it sits
+  ("Pop-ups & legs", "Surf Fit · Week 1, Day 2"). Clear history takes two
+  taps. Deliberately browser-only: it sits in localStorage with the other
   preferences, there is no account and no server, and clearing the browser
-  clears it too
+  clears it too. Once there's a finished session, a favourite or a program,
+  FIT asks the browser to keep its storage (`navigator.storage.persist`).
+  Two tabs open at once take each other's history, favourites and program
+  progress as they save, so neither writes over the other. On an iPhone or
+  iPad the home-screen app keeps its own storage, separate from Safari's,
+  and the Add to Home Screen hint says so
 - Wall-clock timer, wake lock (kept through a pause), audio cues that still
   play with an iPhone on silent (a setting, since it pauses other music),
   two-tap reset, and two taps on Menu once a workout is going. Tap the

@@ -526,7 +526,7 @@ function stretchList(routine) {
 // ---------------------------------------------------------------------
 // PROGRAMS
 // A program is a run of daily sessions planned ahead: a week of day
-// templates repeated, with the reps building fortnight by fortnight. Each
+// templates repeated, with the rep targets building over the weeks. Each
 // day builds through the same generator as everything else, so it fits the
 // time, gear and number of people on the day. Progress moves on when a day
 // is done, not by the calendar, so a missed day waits for you.
@@ -562,5 +562,14 @@ const PROGRAMS = [
 function programDay(prog, n) {
   const week = Math.min(prog.weeks, Math.floor(n / prog.days.length) + 1);
   return { ...prog.days[n % prog.days.length], n, week, repScale: prog.repScale[week - 1] || 1 };
+}
+// The style a day runs in at this length: its own, or its mix. A mix that
+// won't fit the minutes runs as its first style on its own, so a short day
+// is still a session rather than a refusal.
+function programStyle(day, minutes) {
+  if (!day.mix) return { intervalId: day.style };
+  const min = mixMinimumMinutes(day.mix);
+  if (min && minutes >= min) return { intervalId: 'mix', mix: day.mix.slice() };
+  return { intervalId: day.mix[0], short: true };
 }
 

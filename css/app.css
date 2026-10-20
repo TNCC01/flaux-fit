@@ -872,6 +872,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .program-go { width: 100%; }
 .program-card .picker-label { margin-top: 0.7rem; }
 .program-hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem; }
+/* a Change or Undo link at the end of a line of text */
+.program-hint .link-btn, .build-note .link-btn { display: inline; margin: 0; padding: 0.35rem 0.2rem; font-size: inherit; }
 .program-status { display: grid; gap: 0.7rem; }
 .program-progress { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; color: var(--muted); font-size: 0.95rem; }
 .program-progress b { color: var(--text); font-size: 1.15rem; }
