@@ -920,12 +920,23 @@ try {
   note(`${small}px -> ${large}px`);
   ok('text size control works');
 
-  step = 'share link rebuilds the same workout on another device';
-  await p.click('#btnBack'); await p.click('#pathBuild'); await p.click('#btnBuild');
+  step = 'share link rebuilds the same workout on another device, for as many people';
+  await p.click('#btnBack'); await p.click('#pathBuild');
+  const peopleWas = await st(() => state.people);
+  await p.click('#peoplePicker .chip[data-people="2"]');
+  await p.click('#btnBuild');
   const sharedIds = await st(() => state.workout.exerciseIds.join(','));
   const sharedSeed = await st(() => state.workout.seed);
   const shareUrl = await st(() => shareUrlFor(state.workout));
   assert(shareUrl.includes('#w='), 'share url carries a payload');
+  // what goes with the link: the name (which ends in its minutes), the style and how many
+  const sharedText = await st(() => {
+    const r = state.workout.request;
+    const style = r.intervalId === 'mix' ? `Mix: ${r.mix.map(id => INTERVALS[id].label).join(', ')}` : INTERVALS[r.intervalId].label;
+    return { got: shareText(state.workout), want: `FIT: ${state.workout.name} · ${style} · 2 people`, name: state.workout.name };
+  });
+  assert(/ · \d+ min$/.test(sharedText.name) && sharedText.got === sharedText.want,
+         'the share text says the minutes, style and people: ' + JSON.stringify(sharedText));
   // No share sheet in headless Chromium, so the button copies the link.
   await p.click('#btnShare');
   await p.waitForFunction(() => document.getElementById('workoutNote').textContent.length > 0);
@@ -934,7 +945,7 @@ try {
   const clip = await st(() => navigator.clipboard.readText().catch(() => null));
   if (clip === null) note('clipboard not readable here, skipping that check');
   else assert(clip === shareUrl, 'clipboard holds the link');
-  // "Another device": a fresh browser context with nothing stored.
+  // "Another device": a fresh browser context with nothing stored, so one person to start.
   const other = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const q = await other.newPage();
   q.on('pageerror', e => errors.push('other device: ' + e));
@@ -945,18 +956,59 @@ try {
   assert(await q.evaluate(() => state.workout.seed) === sharedSeed, 'same seed');
   assert(await q.evaluate(() => location.hash) === '', 'hash cleared once opened');
   assert(await q.$eval('#workoutNote', e => /shared link/.test(e.textContent)), 'says it came from a link');
-  await p.click('#btnBack'); await p.click('#pathLibrary');
+  assert(await q.evaluate(() => state.people === 2 && document.getElementById('peopleBadge').textContent === '2 people'
+                                && document.getElementById('personB').offsetParent !== null), 'and for two people, as it was sent');
+  // once Start is pressed Share stays (the rest of the pre-start strip goes), and the sheet gets the text
+  await q.evaluate(() => { navigator.share = (d) => { window.sharedWith = d; return Promise.resolve(); }; });
+  await q.click('#btnStart');
+  const midShown = await q.evaluate(() => ['btnShare', 'btnShuffle', 'btnSave', 'previewCard'].filter(id => document.getElementById(id).offsetParent !== null));
+  assert(midShown.join(',') === 'btnShare', 'once started, Share is still there and Shuffle, Save and the preview are not: ' + midShown);
+  await q.click('#btnShare');
+  const sent = await q.evaluate(() => window.sharedWith);
+  assert(sent && sent.text === sharedText.want && sent.title === `FIT: ${sharedText.name}` && sent.url.includes('#w='),
+         'mid-workout, the share sheet gets the link and the text: ' + JSON.stringify(sent && sent.text));
+  // leaving it on a first visit asks who and what gear before home, the link's two people ticked
+  await leaveStarted(q);
+  assert(await q.evaluate(() => document.querySelector('.view.active').id) === 'gearView', 'leaving a shared workout on a first visit asks the gear question');
+  assert((await q.$eval('#onboardPeople .chip.active', e => e.textContent)) === 'Me and a mate', 'with two people ticked, as the link was');
+  await q.goto(URL + '#w=notaworkout');
+  assert(await q.evaluate(() => document.querySelector('.view.active').id) === 'gearView'
+         && /not a FIT workout/.test(await q.$eval('#gearNote', e => e.textContent)), 'a bad link on a first visit explains itself above the question');
+  await q.click('#btnGearDone');
+  assert(await q.evaluate(() => document.querySelector('.view.active').id === 'welcomeView' && state.gearAsked && state.people === 2),
+         'then home, with the answer kept');
+  // a solo link opens solo on a device set to two
+  await p.click('#btnBack'); await p.click('#pathBuild');
+  await p.click('#peoplePicker .chip[data-people="1"]');
+  await p.click('#btnBuild');
+  const soloUrl = await st(() => shareUrlFor(state.workout));
+  await q.goto(soloUrl);
+  assert(await q.evaluate(() => state.people === 1 && document.getElementById('peopleBadge').textContent === '1 person'
+                                && document.getElementById('personB').offsetParent === null), 'a solo link opens for one person');
+  // a solo build reopened with a mate (a favourite, say) shares as it's on screen: two
+  assert(await st(() => { state.people = 2; const n = sharePayload(state.workout).request.people; state.people = 1; return n; }) === 2,
+         'the link carries the people on screen, not the people it was first built for');
+  await p.click('#btnBack'); await p.click('#pathBuild');
+  await p.click('#peoplePicker .chip[data-people="2"]');
+  await p.click('#btnSetupBack'); await p.click('#pathLibrary');
   assert(await st(() => state.filterFocus) === 'all', 'the library opens on everything after a Stretching filter');
+  const classicMeta = await p.$eval(`${card('Power Hour')} .card-meta`, e => [e.querySelector('.duration').textContent, e.querySelector('.card-style').textContent]);
   await p.click(card('Power Hour'));
   const classicUrl = await st(() => shareUrlFor(state.workout));
   await q.goto(classicUrl);
   assert(await q.evaluate(() => state.workout.id) === 'power-hour', 'a classic shares by id');
+  assert(await q.evaluate(() => state.people === 2 && document.getElementById('peopleBadge').textContent === '2 people'),
+         'and carries its people too (the device was on one)');
+  const classicText = await q.evaluate(() => shareText(state.workout));
+  assert(classicText === `FIT: Power Hour · ${classicMeta[0]} · ${classicMeta[1]} · 2 people`, 'a classic says its minutes and style: ' + classicText);
+  assert(/^FIT: .+ · \d+ min · Stretching · 2 people$/.test(await q.evaluate(() => shareText(STRETCH_ROUTINES[0]))), 'a stretch says Stretching');
   await q.goto(URL + '#w=notaworkout');
   assert(await q.evaluate(() => document.querySelector('.view.active').id) === 'welcomeView', 'a bad link lands on welcome');
   assert(await q.$eval('#welcomeNote', e => e.textContent.length > 0), 'a bad link explains itself');
   await other.close();
+  if (peopleWas !== 2) await p.evaluate((n) => { state.people = n; savePrefs(); }, peopleWas);
   note(`link is ${shareUrl.length} characters`);
-  ok('share link rebuilds the same workout on a fresh device; classics and bad links handled');
+  ok('share link rebuilds the same workout on a fresh device for as many people as it was sent for, says the minutes, style and people, and Share stays once started; a first visit by link asks the gear question on the way home; classics and bad links handled');
 
   step = 'two tabs open: one saving does not wipe what the other saved';
   await p.click('#btnBack'); await p.click('#pathLibrary');

@@ -262,7 +262,7 @@ const els = {
   btnProgramBack: $('btnProgramBack'), programTitle: $('programTitle'),
   pathLibrary: $('pathLibrary'), pathProgramGo: $('pathProgramGo'), todayCard: $('todayCard'),
   gearView: $('gearView'), onboardGear: $('onboardGear'), btnGearDone: $('btnGearDone'),
-  onboardPeople: $('onboardPeople'), onboardWeights: $('onboardWeights'),
+  onboardPeople: $('onboardPeople'), onboardWeights: $('onboardWeights'), gearNote: $('gearNote'),
   btnMoreOptions: $('btnMoreOptions'), moreOptions: $('moreOptions'), moreSummary: $('moreSummary'),
   scroller: $('scroller'),
   welcomeNote: $('welcomeNote'),
@@ -575,6 +575,9 @@ function goWelcome() {
   state.programRun = null;
   state.programMinutes = null;
   state.workout = null;
+  // someone who came in on a shared link answers the first-visit question
+  // on the way home
+  if (!state.gearAsked) { openGearQuestion(); return; }
   els.welcomeNote.textContent = '';
   setView('welcome');
   renderToday();
@@ -1935,7 +1938,8 @@ function render() {
 
   els.btnStart.textContent = state.running ? 'Pause' : (state.elapsedTotal > 0 ? 'Resume' : 'Start');
   els.btnStart.classList.toggle('running', state.running);
-  els.preStart.style.display = (!state.running && state.elapsedTotal === 0) ? '' : 'none';
+  // once it's going, only Share is left of the pre-start strip (css)
+  els.preStart.classList.toggle('underway', state.running || state.elapsedTotal > 0);
 }
 
 function renderUpcoming() {
@@ -2121,7 +2125,7 @@ function finish() {
   els.btnStart.classList.remove('running');
   els.btnAgain.hidden = false;
   els.overallProgress.style.width = '100%';
-  els.preStart.style.display = '';         // Save and Share; the preview and Shuffle hide (css)
+  els.preStart.classList.remove('underway'); // Save and Share; the preview and Shuffle hide (css)
 }
 const isFinished = () => state.currentIdx >= state.sequence.length;
 
@@ -2288,12 +2292,23 @@ function whenLabel(ts) {
 // =====================================================================
 const SHARE_VERSION = 1;
 
+// Both kinds carry how many people it's on screen for (a favourite reopened
+// with a mate is two, whatever it was built for), so the link opens the same.
 function sharePayload(w) {
   if (w.generated) {
-    return { v: SHARE_VERSION, seed: w.seed, request: w.request,
+    return { v: SHARE_VERSION, seed: w.seed, request: { ...w.request, people: state.people },
              equipment: effectiveEquip(), excluded: state.excluded.slice() };
   }
-  return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id };
+  return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id, people: state.people };
+}
+
+// What goes with the link, so it says what it is before anyone opens it:
+// "FIT: Lower body · 20 min · Short bursts · 2 people". A built workout's
+// name already ends in its minutes.
+function shareText(w) {
+  const style = w.format === 'stretch' ? 'Stretching' : styleLabel({ intervalId: styleIdOf(w), request: w.request });
+  return [`FIT: ${w.name}`, ...(w.generated ? [] : [`${durationParts(w).totalMin} min`]), style,
+          state.people === 1 ? '1 person' : '2 people'].join(' · ');
 }
 
 // URL-safe base64 of UTF-8 text, and back.
@@ -2320,10 +2335,14 @@ function openSharedLink(hash) {
   catch (e) { return 'That link is not a FIT workout.'; }
   if (!payload || typeof payload !== 'object') return 'That link is not a FIT workout.';
   if (payload.v !== SHARE_VERSION) return 'That link was made by a different version of FIT.';
+  if (!payload.id && (!payload.seed || !payload.request)) return 'That link is missing its workout.';
+  // it opens for as many people as it was sent for (a classic's link from
+  // before it said keeps today's count)
+  const people = payload.id ? payload.people : payload.request.people;
+  if (people === 1 || people === 2) { state.people = people; savePrefs(); }
   if (payload.id) {
     return openFromRecord({ workoutId: payload.id, intervalId: payload.intervalId, generated: false });
   }
-  if (!payload.seed || !payload.request) return 'That link is missing its workout.';
   return buildAndOpen(payload.request, payload.seed, {
     equipment: payload.equipment || effectiveEquip(),
     excluded: Array.isArray(payload.excluded) ? payload.excluded : [],
@@ -2339,7 +2358,8 @@ function openLinkFromHash() {
   history.replaceState(null, '', location.pathname + location.search);
   if (err) {
     goWelcome();
-    els.welcomeNote.textContent = err;
+    // a first visit lands on the gear question, so the note goes there
+    (state.gearAsked ? els.welcomeNote : els.gearNote).textContent = err;
   } else {
     els.workoutNote.textContent = 'Opened from a shared link.';
   }
@@ -2646,6 +2666,7 @@ function completeProgramDay() {
 function openGearQuestion() {
   GEAR.forEach(g => { state.equipment[g.id] = false; });
   state.weights = { kb: [], db: [], bar: 10 };
+  els.gearNote.textContent = '';
   renderGearQuestion();
   setView('gear');
 }
@@ -2789,7 +2810,7 @@ els.btnShare.addEventListener('click', async () => {
   try {
     // The share sheet where there is one (iOS, Android), the clipboard
     // elsewhere, and the bare link as the last resort.
-    if (navigator.share) { await navigator.share({ title, text: title, url }); return; }
+    if (navigator.share) { await navigator.share({ title, text: shareText(w), url }); return; }
     await navigator.clipboard.writeText(url);
     els.workoutNote.textContent = 'Link copied. Open it on any phone or tablet for this exact workout.';
   } catch (e) {

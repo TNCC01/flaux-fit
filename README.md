@@ -10,7 +10,9 @@ Static files, no build step. Deploys to Vercel.
 On a first visit FIT asks who's training (just you, or you and a mate) and
 what gear you've got, with everything unticked, including the weights of
 any kettlebells, dumbbells or barbell you tick, and saves the answer as the
-Home gear set. After that the home screen has three cards:
+Home gear set. Someone whose first visit is a shared link gets the workout
+straight away and the question on the way home. After that the home screen
+has three cards:
 
 - **Today** (Build a workout): how long you've got and how many of you,
   filled in from last time, where you're training once there's more than
@@ -185,7 +187,9 @@ rather than hardcoded.
   pressing Start doesn't count as a session done
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
-  tablet, with no account and no server involved
+  tablet, for the same number of people, with no account and no server
+  involved. The message says the minutes, style and people, and Share stays
+  on screen once the workout is going
 - Works offline after the first visit. A service worker caches the app
   and the 3D figures, so it opens in the gym with no wifi
 

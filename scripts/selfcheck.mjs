@@ -92,6 +92,18 @@ const need = ['move.html', 'vendor/three/three.min.js',
   ...['js/move', 'js/moves'].flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith('.js')).map(f => `${d}/${f}`))];
 need.forEach(f => { if (!sw.includes(`'/${f}'`)) fail(`sw.js does not precache /${f}`); });
 
+// A shared link previews as FIT in Messages or WhatsApp, not a bare
+// address: a title, a line on what it is, and the app icon at a full
+// address (most apps won't fetch a relative one).
+{
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const og = (k) => (html.match(new RegExp(`<meta property="og:${k}" content="([^"]*)">`)) || [])[1];
+  if (!og('title') || !/FIT/.test(og('title'))) fail('index.html: og:title missing or does not say FIT');
+  if (!og('description') || og('description').length < 40) fail('index.html: og:description missing or too short to say what FIT is');
+  if (!/^https:\/\/[^/]+\/icon-512\.png$/.test(og('image') || '')) fail(`index.html: og:image should be the full address of icon-512.png, got ${og('image')}`);
+  if (!fs.existsSync(path.join(ROOT, 'icon-512.png'))) fail('icon-512.png is missing');
+}
+
 // What's said on screen fits wherever you train: a mate's place or a park,
 // not one particular house with a driveway and a mailbox.
 {

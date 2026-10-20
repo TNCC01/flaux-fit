@@ -19,6 +19,13 @@
 <meta name="apple-mobile-web-app-title" content="FIT">
 <meta name="theme-color" content="#0d9488">
 <title>FIT, the Flaux workout timer</title>
+<!-- What a link preview shows in Messages, WhatsApp and the like. A shared
+     workout rides after the #, which a preview never sees, so every link
+     gets this one; the share text says which workout it is. The image has
+     to be a full address for most apps to fetch it. -->
+<meta property="og:title" content="FIT, the Flaux workout timer">
+<meta property="og:description" content="A timed workout for the time and gear you've got, for one or two people. Opens in the browser, no account needed.">
+<meta property="og:image" content="https://fit.flaux.com.au/icon-512.png">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -94,6 +101,7 @@
       <p class="menu-sub">Welcome to FIT. It builds a timed workout for the time and gear you've got, for one or two people.</p>
       <h1 class="menu-title">First up, two quick questions</h1>
     </div>
+    <div class="build-note" id="gearNote"></div>
     <div class="gear-ask">
       <div class="picker-label">Who's training?</div>
       <div class="chip-row" id="onboardPeople"></div>
