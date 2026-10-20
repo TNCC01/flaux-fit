@@ -16,6 +16,7 @@ import { createRequire } from 'module';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -26,15 +27,17 @@ const TYPES = {
   '.mjs': 'application/javascript', '.svg': 'image/svg+xml',
   '.json': 'application/json', '.png': 'image/png'
 };
-// It can be slowed down (one bar of signal, or just the page), made to
-// serve the next release of the app or the one before, or hand out a
-// script from another release once (see the update steps at the end).
-const serve = { delayMs: 0, pageDelayMs: 0, next: null, previous: false, breakOnce: null };
+// It can be slowed down (one bar of signal, just the page, or any one
+// file), made to serve the next release of the app or the one before (to
+// a browser context with the e2e=previous cookie, so the others' workers
+// can never pick it up), or hand out a script from another release once
+// (see the update steps at the end).
+const serve = { delayMs: 0, pageDelayMs: 0, slow: {}, next: null, previous: false, breakOnce: null };
 const isPage = (url) => url === '/' || url === '/index.html';
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
   // an empty page on the same origin, to set up a device before the app is on it
-  if (url === '/e2e-blank.html') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>blank</title>'); return; }
+  if (url === '/e2e-blank.html') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>blank</title><link rel="icon" href="data:,">'); return; }
   const file = path.normalize(path.join(ROOT, url === '/' ? 'index.html' : url));
   if (!file.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, data) => {
@@ -42,9 +45,9 @@ const server = http.createServer((req, res) => {
       if (err) { res.writeHead(404); res.end('not found'); return; }
       res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
       if (serve.breakOnce === url) { serve.breakOnce = null; res.end(`throw new Error("${url} from another release")`); return; }
-      if (serve.previous) { res.end(previousRelease(url, data)); return; }
+      if (serve.previous && /(^|;\s*)e2e=previous(;|$)/.test(req.headers.cookie || '')) { res.end(previousRelease(url, data)); return; }
       res.end(serve.next ? nextRelease(url, data) : data);
-    }, serve.delayMs + (isPage(url) ? serve.pageDelayMs : 0));
+    }, serve.delayMs + (isPage(url) ? serve.pageDelayMs : 0) + (serve.slow[url] || 0));
   });
 });
 // The same files as a release called serve.next: sw.js with that VERSION,
@@ -59,11 +62,12 @@ function nextRelease(url, data) {
 }
 // The release before this one, as far as an upgrade sees it: its service
 // worker fetched every file from the network first and fell back to its
-// copy after four seconds, and its page had no Restore link (so this
+// copy after four seconds, its page had no Restore link (so this
 // release's app.js fails on it) and only waited for a new worker to take
-// over if its scripts failed.
+// over if its scripts failed, and its workouts.js is its own.
 function previousRelease(url, data) {
   if (url === '/sw.js') return PREVIOUS_SW;
+  if (url === '/js/workouts.js') return LAST_WORKOUTS.src;
   if (!isPage(url)) return data;
   return String(data).replace(/<button[^>]*id="btnGearRestore"[^>]*>[^<]*<\/button>/, '')
     .replace(/<script>\s*window\.addEventListener\('error'[\s\S]*?<\/script>/, `<script>
@@ -75,6 +79,18 @@ function previousRelease(url, data) {
   });
 </script>`);
 }
+// The last release's workouts.js, from origin/main where git has it: it
+// loads without an error beside this release's app.js. With no git here,
+// or on main itself, this one says it's from another release instead.
+const LAST_WORKOUTS = (() => {
+  const mine = fs.readFileSync(path.join(ROOT, 'js/workouts.js'), 'utf8');
+  const stamp = (src) => (src.match(/^const WORKOUTS_RELEASE = '([^']*)'/m) || [])[1];
+  try {
+    const last = execFileSync('git', ['show', 'origin/main:js/workouts.js'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    if (stamp(last) !== stamp(mine)) return { src: last, real: true };
+  } catch (e) { /* no git or no origin/main here */ }
+  return { src: mine.replace(/^const WORKOUTS_RELEASE = '[^']*'/m, "const WORKOUTS_RELEASE = 'fit-previous'"), real: false };
+})();
 const PREVIOUS_SW = `
 const VERSION = 'fit-previous';
 const SHELL = ['/', '/index.html', '/css/app.css', '/js/exercises.js', '/js/workouts.js', '/js/generator.js', '/js/app.js'];
@@ -122,6 +138,26 @@ p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 p.on('pageerror', e => errors.push(String(e)));
 
 const st = (fn, arg) => p.evaluate(fn, arg);
+// Another tab's save reaches a page as a storage event, after a trip
+// through the browser, and the page's localStorage can show the other
+// tab's write before the app's storage listener has run. So what's stored
+// can't say whether the app has dealt with a save yet: listenFor() arms a
+// listener in the page for the next save of the prefs at that schema (null:
+// none), before the other tab writes, and heard() waits until it has fired.
+// The app's own listener was added first, so by then it has run (and
+// written back, when it does).
+const listenFor = (pg, schema) => pg.evaluate((want) => {
+  window.e2eHeard = false;
+  addEventListener('storage', function heard(e) {
+    if (e.key !== 'fit-prefs-2' || !e.newValue) return;
+    let got;
+    try { got = JSON.parse(e.newValue).schema; } catch (err) { return; }
+    if ((got === undefined ? null : got) !== want) return;
+    removeEventListener('storage', heard);
+    window.e2eHeard = true;
+  });
+}, schema);
+const heard = (pg) => pg.waitForFunction(() => window.e2eHeard === true, null, { timeout: 10000 });
 // a 3D figure has drawn into this element's canvas: enough light body pixels
 // against the dark stage
 const figureDrawn = (sel) => p.waitForFunction((s) => {
@@ -629,13 +665,12 @@ try {
          'a classic gets the guided warm-up too, skipped in one tap');
   await p.click('#btnStart'); await p.click('#btnSkip');       // into block 1
   assert(await p.$eval('#blockName', e => /Block 1 of/.test(e.textContent)), 'skip jumped to block 1');
-  const before = await st(() => elapsedNow());
-  await st(() => clearInterval(state.tickHandle));             // what iOS does to a backgrounded tab
+  // the gap is timed in the page, since the trips to it can add a second on a slow machine
+  const before = await st(() => { clearInterval(state.tickHandle); return [elapsedNow(), Date.now()]; });   // what iOS does to a backgrounded tab
   await p.waitForTimeout(3000);
   const stale = await p.$eval('#totalTime', e => e.textContent);
-  await st(() => document.dispatchEvent(new Event('visibilitychange')));
-  const gained = (await st(() => state.elapsedTotal)) - before;
-  assert(gained >= 2.8 && gained <= 4, `caught up ${gained.toFixed(1)}s of a 3s gap`);
+  const [gained, wall] = await st((b) => { document.dispatchEvent(new Event('visibilitychange')); return [state.elapsedTotal - b[0], (Date.now() - b[1]) / 1000]; }, before);
+  assert(gained >= 2.8 && gained <= wall + 0.01, `caught up ${gained.toFixed(1)}s of a ${wall.toFixed(1)}s gap`);
   const fresh = await p.$eval('#totalTime', e => e.textContent);
   note(`suspended at "${stale}", on return "${fresh}" (+${gained.toFixed(1)}s)`);
   await p.click('#btnStart');                                   // pause
@@ -1667,7 +1702,8 @@ try {
     return { text: document.getElementById('buildNote').textContent, top: n.top, bottom: n.bottom, gap: n.top - b.bottom, h: innerHeight };
   });
   assert(await activeView() === 'setupView' && refused.text.includes('excluded'), 'the build is refused: ' + refused.text);
-  assert(refused.top >= 0 && refused.bottom <= refused.h && refused.gap >= 0 && refused.gap < 60,
+  // (to the pixel: at the very end of the page a fraction of one can sit past the edge)
+  assert(refused.top >= 0 && refused.bottom < refused.h + 1 && refused.gap >= 0 && refused.gap < 60,
          `and the reason is on screen just under the button: ${JSON.stringify(refused)}`);
   await st(() => { state.excluded = []; savePrefs(); });
   await p.click('.interval-card:has-text("Short bursts")');
@@ -2081,6 +2117,7 @@ try {
   // A tab still on the version before this one hears nothing, so it writes
   // the copy it opened with: what this tab did since is added back, not lost.
   const newest = await st(() => state.history[0].key);
+  await listenFor(p, null);
   await tab2.evaluate(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     delete prefs.schema; delete prefs.beepOnSilent; delete prefs.todayOther;
@@ -2088,9 +2125,7 @@ try {
     prefs.saved = prefs.saved.slice(1);
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
-  // (until this tab has written back: a read here can still see the copy from before the stale one lands)
-  await p.waitForFunction(() => { const x = JSON.parse(localStorage.getItem('fit-prefs-2')); return x.schema === 3 && 'beepOnSilent' in x; },
-                          null, { timeout: 5000 }).catch(() => {});
+  await heard(p);
   const merged = await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     return { first: prefs.history[0].key, n: prefs.history.length, mem: state.history.length, saved: prefs.saved.length === state.saved.length,
@@ -2113,6 +2148,7 @@ try {
   });
   assert(old2.saved.length >= 1, 'a favourite to take out: ' + old2.saved);
   // there, the session runs to the end with 2 rounds logged in block 1, and a favourite is taken out
+  await listenFor(p, 2);
   await tab2.evaluate(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     prefs.schema = 2; delete prefs.levels;
@@ -2120,7 +2156,7 @@ try {
     prefs.saved = prefs.saved.slice(1);
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
-  await p.waitForFunction(() => { const x = JSON.parse(localStorage.getItem('fit-prefs-2')); return x.schema === 3; }, null, { timeout: 5000 });
+  await heard(p);
   const lv2 = await st(() => ({ mem: JSON.stringify(state.levels.keepme), stored: JSON.stringify((JSON.parse(localStorage.getItem('fit-prefs-2')).levels || {}).keepme) }));
   assert(lv2.mem === '{"k":0.8,"easy":0}' && lv2.stored === lv2.mem, "a save from a tab on the last release leaves the levels here, and they're written back: " + JSON.stringify(lv2));
   const took = await st((k) => {
@@ -2133,7 +2169,50 @@ try {
   // (and back as it was, for the steps after)
   await st((fav) => { delete state.levels.keepme; state.saved.unshift(fav); savePrefs(); }, old2.fav);
   await tab2.close();
-  ok('two tabs: each takes in the other\'s history as it saves, so neither writes over the other; a stale save from a tab on the older version is merged, not taken');
+  // A tab on the last release saving once this release's tab has closed:
+  // nothing is open to write the levels back, so the next tab to open has
+  // to find them.
+  {
+    const two = await browser.newContext({ viewport: { width: 1180, height: 820 } });
+    const watch = (pg, who) => {
+      pg.on('pageerror', e => errors.push(`${who}: ${e}`));
+      pg.on('console', m => { if (m.type() === 'error') errors.push(`${who}: ${m.text()}`); });
+    };
+    // the old tab, open from before: a page that saves as the last release does
+    const old = await two.newPage(); watch(old, 'old tab');
+    await old.goto(URL + 'e2e-blank.html');
+    await old.evaluate(() => localStorage.setItem('fit-prefs-2', JSON.stringify({ schema: 2, gearAsked: true, people: 2, nameA: 'Wayne', nameB: 'Dave' })));
+    // this release opens beside it, and Wayne finds a session too easy
+    const fresh = await two.newPage(); watch(fresh, 'new tab');
+    await fresh.goto(URL);
+    await fresh.click('#todayCard .today-go'); await fresh.click('#btnStart');
+    await fresh.evaluate(() => new Promise(done => {
+      state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now();
+      const t = setInterval(() => { if (isFinished()) { clearInterval(t); done(); } }, 50);
+    }));
+    await fresh.click('#finishA .feel-chip[data-feel="easy"]');
+    const lv = await fresh.evaluate(() => ({ mem: JSON.stringify(state.levels), own: localStorage.getItem('fit-levels-1') }));
+    assert(lv.mem === '{"wayne":{"k":1,"easy":1}}' && lv.own === lv.mem, 'the levels are kept under their own key too: ' + JSON.stringify(lv));
+    await fresh.close();
+    // then the old tab saves what it heard, with a session it finished, and no levels
+    await old.evaluate(() => {
+      const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      prefs.schema = 2; delete prefs.levels;
+      prefs.history.unshift({ key: 'id:quick-spark', name: 'Quick Spark', at: Date.now(), people: 2, intervalId: 'short',
+                              generated: false, workoutId: 'quick-spark', minutes: 13, completed: true });
+      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+    });
+    const next = await two.newPage(); watch(next, 'next tab');
+    await next.goto(URL);
+    const back = await next.evaluate(() => ({ levels: JSON.stringify(state.levels), history: state.history.length, first: state.history[0].key }));
+    assert(back.levels === lv.mem && back.history === 2 && back.first === 'id:quick-spark',
+           "a tab opened after still has the levels, beside the old tab's session: " + JSON.stringify(back));
+    await next.click('#todayCard .time-chips .chip:text-is("25 min")');
+    assert(await next.evaluate((m) => JSON.stringify(JSON.parse(localStorage.getItem('fit-prefs-2')).levels) === m, lv.mem),
+           'and they are back in the prefs at its next save');
+    await two.close();
+  }
+  ok('two tabs: each takes in the other\'s history as it saves, so neither writes over the other; a stale save from a tab on the older version is merged, not taken, and leaves the levels, even with no tab of this release open');
 
   step = 'your data: a backup file, a copy for another device, and a restore that asks first';
   {
@@ -2205,7 +2284,8 @@ try {
       asked: state.gearAsked, name: document.getElementById('nameA').value === state.nameA, people: state.people, levels: JSON.stringify(state.levels) }));
     assert(moved.history === mine.history && moved.saved === mine.saved && moved.places === mine.places && moved.asked && moved.name && moved.people === 1,
            'Replace brings every session, favourite, place and setting across, checked: ' + JSON.stringify(moved));
-    assert(moved.levels === mine.levels, "and each person's level: " + moved.levels);
+    assert(moved.levels === mine.levels && await f.evaluate(() => localStorage.getItem('fit-levels-1')) === mine.levels,
+           "and each person's level, under its own key too: " + moved.levels);
     assert((await said()).startsWith('Restored: ') && await f.$('#btnPutBack'), 'it says so, and offers Put it back');
     const box = (sel) => f.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.top, b.bottom, innerHeight]; });
     const onScreen = async (sel) => { const [top, bottom, ih] = await box(sel); return top >= 0 && bottom <= ih && bottom > top; };
@@ -2223,7 +2303,9 @@ try {
     await f.click('#btnPutBack');
     assert((await f.$eval('.restore-check', e => e.textContent)).includes('Put back what was here before the restore: no sessions'), 'Put it back says what it puts back');
     await f.click('#btnRestoreYes');
-    assert(await f.evaluate(() => state.history.length === 0 && !localStorage.getItem('fit-prefs-2-before-restore')), 'Put it back puts back what was there');
+    assert(await f.evaluate(() => state.history.length === 0 && !localStorage.getItem('fit-prefs-2-before-restore')
+                                  && JSON.stringify(state.levels) === '{}' && localStorage.getItem('fit-levels-1') === '{}'),
+           'Put it back puts back what was there, levels too');
     assert(!(await f.$('#btnPutBack')) && (await said()).startsWith('Put back: '), 'and is used up');
     assert(await onScreen('#yourData .data-note'), 'saying so on screen');
     assert(await f.$eval('#restoreFile', e => e.accept) === '.json,application/json,text/plain', 'the file picker asks for the backup, so an iPhone opens Files, not Photos');
@@ -2461,14 +2543,10 @@ try {
     ok('a first visit whose scripts fail loads again, once, from the offline copy as it takes over');
   }
 
-  step = 'the first open of this release on one bar, through the last one, loses nothing and loads again whole';
-  {
-    const up = await browser.newContext({ viewport: { width: 390, height: 844 } });
-    const u = await up.newPage();
-    const seen = [];
-    u.on('pageerror', e => seen.push(String(e)));
-    u.on('console', m => { if (m.type() === 'error') seen.push(m.text()); });
-    // a phone on the last release, with Wayne's data as that release kept it
+  // A phone on the last release, with Wayne's data as that release kept it:
+  // what it stored, and (on the page) what it all comes to.
+  const onLastRelease = async (u) => {
+    await u.context().addCookies([{ name: 'e2e', value: 'previous', url: URL }]);
     serve.previous = true;
     await u.goto(URL + 'e2e-blank.html');
     await u.evaluate(() => navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready));
@@ -2488,9 +2566,25 @@ try {
       localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
       return localStorage.getItem('fit-prefs-2');
     });
+    serve.previous = false;
+    return kept;
+  };
+  const wayneKept = (u) => u.evaluate(async () => ({ history: state.history.length, saved: state.saved.length, places: state.gearSets.map(g => g.name).join(),
+    days: state.programs['surf-fit'].done.length, name: state.nameA, program: !!document.querySelector('#todayCard .program-go'),
+    stored: JSON.parse(localStorage.getItem('fit-prefs-2')).history.length, caches: (await caches.keys()).join() }));
+  const allKept = (after) => after.history === 31 && after.saved === 1 && after.places === "Home,Dave's place" && after.days === 11
+    && after.name === 'Wayne' && after.program && after.stored === 31;
+
+  step = 'the first open of this release on one bar, through the last one, loses nothing and loads again whole';
+  {
+    const up = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const u = await up.newPage();
+    const seen = [];
+    u.on('pageerror', e => seen.push(String(e)));
+    u.on('console', m => { if (m.type() === 'error') seen.push(m.text()); });
+    const kept = await onLastRelease(u);
     // this release goes up, and the page takes eight seconds to come: the
     // old worker hands over its old page at four, beside this release's scripts
-    serve.previous = false;
     serve.pageDelayMs = 8000;
     await u.goto(URL, { waitUntil: 'domcontentloaded' });
     const broke = await u.evaluate(() => !document.getElementById('btnGearRestore'));
@@ -2502,15 +2596,56 @@ try {
     await u.waitForFunction(() => !!document.getElementById('btnGearRestore') && typeof state === 'object' && state.view === 'welcome',
                             null, { timeout: 40000 });
     serve.pageDelayMs = 0;
-    const after = await u.evaluate(() => ({ history: state.history.length, saved: state.saved.length, places: state.gearSets.map(g => g.name).join(),
-      days: state.programs['surf-fit'].done.length, name: state.nameA, program: !!document.querySelector('#todayCard .program-go'),
-      stored: JSON.parse(localStorage.getItem('fit-prefs-2')).history.length, caches: null }));
-    after.caches = await u.evaluate(() => caches.keys().then(k => k.join()));
-    assert(after.history === 31 && after.saved === 1 && after.places === "Home,Dave's place" && after.days === 11 && after.name === 'Wayne'
-           && after.program && after.stored === 31, 'everything is still there, and home has his program day: ' + JSON.stringify(after));
+    const after = await wayneKept(u);
+    assert(allKept(after), 'everything is still there, and home has his program day: ' + JSON.stringify(after));
     assert(!after.caches.includes('fit-previous'), 'running from this release now: ' + after.caches);
     await up.close();
     ok("the first open of this release through the last one's worker on a slow page: nothing saved over the data, and it loads again whole");
+  }
+
+  step = "the first open of this release with the last one's workouts.js: it loads again whole, once, and Start works";
+  {
+    const up = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const u = await up.newPage();
+    const seen = [];
+    u.on('pageerror', e => seen.push(String(e)));
+    u.on('console', m => { if (m.type() === 'error') seen.push(m.text()); });
+    let loads = 0;
+    u.on('load', () => { loads++; });
+    const kept = await onLastRelease(u);
+    loads = 0;
+    // this release goes up, and workouts.js takes eight seconds to come: the
+    // old worker hands over its old copy at four, beside this release's app.js,
+    // which loads without an error of its own
+    serve.slow['/js/workouts.js'] = 8000;
+    await u.goto(URL, { waitUntil: 'domcontentloaded' });
+    const mixed = await u.evaluate(() => [typeof WORKOUTS_RELEASE === 'string' ? WORKOUTS_RELEASE : 'none', RELEASE]);
+    assert(mixed[0] !== mixed[1], "the first load has the last release's workouts.js beside this release's app.js: " + mixed);
+    await u.evaluate(() => document.querySelector('#todayCard button') && document.querySelector('#todayCard button').click());
+    assert(await u.evaluate(() => localStorage.getItem('fit-prefs-2')) === kept, 'a tap on the page that failed leaves the data as it was');
+    // the new release installs, takes over and loads the page again, whole
+    const whole = await u.waitForFunction(() => { try { return state.view === 'welcome' && WORKOUTS_RELEASE === RELEASE; } catch (e) { return false; } },
+                                          null, { timeout: 60000 }).then(() => true, () => false);
+    serve.slow = {};
+    assert(whole, 'the page loads again on this release, whole: ' + await u.evaluate(() => typeof WORKOUTS_RELEASE === 'string' ? WORKOUTS_RELEASE : 'none'));
+    assert(seen.some(e => e.includes('FIT scripts from more than one release')),
+           "this release's app.js failed as it loaded, beside a script from the last one: " + seen.join(' | '));
+    const failed = seen.length;
+    const after = await wayneKept(u);
+    assert(allKept(after), 'everything is still there, and home has his program day: ' + JSON.stringify(after));
+    assert(!after.caches.includes('fit-previous'), 'running from this release now: ' + after.caches);
+    // Start opens today's session, and a favourite opens
+    await u.click('#todayCard .program-go');
+    assert(await u.evaluate(() => state.view === 'workout' && state.sequence.length > 0), 'Start opens the session');
+    await u.click('#btnBack'); await u.click('#btnProgramBack');
+    await u.click('#pathLibrary');
+    await u.click(card('☆ Full Body · 20 min'));
+    assert(await u.evaluate(() => state.view === 'workout' && state.workout.exerciseIds.length > 0), 'and so does his favourite');
+    await u.waitForTimeout(1000);
+    assert(loads === 2 && seen.length === failed, `once: ${loads} loads, ${seen.length - failed} more errors: ` + seen.slice(failed).join(' | '));
+    await up.close();
+    note(`with ${LAST_WORKOUTS.real ? "origin/main's workouts.js" : 'this workouts.js saying it is from another release (no origin/main here)'}`);
+    ok("an old workouts.js beside this release's app.js fails as the page loads, the new release takes over, and the page loads again once, whole, with Start and the favourites working");
   }
 
   if (errors.length) {

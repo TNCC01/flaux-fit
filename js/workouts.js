@@ -22,6 +22,10 @@
   the live interval out of ctx, so cues stay truthful in both styles.
 */
 
+// Which release this file is from, sw.js's VERSION: js/app.js won't run
+// beside a file from another one (see the check at its top).
+const WORKOUTS_RELEASE = 'fit-v13';
+
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',
            rounds: 8, workSec: 20, restSec: 10,

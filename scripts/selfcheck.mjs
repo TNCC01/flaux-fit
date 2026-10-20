@@ -122,6 +122,13 @@ const filesHash = (() => {
 })();
 if (!swVersion || !swHash) fail('sw.js: VERSION or FILES_HASH is missing');
 else if (swHash !== filesHash) fail(`app files changed: bump VERSION in sw.js (it says ${swVersion}) and update the hash to ${filesHash} (FILES_HASH)`);
+// Each script says which release it's from, and js/app.js won't run beside
+// one from another (see the check at its top), so they all say VERSION.
+[['js/exercises.js', 'EXERCISES_RELEASE'], ['js/workouts.js', 'WORKOUTS_RELEASE'], ['js/generator.js', 'GENERATOR_RELEASE'], ['js/app.js', 'RELEASE']]
+  .forEach(([f, name]) => {
+    const stamp = (fs.readFileSync(path.join(ROOT, f), 'utf8').match(new RegExp(`^const ${name} = '([^']*)'`, 'm')) || [])[1];
+    if (swVersion && stamp !== swVersion) fail(`${f}: ${name} is ${stamp ? `'${stamp}'` : 'missing'}: set it to sw.js's VERSION, '${swVersion}'`);
+  });
 // and against the last release, where git knows it: the files can't
 // change under the same VERSION
 try {

@@ -30,6 +30,16 @@ window.addEventListener('error', function retry() {
     next.addEventListener('statechange', take);
   }).catch(() => { /* no offline copy to fall back on */ }));
 });
+// And the scripts before this one have to be from its release. One from
+// another (the worker from before sw.js hands over its old copy of a file
+// that's slow to come) can load without an error and only break the first
+// tap on Start, so each says which release it's from, and one that doesn't
+// match fails here, while the page loads, for the check above.
+const RELEASE = 'fit-v13';
+if ([typeof EXERCISES_RELEASE, typeof WORKOUTS_RELEASE, typeof GENERATOR_RELEASE].some(t => t !== 'string')
+    || [EXERCISES_RELEASE, WORKOUTS_RELEASE, GENERATOR_RELEASE].some(r => r !== RELEASE)) {
+  throw new Error('FIT scripts from more than one release');
+}
 
 const TIME_OPTIONS = [10, 15, 20, 25, 30, 40, 45, 60];
 const RECENT_CAP = 60;          // exercise ids remembered for variety
@@ -133,7 +143,11 @@ function loadPrefs() {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return;
-    Object.assign(state, cleanPrefs(JSON.parse(raw)));
+    const p = JSON.parse(raw);
+    const s = cleanPrefs(p);
+    // a save from an older release leaves the levels out (see LEVELS_KEY)
+    if (!hasLevels(p)) s.levels = storedLevels() || s.levels;
+    Object.assign(state, s);
   } catch (e) { /* corrupt store: fall back to defaults */ } finally { prefsLoaded = true; }
 }
 // Saved prefs (the store, another tab's save, or a backup being restored)
@@ -165,16 +179,7 @@ function cleanPrefs(p) {
     if (!PROGRAMS.some(x => x.id === id) || !plain(pr) || !Array.isArray(pr.done)) delete s.programs[id];
     else pr.done = pr.done.filter(d => plain(d) && Number.isInteger(d.n) && typeof d.at === 'number');
   });
-  // a level in range for each person, by a name or a spot of sensible length
-  const levels = {};
-  if (plain(s.levels)) {
-    Object.keys(s.levels).slice(0, 60).forEach(key => {
-      const v = s.levels[key];
-      const k = plain(v) && typeof v.k === 'number' ? Math.round(v.k * 10) / 10 : NaN;
-      if (key && key.length <= 30 && key !== '__proto__' && k >= LEVEL_MIN && k <= LEVEL_MAX) levels[key] = { k, easy: v.easy === 1 ? 1 : 0 };
-    });
-  }
-  s.levels = levels;
+  s.levels = cleanLevels(s.levels);
   if (!Array.isArray(s.mixStyles)) s.mixStyles = ['emom', 'short', 'amrap'];
   s.mixStyles = [...new Set(s.mixStyles.filter(id => INTERVALS[id]))].slice(0, 3);
   if (s.mixStyles.length < 2) s.mixStyles = ['emom', 'short', 'amrap'];
@@ -210,6 +215,19 @@ function cleanPrefs(p) {
   if (s.todayOther !== dayKey(Date.now())) s.todayOther = null;   // only lasts the day
   return s;
 }
+// A level in range for each person, by a name or a spot of sensible length.
+function cleanLevels(x) {
+  const plain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  const levels = {};
+  if (plain(x)) {
+    Object.keys(x).slice(0, 60).forEach(key => {
+      const v = x[key];
+      const k = plain(v) && typeof v.k === 'number' ? Math.round(v.k * 10) / 10 : NaN;
+      if (key && key.length <= 30 && key !== '__proto__' && k >= LEVEL_MIN && k <= LEVEL_MAX) levels[key] = { k, easy: v.easy === 1 ? 1 : 0 };
+    });
+  }
+  return levels;
+}
 // Saved with the prefs, so another tab can tell a save from this version
 // (or a later one) from one made by a tab still running an older FIT. Up
 // it whenever PERSISTED gains a key: an older tab's save leaves the key
@@ -223,8 +241,25 @@ function currentPrefs() {
   PERSISTED.forEach(k => { out[k] = state[k]; });
   return out;
 }
+// The levels are kept under a key of their own as well, which a tab on an
+// older release never writes. Its saves leave them out of the prefs, and a
+// tab of this release open then writes them back (below); with none open,
+// the next one to load takes them from here. Saved first, so a tab that
+// hears the prefs finds them already there.
+const LEVELS_KEY = 'fit-levels-1';
+const LEVELS_SCHEMA = 3;         // the first prefs with the levels in
+const hasLevels = (p) => p.schema >= LEVELS_SCHEMA && p.levels !== undefined;
+function storedLevels() {
+  try {
+    const x = JSON.parse(localStorage.getItem(LEVELS_KEY));
+    return x && typeof x === 'object' && !Array.isArray(x) ? cleanLevels(x) : null;
+  } catch (e) { return null; }
+}
 function savePrefs() {
   if (!prefsLoaded) return;
+  try {
+    localStorage.setItem(LEVELS_KEY, JSON.stringify(state.levels));
+  } catch (e) { /* as below */ }
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(currentPrefs()));
   } catch (e) { /* private mode / quota: preferences just won't stick */ }
@@ -242,23 +277,27 @@ function savePrefs() {
 // day done here isn't lost to it.
 //
 // A tab on the last release (schema 2) hears, so its lists are taken as
-// they are, sessions it finished and favourites it took out with them. It
-// doesn't know the levels and leaves them out: they stay as they are here,
-// and are saved straight back.
+// they are, sessions it finished and favourites it took out with them.
+//
+// Neither knows the levels, and both leave them out: they're taken from
+// their own key (LEVELS_KEY), or stay as they are here, and are saved
+// straight back.
 window.addEventListener('storage', (e) => {
   if (e.key !== PREFS_KEY || !e.newValue) return;
   let p, theirs;
   try { p = JSON.parse(e.newValue); theirs = cleanPrefs(p); } catch (err) { return; }
   if (!(p.schema >= HEARS_SCHEMA)) {
     mergeOlderSave(theirs);
-    savePrefs();
   } else {
     state.history = theirs.history;
     state.saved = theirs.saved;
     state.programs = theirs.programs;
-    // levels move on with the history, as a session finishes
-    if (p.levels !== undefined) state.levels = theirs.levels;
-    else savePrefs();
+  }
+  // levels move on with the history, as a session finishes
+  if (hasLevels(p)) state.levels = theirs.levels;
+  else {
+    state.levels = storedLevels() || state.levels;
+    savePrefs();
   }
   // redraw whatever lists them
   if (state.view === 'welcome') renderToday();

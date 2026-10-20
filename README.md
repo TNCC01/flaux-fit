@@ -219,7 +219,10 @@ rather than hardcoded.
   progress as they save, so neither writes over the other; a tab still on
   an older version has its stale copy merged in rather than taken, and one
   on the last release (which hears the others but has no levels) has its
-  lists taken, with this tab's levels kept and written back. On an
+  lists taken, with this tab's levels kept and written back. The levels
+  are kept under a key of their own as well, which no older release
+  writes, so the next tab to open still has them when the old tab saves
+  after this release's tab has closed. On an
   iPhone or iPad the home-screen app keeps its own storage, separate from
   Safari's, and the Add to Home Screen hint says so and says how to bring
   your data across
@@ -355,20 +358,24 @@ reloads once you leave the workout. Untapped, the new release takes over
 the next time FIT is closed and opened.
 
 So every release that changes a file the worker lists has to bump
-`VERSION` in `sw.js` and set `FILES_HASH` to the fingerprint of those
-files. `scripts/selfcheck.mjs` computes it and fails until they match,
-printing the new value ("app files changed: bump VERSION in sw.js and
-update the hash to …"), and fails where git can see `origin/main` with
-the files changed under the same `VERSION`. The hash is part of the
-cache's name, so even a forgotten bump can't install new files over the
-copy that's running.
+`VERSION` in `sw.js`, say the same at the top of `js/exercises.js`,
+`js/workouts.js`, `js/generator.js` and `js/app.js`, and set `FILES_HASH`
+to the fingerprint of those files. `scripts/selfcheck.mjs` computes it
+and fails until they all match, printing the new value ("app files
+changed: bump VERSION in sw.js and update the hash to …"), and fails
+where git can see `origin/main` with the files changed under the same
+`VERSION`. The hash is part of the cache's name, so even a forgotten
+bump can't install new files over the copy that's running.
 
-A page whose scripts fail while it loads (only possible without the
-worker: the very first visit, or a phone still on the network-first
-worker from before this) has the waiting release, or the first one still
-installing, take over at once, since a broken page has nothing to lose,
-and loads again from it. With nothing new waiting yet, it asks the
-browser to look for one first, and with none at all it loads again once.
+A page whose scripts fail while it loads, or come from more than one
+release (only possible without the worker: the very first visit, or a
+phone still on the network-first worker from before this, which hands
+over its old copy of a file that's slow to come; `js/app.js` fails when
+a script before it says another release), has the waiting release, or
+the first one still installing, take over at once, since a broken page
+has nothing to lose, and loads again from it. With nothing new waiting
+yet, it asks the browser to look for one first, and with none at all it
+loads again once.
 A genuine bug fails once and stays put rather than reloading forever.
 Nothing is saved until the stored settings have been read, so a page
 that broke on its way up can never write a new visitor's defaults over
@@ -376,7 +383,9 @@ everything kept. When `PERSISTED` gains a key, bump `PREFS_SCHEMA`, so a
 save from a tab still on the last release (which leaves the key out) can
 be told apart: its lists are taken (it hears the others' saves, so they're
 current), and what it leaves out (now the levels: the storage listener in
-`js/app.js` checks for them) is kept from this tab and written back.
+`js/app.js` checks for them) is kept from this tab and written back. With
+no tab of this release open to do that, the levels come from their own
+key (`LEVELS_KEY`, which older releases never write) at the next load.
 
 ## 3D movements
 
@@ -449,7 +458,8 @@ opening with the network switched off and at once with a six-second
 network, a new release waiting for its tap and never running beside the
 old one, a page whose scripts fail handing over to the release
 waiting, and the first open of a release through the last one's worker
-on a slow page losing nothing.
+losing nothing, on a slow page or with the last release's `workouts.js`
+beside this one's `app.js` (loading again once, whole).
 It fails on any console error.
 
 Both run on every pull request through GitHub Actions, along with the 3D
