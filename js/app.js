@@ -458,6 +458,10 @@ const PHASE_LABEL = {
   work: 'Work', rest: 'Rest', blockrest: 'Block rest',
   warmup: 'Warm-up', cooldown: 'Cool-down', stretch: 'Stretch'
 };
+// What Skip skips: one stretch of a stretch routine, all of the warm-up or
+// cool-down (one tap, as when it was one card), otherwise the block. The
+// hyphens don't break, so a phone's narrow button wraps "Skip / warm-up".
+const SKIP_LABEL = { stretch: 'Skip', warmup: 'Skip warm\u2011up', cooldown: 'Skip cool\u2011down' };
 const focusClassMap = {
   'whole-body': 'whole', 'upper-body': 'upper', 'lower-body': 'lower',
   'core': 'core', 'stretching': 'stretching'
@@ -488,16 +492,29 @@ function durationParts(w) {
   };
 }
 
+// What the warm-up and cool-down work around (see WARM-UP AND COOL-DOWN in
+// js/workouts.js): the gear here now, and the leave-outs the workout was
+// built with as well as today's.
+function bookendOpts(w) {
+  const both = (a, b) => [...new Set([...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])])];
+  return { hasEquip, blockedTags: both(state.blockedTags, w.request && w.request.blockedTags),
+           excluded: both(state.excluded, w.builtWith && w.builtWith.excluded) };
+}
+
 function buildSequence(workout, people) {
   const seq = [];
   const isDuo = people === 2;
   const pair = (ex) => isDuo ? { a: ex, b: ex } : { a: ex, b: null };
 
   if (workout.format === 'tabata') {
-    if (workout.warmupSec > 0) {
-      seq.push({ kind: 'warmup', duration: workout.warmupSec,
-                 name: `Warm-up: ${fmtMin(workout.warmupSec)}`, ...pair(warmupExercise) });
-    }
+    // the warm-up's moves, each its own phase, both people on the same one
+    const around = bookendOpts(workout);
+    const warm = warmupPlan(workout, around);
+    warm.forEach((m, i) => {
+      const ex = warmupCard(m.id, m.sec);
+      seq.push({ kind: 'warmup', duration: m.sec, warmIdx: i, totalWarm: warm.length,
+                 name: `Warm-up ${i + 1} of ${warm.length}: ${ex.name}`, ...pair(ex) });
+    });
     const total = workout.blocks.length;
     const secs = sectionsOf(workout);
     secs.forEach((sec, secIdx) => {
@@ -541,10 +558,12 @@ function buildSequence(workout, people) {
         }
       });
     });
-    if (workout.cooldownSec > 0) {
-      seq.push({ kind: 'cooldown', duration: workout.cooldownSec,
-                 name: `Cool-down: ${fmtMin(workout.cooldownSec)}`, ...pair(cooldownExercise) });
-    }
+    const cool = cooldownPlan(workout, around);
+    cool.forEach((m, i) => {
+      const ex = cooldownCard(m.id);
+      seq.push({ kind: 'cooldown', duration: m.sec, coolIdx: i, totalCool: cool.length,
+                 name: `Cool-down ${i + 1} of ${cool.length}: ${ex.name}`, ...pair(ex) });
+    });
   } else if (workout.format === 'stretch') {
     const list = stretchList(workout);
     list.forEach((s, idx) => {
@@ -692,11 +711,14 @@ function bigBell() {
 }
 const tickBeep = () => beep(700, 0.08, 0.3);
 
-function chimeFor(kind) {
+// The sound for arriving at a phase: the bell once the blocks are done, and
+// the soft chime for each new warm-up move and each stretch after that.
+function chimeFor(phase) {
+  const kind = phase && phase.kind;
   if (kind === 'work') workChime();
   else if (kind === 'rest') restChime();
-  else if (kind === 'blockrest' || kind === 'cooldown') bigBell();
-  else if (kind === 'stretch') stretchChime();
+  else if (kind === 'blockrest' || (kind === 'cooldown' && !phase.coolIdx)) bigBell();
+  else if (kind === 'stretch' || kind === 'warmup' || kind === 'cooldown') stretchChime();
 }
 
 // =====================================================================
@@ -1720,7 +1742,9 @@ function renderPreview() {
     stretchList(w).forEach((s, i) => add(`${i + 1}. ${s.name}`, `${s.hold}s hold`));
     return;
   }
-  add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupExercise.cue);
+  // the warm-up and cool-down by their moves, as the timer will run them
+  const fitAround = bookendOpts(w);
+  if (w.warmupSec > 0) add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupPlan(w, fitAround).map(m => warmupCard(m.id, m.sec).name).join(' · '));
   // two people at different levels: each one's reps ("Burpees (Wayne 9 reps, Dave 7 reps)")
   const duo = state.people === 2;
   const short = (which) => ((which === 'a' ? state.nameA : state.nameB) || '').trim() || which.toUpperCase();
@@ -1739,7 +1763,13 @@ function renderPreview() {
           `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.label}, ${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
     });
   });
-  add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownExercise.cue);
+  if (w.cooldownSec > 0) {
+    // the two sides of a stretch read as one here: "Low lunge, both sides"
+    const names = cooldownPlan(w, fitAround).map(m => cooldownCard(m.id).name)
+      .filter((n, i, all) => !(/, right$/.test(n) && all[i - 1] === n.replace(/right$/, 'left')))
+      .map(n => n.replace(/, left$/, ', both sides'));
+    add(`Cool-down: ${fmtMin(w.cooldownSec)}`, names.join(' · '));
+  }
 }
 
 const fmt = (s) => {
@@ -2050,6 +2080,8 @@ function renderRoundDots(phase) {
       els.roundDots.appendChild(how);
     }
   } else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind, 'Stretch');
+  else if (phase.totalWarm) renderSegBar(phase.warmIdx + 1, phase.totalWarm, phase.kind, 'Move');
+  else if (phase.totalCool) renderSegBar(phase.coolIdx + 1, phase.totalCool, phase.kind, 'Stretch');
   else if (phase.totalBlocks) {
     const label = document.createElement('div');
     label.className = 'round-count';
@@ -2152,7 +2184,7 @@ function render() {
   // write them when they do, not five times a second
   setText(els.phaseLabel, label);
   setText(els.blockName, phase.name);
-  setText(els.btnSkip, phase.kind === 'stretch' ? 'Skip' : 'Skip block');
+  setText(els.btnSkip, SKIP_LABEL[phase.kind] || 'Skip block');
   els.overallProgress.style.width =
     `${Math.min(100, (state.elapsedTotal / state.totalDuration) * 100)}%`;
 
@@ -2229,7 +2261,11 @@ function renderUpcoming() {
   else if (next.forTime) preview = `For time, ${next.a.lapRounds} rounds: ${next.a.circuit.map(x => x.name).join(', ')}`;
   else if (next.kind === 'work') preview = work(next);
   else if (next.kind === 'stretch') preview = next.a.name;
-  else preview = next.name;
+  // the next warm-up move or stretch by name; the first stretch says it's the cool-down
+  else if (next.kind === 'warmup' || next.kind === 'cooldown') {
+    const cur = state.sequence[state.currentIdx];
+    preview = cur && cur.kind === next.kind ? next.a.name : `${PHASE_LABEL[next.kind]}: ${next.a.name}`;
+  } else preview = next.name;
   const c = PHASE_COLOR[next.kind];
   const swatch = c ? `background:${c.hex};box-shadow:0 0 8px 1px rgba(${c.rgb},0.7)` : '';
   els.upcoming.innerHTML =
@@ -2297,9 +2333,9 @@ function tickClock() {
     state.lastBeep = null;
     const kind = state.sequence[idx].kind;
     enterPhaseVisual(kind, remaining);
-    chimeFor(kind);
+    chimeFor(state.sequence[idx]);
     // the how-to sheet covers the timer: get it out of the way to go again
-    if (kind === 'work' || kind === 'stretch') closeMove();
+    if (kind === 'work' || kind === 'stretch' || kind === 'warmup') closeMove();
   }
   state.remainingInPhase = remaining;
 
@@ -2584,7 +2620,9 @@ function skipBlock() {
   if (what !== undefined && !state.skipped.includes(what)) state.skipped.push(what);
   const from = Math.min(elapsedNow(), state.totalDuration);
   let target = state.currentIdx + 1;
-  if (cur.kind !== 'stretch') {
+  if (cur.kind === 'warmup' || cur.kind === 'cooldown') {
+    while (target < state.sequence.length && state.sequence[target].kind === cur.kind) target++;
+  } else if (cur.kind !== 'stretch') {
     // Walk to the first phase that isn't part of this block.
     while (target < state.sequence.length) {
       const t = state.sequence[target];
@@ -2602,7 +2640,7 @@ function skipBlock() {
   hideAway();
   seekTo(target);
   enterPhaseVisual(state.sequence[target].kind, state.remainingInPhase);
-  chimeFor(state.sequence[target].kind);
+  chimeFor(state.sequence[target]);
   if (state.running) beginBleed(state.remainingInPhase);
   render();
   saveRun();

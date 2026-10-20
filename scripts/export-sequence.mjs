@@ -35,7 +35,8 @@ function loadApp() {
 const A = loadApp();
 const { EQUIPMENT, INTERVALS, DEFAULT_EQUIPMENT, DEFAULT_INTERVAL, CLASSICS,
         STRETCH_ROUTINES, REGIONS, CHANGEOVER_SEC, stretchList, generateWorkout,
-        classicBookends, sectionInterval, amrapCircuits, forTimeRounds } = A;
+        classicBookends, sectionInterval, amrapCircuits, forTimeRounds,
+        warmupPlan, cooldownPlan, warmupCard, cooldownCard } = A;
 
 const die = (msg) => { console.error(msg); process.exit(1); };
 
@@ -126,7 +127,13 @@ const sections = workout.sections || (workout.format === 'tabata'
   : []);
 
 if (workout.format === 'tabata') {
-  if (workout.warmupSec > 0) push('warmup', workout.warmupSec, 'Warm-up', 'Easy movement');
+  // the warm-up's moves and the cool-down's stretches, one step each, for
+  // the gear on hand and the leave-outs it was built with
+  const around = { hasEquip, blockedTags: (workout.request && workout.request.blockedTags) || [] };
+  warmupPlan(workout, around).forEach(m => {
+    const ex = warmupCard(m.id, m.sec);
+    push('warmup', m.sec, ex.name, ex.cue);
+  });
   sections.forEach((sec, si) => {
     const iv = sectionInterval(sec, workout.workRest);
     const ctx = { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps,
@@ -170,7 +177,10 @@ if (workout.format === 'tabata') {
       }
     });
   });
-  if (workout.cooldownSec > 0) push('cooldown', workout.cooldownSec, 'Cool-down', 'Walk and stretch');
+  cooldownPlan(workout, around).forEach(m => {
+    const ex = cooldownCard(m.id);
+    push('cooldown', m.sec, ex.name, ex.cue);
+  });
 } else {
   stretchList(workout).forEach(s => push('stretch', s.hold, s.name, s.alt));
 }

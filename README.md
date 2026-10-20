@@ -126,7 +126,7 @@ defined in `PROGRAMS` in `js/workouts.js`.
 
 **Mix** runs two or three of these styles back to back in one session,
 in the order you tap them, and still fits the minutes you picked exactly,
-warm-up and cool-down included (one of each). Short bursts and long efforts
+warm-up and cool-down included (one of each, at the start and the end). Short bursts and long efforts
 keep their four-minute blocks; EMOM, AMRAP and For Time stretch or shrink in
 whole minutes to take up the rest, any spare minute going to the EMOM, and
 leftover seconds go on the cool-down. A 30-minute EMOM, short bursts and
@@ -187,6 +187,21 @@ rather than hardcoded.
   lumps, so the cool-down takes up any time they leave short, and when
   they run over (15 and 40 minutes) the bookends give it back, so every
   length runs to the minute: 20 minutes runs 20:00
+- A guided warm-up of real moves, each with its figure, about 30 to 45
+  seconds apiece ("Warm-up 2 of 5: Lateral lunges"): something easy to get
+  the blood moving, the hips, the upper back turning, the shoulders, then a
+  light go at the session's first move. A surf session warms up with
+  shoulder prep, open-book rotations and a slow pop-up. Nothing jumps or
+  runs, it keeps to the gear and leave-outs (No floor work keeps it
+  standing), and two people do each move together. The cool-down is
+  stretches for what was worked, standing first, both sides of a stretch
+  back to back. Skip skips the whole warm-up or cool-down in one tap. Both
+  are worked out from the session (WARM-UP AND COOL-DOWN in
+  `js/workouts.js`), never from the generator's random numbers, so saved
+  favourites and shared links rebuild the same main blocks as before; the
+  self-check compares a sample of seeds against origin/main
+- A line on the first-visit screen: check with your doctor if you have an
+  injury or health condition, and stop if anything hurts
 - Injury alternative for every movement
 - Adjustable exercise text size, for reading across a room
 - Workout history, so a generated session you liked but forgot to save is

@@ -114,6 +114,10 @@ try {
   step = 'first visit asks who is training and what gear you have';
   assert(await activeView() === 'gearView', 'a first visit opens on the gear question');
   assert((await p.$eval('#gearView', e => e.textContent)).includes('builds a timed workout'), 'the first screen says what FIT is');
+  const health = await p.$eval('#healthNote', e => e.offsetParent !== null && e.textContent);
+  assert(health === 'Check with your doctor before starting if you have an injury or health condition, and stop if anything hurts.',
+         'one plain line on health, on the screen: ' + health);
+  assert(!(await p.$('#gearView input[type="checkbox"]')) && !(await p.$('#gearView dialog')), 'nothing to tick or dismiss for it');
   assert((await p.$eval('#onboardPeople .chip.active', e => e.textContent)) === 'Just me', 'one person to start');
   assert(await p.$$eval('#onboardGear .chip.active', els => els.length) === 0, 'nothing ticked to start');
   assert((await p.$eval('#btnGearDone', e => e.textContent)) === 'Just bodyweight for now', 'no gear reads as bodyweight');
@@ -132,7 +136,7 @@ try {
          'the answer is saved as the Home gear set, with the bells ticked and two people');
   await p.goto(URL);
   assert(await activeView() === 'welcomeView', 'and not asked again');
-  ok('first visit: who and what gear, weights included, saved as Home, asked once');
+  ok('first visit: who and what gear, weights included, a line on health, saved as Home, asked once');
 
   step = 'a newcomer on a phone: one person, their own bell, Start on the first screen';
   {
@@ -285,6 +289,77 @@ try {
   }
   await p.click('#todayCard .time-chips .chip:text-is("20 min")');
   ok('welcome: the Today card, Programs and Saved & ready-made; no footer, no iOS install hint on desktop; 15 and 40 min run 15:00 and 40:00');
+
+  step = 'the warm-up is real moves with figures, and the cool-down stretches for what was worked';
+  {
+    await p.click('#todayCard .today-go');
+    const bk = await st(() => {
+      const w = state.workout, seq = state.sequence;
+      const warm = seq.filter(x => x.kind === 'warmup'), cool = seq.filter(x => x.kind === 'cooldown');
+      const firstWork = seq.findIndex(x => x.kind === 'work');
+      return {
+        warmSec: w.warmupSec, coolSec: w.cooldownSec, warm: warm.map(x => ({ name: x.name, d: x.duration, a: x.a.id, b: x.b && x.b.id, img: x.a.img })),
+        cool: cool.map(x => ({ name: x.name, d: x.duration, img: x.a.img })), firstWork, lastIsCool: seq[seq.length - 1].kind === 'cooldown',
+        total: state.totalDuration, minutes: state.minutes,
+        impact: warm.filter(x => EXERCISES[x.a.id].tags.some(t => t === 'impact' || t === 'running')).map(x => x.a.id),
+        lead: EXERCISES[w.blocks[0].ids[0]].pattern
+      };
+    });
+    const sum = (xs) => xs.reduce((t, x) => t + x.d, 0);
+    assert(bk.warm.length >= 2 && bk.firstWork === bk.warm.length, `the session opens on ${bk.warm.length} warm-up moves, then block 1`);
+    assert(bk.warm.every((x, i) => new RegExp(`^Warm-up ${i + 1} of ${bk.warm.length}: \\S`).test(x.name) && x.img), 'each named "Warm-up 2 of 5: …", with a figure: ' + bk.warm.map(x => x.name).join(' | '));
+    assert(bk.warm.every(x => x.a && x.a === x.b), 'both people on the same warm-up move at the same time');
+    assert(sum(bk.warm) === bk.warmSec && sum(bk.cool) === bk.coolSec && bk.total === bk.minutes * 60, `the moves fill the warm-up (${sum(bk.warm)}/${bk.warmSec}s) and cool-down (${sum(bk.cool)}/${bk.coolSec}s), and it still runs ${bk.minutes}:00`);
+    assert(bk.warm.every(x => x.d >= 25 && x.d <= 60), 'about 30 to 45 seconds a move: ' + bk.warm.map(x => x.d).join(','));
+    assert(!bk.impact.length, 'nothing in the warm-up jumps or runs: ' + bk.impact.join(','));
+    assert(await st((last) => WARMUP_REHEARSAL[EXERCISES[state.workout.blocks[0].ids[0]].pattern].includes(last), bk.warm[bk.warm.length - 1].a),
+           `it ends on a light go at block 1's ${bk.lead}: ${bk.warm.map(x => x.a).join(',')}`);
+    assert(bk.lastIsCool && bk.cool.length >= 2 && bk.cool.every((x, i) => new RegExp(`^Cool-down ${i + 1} of ${bk.cool.length}: \\S`).test(x.name)), 'and ends on named stretches: ' + bk.cool.map(x => x.name).join(' | '));
+    // on screen: the move, its figure for each person, the count, and the next move by name
+    assert(await p.$eval('#blockName', e => e.textContent) === bk.warm[0].name && await p.$eval('#phaseLabel', e => e.textContent) === 'Warm-up', 'the timer shows the first move like any phase');
+    assert(await p.$eval('#roundDots', e => /Move 1 of \d/.test(e.textContent)), 'with a count of the moves');
+    await figureDrawn('#animA'); await figureDrawn('#animB');
+    assert(await st(() => document.getElementById('animA').dataset.move === state.sequence[0].a.id && document.getElementById('animB').dataset.move === state.sequence[0].a.id), 'both cards play its figure');
+    const up = await p.$eval('#upcoming strong', e => e.textContent);
+    assert(up === bk.warm[1].name.replace(/^Warm-up \d+ of \d+: /, ''), 'Up next names the next warm-up move: ' + up);
+    assert(await p.$eval('#btnSkip', e => e.textContent.replace(/\u2011/g, '-')) === 'Skip warm-up', 'Skip says it skips the warm-up');
+    const prev = await previewText();
+    assert(bk.warm.every(x => prev.includes(x.name.replace(/^Warm-up \d+ of \d+: /, ''))), 'the preview lists the warm-up moves: ' + prev);
+    assert(bk.cool.every(x => prev.includes(x.name.replace(/^Cool-down \d+ of \d+: /, '').replace(/, (left|right)$/, ''))) && !/, right/.test(prev),
+           'and the stretches, a stretch\'s two sides as one');
+    await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'cooldown') - 1); render(); });
+    assert(await p.$eval('#upcoming strong', e => e.textContent) === bk.cool[0].name.replace(/^Cool-down \d+ of \d+: /, 'Cool-down: '), 'from the last block, Up next says the cool-down is next');
+    await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'cooldown')); render(); });
+    assert(await p.$eval('#btnSkip', e => e.textContent.replace(/\u2011/g, '-')) === 'Skip cool-down' && await p.$eval('#roundDots', e => /Stretch 1 of \d/.test(e.textContent)), 'a stretch says Skip cool-down, with a count');
+    // the bell once the blocks are done, then the soft chime for each stretch, and between warm-up moves
+    const chimes = await st(() => {
+      // each sound by its first note: the soft chime 660 Hz for 0.4s, the bell 660 for 0.25, work 880
+      const heard = [], keep = beep, sound = { '660/0.4': 'soft', '660/0.25': 'bell', '880/0.12': 'work' };
+      const seq = state.sequence, c = seq.findIndex(x => x.kind === 'cooldown');
+      [seq[1], seq[c], seq[c + 1], seq.find(x => x.kind === 'work')].forEach(p => {
+        beep = (f, d) => { heard.push(sound[`${f}/${d}`] || `${f}/${d}`); beep = () => {}; };
+        chimeFor(p);
+      });
+      beep = keep;
+      return heard.join(',');
+    });
+    assert(chimes === 'soft,bell,soft,work', 'the bell rings once for the cool-down, the soft chime marks each move: ' + chimes);
+    // the same session works around No floor work, today's or the one it was built with
+    const noFloor = await st(() => {
+      const keep = state.blockedTags;
+      state.blockedTags = ['floor'];
+      const seq = buildSequence(state.workout, 2);
+      state.blockedTags = keep;
+      return { floor: seq.filter(x => x.kind === 'warmup' && EXERCISES[x.a.id].tags.includes('floor')).map(x => x.a.id),
+               lying: seq.filter(x => x.kind === 'cooldown' && !STRETCHES.some(s => s.pos === 'stand' && x.a.name === s.name)).map(x => x.a.name),
+               len: seq.length, same: seq.length === state.sequence.length && seq.every((x, i) => x.duration === state.sequence[i].duration) };
+    });
+    assert(!noFloor.floor.length && !noFloor.lying.length, `with No floor work, a standing warm-up and standing stretches (${noFloor.floor.join(',')} ${noFloor.lying.join(',')})`);
+    assert(noFloor.same, 'and the same timeline, so a session picked up after a reload still lines up');
+    await p.click('#btnBack');
+    assert(await activeView() === 'welcomeView', 'not started, so one tap goes home');
+  }
+  ok('the warm-up: named moves with figures for both people, filling its time exactly, Up next and Skip say so; stretches to finish; No floor work kept to standing');
 
   step = 'quick build, long efforts, save, start';
   await pickInterval('Long efforts');
@@ -467,6 +542,8 @@ try {
   assert(await p.$(card('Sunrise Stretch')) && !(await p.$(`${card('Sunrise Stretch')} .card-style`)), 'a stretch routine has no style to show');
   await p.click(card('Power Hour'));
   assert(await rounds() === 4, 'classic takes the long preference');
+  assert(await p.$eval('#btnSkip', e => e.textContent.replace(/\u2011/g, '-')) === 'Skip warm-up' && await st(() => state.sequence.filter(x => x.kind === 'warmup').length > 1),
+         'a classic gets the guided warm-up too, skipped in one tap');
   await p.click('#btnStart'); await p.click('#btnSkip');       // into block 1
   assert(await p.$eval('#blockName', e => /Block 1 of/.test(e.textContent)), 'skip jumped to block 1');
   const before = await st(() => elapsedNow());
@@ -1424,13 +1501,18 @@ try {
   assert(await st(() => state.workout.exerciseIds.every(id => (EXERCISES[id].surf || []).length)), 'every exercise trains something for surfing');
   assert(await st(() => state.workout.exerciseIds.some(id => EXERCISES[id].surf.includes('popup'))), 'pop-up work is in');
   assert(await st(() => state.workout.name.startsWith('Surf fitness')), 'named for it');
+  const surfWarm = await st(() => state.sequence.filter(x => x.kind === 'warmup').map(x => ({ id: x.a.id, name: x.name, img: x.a.img })));
+  assert(surfWarm.some(x => x.id === 'popUp') && surfWarm[surfWarm.length - 1].id === 'popUp', 'the warm-up ends on a slow pop-up: ' + surfWarm.map(x => x.name).join(' | '));
+  assert(await st((ws) => ws.some(x => (EXERCISES[x.id].surf || []).includes('shoulders')), surfWarm), 'with shoulder prep before it');
+  assert(surfWarm.length < 3 || surfWarm.some(x => x.id === 'thoracicRotation'), 'and the upper back turning');
+  assert(surfWarm.every(x => x.img), 'each with its figure');
   await p.click('#btnBack');
   assert((await p.$eval('#todayCard .today-style', e => e.textContent)).includes('Short bursts · Surf fitness'), 'the home card says the goal');
   await p.click('#pathBuild');
   await p.click('#goalPicker .chip:has-text("General fitness")');
   assert(await p.$eval('#rowRegions', e => e.style.display !== 'none'), 'target areas come back');
   await p.click('#btnBuild');
-  ok(`Surf fitness: ${surfIds.length} surf exercises, pop-ups included; target areas return for general fitness`);
+  ok(`Surf fitness: ${surfIds.length} surf exercises, pop-ups included, a warm-up of shoulder prep and a slow pop-up; target areas return for general fitness`);
 
   step = 'Programs: Surf Fit day by day';
   await p.click('#btnBack');

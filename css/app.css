@@ -1120,4 +1120,5 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .gear-ask .picker-label { margin-bottom: 0; }
 #onboardWeights:empty { display: none; }
 .gear-intro { color: var(--muted); font-size: 1.02rem; line-height: 1.45; margin: 0; }
+.health-note { color: var(--muted); font-size: 0.95rem; line-height: 1.45; margin: 0; }
 #onboardGear .chip { font-size: 1.05rem; padding: 0.75rem 1.05rem; }

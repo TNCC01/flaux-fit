@@ -710,6 +710,222 @@ function stretchList(routine) {
 }
 
 // ---------------------------------------------------------------------
+// WARM-UP AND COOL-DOWN
+// The warm-up is a few real moves with figures, filling exactly the
+// seconds the plan gives it (as little as a minute on a short session):
+// something easy to get the blood moving, the hips, the upper back
+// turning, the shoulders, then a light go at the session's first move. A
+// surf session always gets shoulder prep and a slow pop-up, the pop-up
+// last. The cool-down is stretches for what was worked, standing ones
+// first.
+//
+// Both are worked out from the session itself (its blocks, its goal, the
+// gear and the leave-outs), never from the generator's random numbers, so
+// a favourite or a link builds the same main blocks it always did, and the
+// same warm-up with them. Nothing jumps or runs. Two people do each move
+// together, so nothing needs gear there's only one of (bands come as a
+// set). How many moves there are depends only on the seconds, so a
+// session picked up after a reload lines up with the one that was saved.
+// ---------------------------------------------------------------------
+// The warm-up's own cue for each move it uses: easy, not a work set.
+const WARMUP_CUES = {
+  squatReach: 'Easy pace, reach long and get the blood moving',
+  airSquat: 'Slow and easy, a little deeper each time',
+  reverseLunge: 'Easy steps back, alternate legs',
+  inchworm: 'Walk the hands out slowly, no push-up',
+  lateralLunge: 'Shallow to start, a little lower each side',
+  goodMorning: 'Soft knees, hinge back and feel the hamstrings',
+  deepSquatHold: 'Sit low and rock gently side to side',
+  calfRaises: 'Easy, up onto the toes and down',
+  thoracicRotation: 'Slow, follow the top hand with your eyes',
+  bandPullApart: 'Light band, slow and controlled',
+  bandExternalRotation: 'Light band, elbow pinned, rotate out slowly',
+  supermanYtw: 'Light and slow, squeeze the shoulder blades',
+  scapPushup: 'Small movement, just the shoulder blades',
+  proneSwimmer: 'Slow sweeps, thumbs up',
+  pushup: 'A few easy reps, knees down is fine',
+  bandRow: 'Light band, squeeze the shoulder blades',
+  supermanPull: 'Slow sweeps, chest just off the floor',
+  bandOverheadPress: 'Light band, easy presses',
+  birdDog: 'Slow, reach long, no wobble',
+  deadBug: 'Slow, ribs down',
+  popUp: 'Slow and smooth: hands under the chest, up to your stance',
+  surfStanceHold: 'Easy, shift from foot to foot'
+};
+// What each part of the warm-up can be, best first.
+const WARMUP_SLOTS = {
+  pulse: ['squatReach', 'airSquat'],
+  pulse2: ['inchworm', 'reverseLunge', 'airSquat'],
+  hips: ['lateralLunge', 'deepSquatHold', 'goodMorning'],
+  hips2: ['goodMorning', 'deepSquatHold', 'reverseLunge'],
+  thoracic: ['thoracicRotation'],
+  shoulders: ['bandPullApart', 'supermanYtw', 'scapPushup'],
+  shoulders2: ['scapPushup', 'proneSwimmer', 'bandPullApart'],
+  popup: ['popUp', 'surfStanceHold']
+};
+// a surfer's shoulders get the rotator cuff first
+const WARMUP_SURF_SLOTS = { ...WARMUP_SLOTS, shoulders: ['bandExternalRotation', 'supermanYtw', 'scapPushup'] };
+// A light go at a block's movement pattern, by the pattern of its first move.
+const WARMUP_REHEARSAL = {
+  squat: ['airSquat'], hinge: ['goodMorning'], lunge: ['reverseLunge'],
+  pushH: ['pushup', 'scapPushup'], pushV: ['bandOverheadPress', 'scapPushup'],
+  pullH: ['bandRow', 'supermanPull'], pullV: ['bandRow', 'supermanPull'],
+  coreAnti: ['birdDog', 'deadBug'], coreFlex: ['deadBug', 'birdDog'], coreRot: ['thoracicRotation', 'birdDog'],
+  coreLat: ['birdDog'], crawl: ['inchworm', 'birdDog'], carry: ['goodMorning'], cardio: ['inchworm', 'squatReach']
+};
+// When a part has nothing left that fits: standing, no gear.
+const WARMUP_FALLBACK = ['squatReach', 'airSquat', 'goodMorning', 'reverseLunge', 'lateralLunge', 'calfRaises', 'deepSquatHold'];
+// The order the parts run in, each with its rank: the fewer moves there's
+// time for, the more of the low-ranked ones are dropped.
+const WARMUP_ORDER = {
+  general: [['pulse', 1], ['pulse2', 6], ['hips', 3], ['hips2', 7], ['thoracic', 5], ['shoulders', 4], ['rehearse', 2], ['rehearse2', 8]],
+  surf: [['pulse', 4], ['pulse2', 8], ['hips', 5], ['thoracic', 3], ['shoulders', 1], ['shoulders2', 6], ['rehearse', 7], ['popup', 2]]
+};
+// The cool-down's stretches for each area, best first; a pair is the two
+// sides of one, which run back to back.
+const COOLDOWN_STRETCHES = {
+  legs: [['forwardFold'], ['quadKneel'], ['hamstringL', 'hamstringR'], ['calfWall'], ['seatedFold']],
+  hips: [['lowLungeL', 'lowLungeR'], ['pigeonL', 'pigeonR'], ['hip9090L', 'hip9090R'], ['frog'], ['happyBaby']],
+  shoulders: [['chestOpener'], ['threadNeedleL', 'threadNeedleR'], ['tricepReach'], ['neckRolls'], ['wristCircles']],
+  back: [['childsPose'], ['spinalTwistL', 'spinalTwistR'], ['cobra'], ['catCow']]
+};
+// How much each body region worked asks of each area.
+const COOLDOWN_AREAS = {
+  legs: { legs: 2, hips: 1 }, push: { shoulders: 2 }, pull: { shoulders: 1, back: 1 },
+  core: { back: 2, hips: 1 }, cardio: { legs: 1, hips: 1 }
+};
+// the cool-down's cue for the ones that aren't a hold
+const COOLDOWN_CUES = {
+  savasana: 'Lie back, slow deep breaths', catCow: 'Slow, with the breath',
+  neckRolls: 'Slow circles, both ways', wristCircles: 'Circle both ways, then shake them out'
+};
+const MOVE_SEC = 45;            // about how long each warm-up move or stretch runs
+
+// How many moves fit: about 45 seconds each, so a minute is two.
+const bookendCount = (sec, most) => Math.min(most, Math.max(1, Math.ceil(sec / MOVE_SEC)));
+// `total` seconds in `n` parts, in steps of five where it can, adding up
+// exactly; any longer ones come first.
+function splitSeconds(total, n) {
+  const base = Math.floor(total / n / 5) * 5 || Math.floor(total / n);
+  const out = Array(n).fill(base);
+  let left = total - base * n;
+  for (let i = 0; left > 0; i = (i + 1) % n) {
+    const add = Math.min(5, left);
+    out[i] += add;
+    left -= add;
+  }
+  return out;
+}
+// What a warm-up move may be: on hand, not left out, nothing that jumps or
+// runs, and nothing there's only one of. opts = { hasEquip, blockedTags,
+// excluded }.
+function bookendFits(opts) {
+  const has = (opts && opts.hasEquip) || (() => true);
+  const blocked = new Set((opts && opts.blockedTags) || []);
+  const excluded = new Set((opts && opts.excluded) || []);
+  return (id) => {
+    const ex = EXERCISES[id];
+    return !!ex && !excluded.has(id) && !ex.tags.some(t => t === 'impact' || t === 'running' || blocked.has(t))
+      && ex.equipment.every(e => !SINGLE_INSTANCE.includes(e) && has(e));
+  };
+}
+// The warm-up for a workout: [{ id, sec }] in the order they run, where id
+// is null for a part nothing fits (it shows the plain card).
+function warmupPlan(w, opts) {
+  const sec = (w && w.warmupSec) || 0;
+  if (!(sec > 0) || !Array.isArray(w.blocks)) return [];
+  const fits = bookendFits(opts);
+  const surf = !!(w.request && w.request.goal === 'surf');
+  const slots = surf ? WARMUP_SURF_SLOTS : WARMUP_SLOTS;
+  const order = WARMUP_ORDER[surf ? 'surf' : 'general'];
+  const n = bookendCount(sec, order.length);
+  const patternOf = (b) => b && b.ids && EXERCISES[b.ids[0]] ? EXERCISES[b.ids[0]].pattern : null;
+  const rehearse = (b) => WARMUP_REHEARSAL[patternOf(b)] || [];
+  const candidates = (slot) => slot === 'rehearse' ? rehearse(w.blocks[0])
+    : slot === 'rehearse2' ? rehearse(w.blocks[1] || w.blocks[0]) : slots[slot];
+  // the most important parts choose first, so they get the best moves
+  const picked = new Map(), taken = new Set();
+  order.slice().sort((a, b) => a[1] - b[1]).slice(0, n).forEach(([slot]) => {
+    const id = [...candidates(slot), ...WARMUP_FALLBACK]
+      .find(x => fits(x) && ![...taken].some(t => EXERCISES[t].img === EXERCISES[x].img)) || null;
+    if (id) taken.add(id);
+    picked.set(slot, id);
+  });
+  const shown = order.filter(([slot]) => picked.has(slot));
+  const secs = splitSeconds(sec, shown.length);
+  return shown.map(([slot], i) => ({ id: picked.get(slot), sec: secs[i] }));
+}
+// The cool-down for a workout: [{ id, sec }] in the order they run, one
+// stretch each, the two sides of one stretch back to back (and id null for
+// a part nothing fits, which shows the plain card). Stretches for the areas
+// the blocks worked hardest come up most, standing ones only with No floor
+// work, and a long cool-down ends on deep breathing.
+function cooldownPlan(w, opts) {
+  const sec = (w && w.cooldownSec) || 0;
+  if (!(sec > 0) || !Array.isArray(w.blocks)) return [];
+  const floorOk = !((opts && opts.blockedTags) || []).includes('floor');
+  const byId = (id) => STRETCHES.find(s => s.id === id);
+  const usable = (u) => u.every(id => byId(id) && (floorOk || byId(id).pos === 'stand'));
+  const areas = Object.keys(COOLDOWN_STRETCHES);
+  const score = Object.fromEntries(areas.map(a => [a, 0]));
+  w.blocks.forEach(b => (b.ids || []).forEach(id => {
+    const ex = EXERCISES[id];
+    if (ex) ex.regions.forEach((r, i) => Object.entries(COOLDOWN_AREAS[r] || {}).forEach(([a, k]) => { score[a] += k * (i ? 1 : 2); }));
+  }));
+  const slots = bookendCount(sec, 10);
+  const closer = floorOk && slots >= 6 ? ['savasana'] : null;
+  let left = slots - (closer ? 1 : 0);
+  // each pick goes to the area with the most worked per stretch it already
+  // has, so a leg day gets mostly leg and hip stretches
+  const chosen = [], taken = Object.fromEntries(areas.map(a => [a, 0]));
+  while (left > 0) {
+    let best = null;
+    for (const a of areas) {
+      const u = COOLDOWN_STRETCHES[a].find(x => !chosen.includes(x) && usable(x) && x.length <= left);
+      const pull = (score[a] + 0.1) / (taken[a] + 1);
+      if (u && (!best || pull > best.pull)) best = { a, u, pull };
+    }
+    if (!best) break;
+    chosen.push(best.u);
+    taken[best.a]++;
+    left -= best.u.length;
+  }
+  const rank = { stand: 0, kneel: 1, floor: 2 };
+  const run = chosen.map((u, i) => ({ u, i })).sort((x, y) => rank[byId(x.u[0]).pos] - rank[byId(y.u[0]).pos] || x.i - y.i)
+    .flatMap(x => x.u);
+  // nothing left that fits: the plain card, so there are always as many
+  // parts as the seconds call for
+  while (run.length < slots - (closer ? 1 : 0)) run.push(null);
+  if (closer) run.push(...closer);
+  const secs = splitSeconds(sec, slots);
+  // the two sides of a stretch get the same time, give or take a second
+  run.forEach((id, i) => {
+    const s = id && byId(id);
+    if (s && /, left$/.test(s.name) && run[i + 1]) {
+      const both = secs[i] + secs[i + 1];
+      secs[i] = Math.ceil(both / 2);
+      secs[i + 1] = both - secs[i];
+    }
+  });
+  return run.map((id, i) => ({ id, sec: secs[i] }));
+}
+// What a warm-up move's card shows: the move and its figure, with the
+// warm-up's easy cue, and a halfway swap for a one-sided move.
+function warmupCard(id, sec) {
+  const ex = id && EXERCISES[id];
+  if (!ex) return { ...warmupExercise, display: warmupExercise.name, reps: '' };
+  let cue = WARMUP_CUES[id] || ex.cue || '';
+  if (ex.sideCue) cue = `${cue} · swap sides at ${Math.round(sec / 2)}s`;
+  return { id, name: ex.name, display: ex.name, load: '', cue, reps: '', alt: ex.alt || '', img: ex.img || null };
+}
+// And a cool-down stretch's: a hold, with no figure.
+function cooldownCard(id) {
+  const s = id && STRETCHES.find(x => x.id === id);
+  if (!s) return { ...cooldownExercise, display: cooldownExercise.name, reps: '' };
+  return { name: s.name, display: s.name, cue: COOLDOWN_CUES[id] || 'Ease in and breathe slowly', reps: '', alt: s.alt || '', img: null };
+}
+
+// ---------------------------------------------------------------------
 // PROGRAMS
 // A program is a run of daily sessions planned ahead: a week of day
 // templates repeated, with the rep targets building over the weeks. Each

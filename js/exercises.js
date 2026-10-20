@@ -346,39 +346,45 @@ const EXERCISES = {
 };
 
 // ---------------------------------------------------------------------
-// STRETCH LIBRARY: used by the mobility flows
+// STRETCH LIBRARY: used by the mobility flows and the cool-down
+//   area  what it stretches: back, hips, shoulders or legs
+//   pos   how you're placed: 'stand', 'kneel' (kneeling or on all fours)
+//         or 'floor' (sitting or lying). Only standing ones are left with
+//         No floor work, and a cool-down goes standing, kneeling, floor
 // ---------------------------------------------------------------------
 const STRETCHES = [
-  { id: 'forwardFold',   name: 'Standing forward fold',  alt: 'Seated forward fold',        area: 'back' },
-  { id: 'downDog',       name: 'Downward dog',           alt: 'Hands on a bench, hips back', area: 'back' },
-  { id: 'lowLungeL',     name: 'Low lunge, left',       alt: 'Half-kneeling, hands on shin', area: 'hips' },
-  { id: 'lowLungeR',     name: 'Low lunge, right',      alt: 'Half-kneeling, hands on shin', area: 'hips' },
-  { id: 'pigeonL',       name: 'Pigeon, left',          alt: 'Figure-4 on the ground',      area: 'hips' },
-  { id: 'pigeonR',       name: 'Pigeon, right',         alt: 'Figure-4 on the ground',      area: 'hips' },
-  { id: 'childsPose',    name: "Child's pose",           alt: '',                            area: 'back' },
-  { id: 'cobra',         name: 'Cobra / upward dog',     alt: 'Sphinx on the forearms',      area: 'back' },
-  { id: 'catCow',        name: 'Cat-cow flow',           alt: '',                            area: 'back' },
-  { id: 'neckRolls',     name: 'Neck & shoulder rolls',  alt: '',                            area: 'shoulders' },
-  { id: 'chestOpener',   name: 'Standing chest opener',  alt: 'Doorway pec stretch',         area: 'shoulders' },
-  { id: 'threadNeedleL', name: 'Thread the needle, left',  alt: '',                         area: 'shoulders' },
-  { id: 'threadNeedleR', name: 'Thread the needle, right', alt: '',                         area: 'shoulders' },
-  { id: 'seatedFold',    name: 'Seated forward fold',    alt: '',                            area: 'legs' },
-  { id: 'spinalTwistL',  name: 'Supine spinal twist, left',  alt: '',                       area: 'back' },
-  { id: 'spinalTwistR',  name: 'Supine spinal twist, right', alt: '',                       area: 'back' },
-  { id: 'hip9090L',      name: '90/90 hip, left',       alt: '',                            area: 'hips' },
-  { id: 'hip9090R',      name: '90/90 hip, right',      alt: '',                            area: 'hips' },
-  { id: 'frog',          name: 'Frog stretch',           alt: "Wide-knee child's pose",      area: 'hips' },
-  { id: 'bridgeHold',    name: 'Glute bridge hold',      alt: '',                            area: 'hips' },
-  { id: 'happyBaby',     name: 'Happy baby',             alt: 'Knees-to-chest rocks',        area: 'hips' },
-  { id: 'savasana',      name: 'Savasana / deep breathing', alt: '',                         area: 'back' },
-  { id: 'calfWall',      name: 'Calf stretch at the wall', alt: 'Seated calf stretch',       area: 'legs' },
-  { id: 'quadKneel',     name: 'Kneeling quad stretch',  alt: 'Standing quad stretch',       area: 'legs' },
-  { id: 'hamstringL',    name: 'Hamstring stretch, left',  alt: 'Seated, knee soft',        area: 'legs' },
-  { id: 'hamstringR',    name: 'Hamstring stretch, right', alt: 'Seated, knee soft',        area: 'legs' },
-  { id: 'tricepReach',   name: 'Overhead tricep reach',  alt: '',                            area: 'shoulders' },
-  { id: 'wristCircles',  name: 'Wrist circles & shakes', alt: '',                            area: 'shoulders' }
+  { id: 'forwardFold',   name: 'Standing forward fold',  alt: 'Seated forward fold',        area: 'back', pos: 'stand' },
+  { id: 'downDog',       name: 'Downward dog',           alt: 'Hands on a bench, hips back', area: 'back', pos: 'kneel' },
+  { id: 'lowLungeL',     name: 'Low lunge, left',       alt: 'Half-kneeling, hands on shin', area: 'hips', pos: 'kneel' },
+  { id: 'lowLungeR',     name: 'Low lunge, right',      alt: 'Half-kneeling, hands on shin', area: 'hips', pos: 'kneel' },
+  { id: 'pigeonL',       name: 'Pigeon, left',          alt: 'Figure-4 on the ground',      area: 'hips', pos: 'floor' },
+  { id: 'pigeonR',       name: 'Pigeon, right',         alt: 'Figure-4 on the ground',      area: 'hips', pos: 'floor' },
+  { id: 'childsPose',    name: "Child's pose",           alt: '',                            area: 'back', pos: 'kneel' },
+  { id: 'cobra',         name: 'Cobra / upward dog',     alt: 'Sphinx on the forearms',      area: 'back', pos: 'floor' },
+  { id: 'catCow',        name: 'Cat-cow flow',           alt: '',                            area: 'back', pos: 'kneel' },
+  { id: 'neckRolls',     name: 'Neck & shoulder rolls',  alt: '',                            area: 'shoulders', pos: 'stand' },
+  { id: 'chestOpener',   name: 'Standing chest opener',  alt: 'Doorway pec stretch',         area: 'shoulders', pos: 'stand' },
+  { id: 'threadNeedleL', name: 'Thread the needle, left',  alt: '',                         area: 'shoulders', pos: 'kneel' },
+  { id: 'threadNeedleR', name: 'Thread the needle, right', alt: '',                         area: 'shoulders', pos: 'kneel' },
+  { id: 'seatedFold',    name: 'Seated forward fold',    alt: '',                            area: 'legs', pos: 'floor' },
+  { id: 'spinalTwistL',  name: 'Supine spinal twist, left',  alt: '',                       area: 'back', pos: 'floor' },
+  { id: 'spinalTwistR',  name: 'Supine spinal twist, right', alt: '',                       area: 'back', pos: 'floor' },
+  { id: 'hip9090L',      name: '90/90 hip, left',       alt: '',                            area: 'hips', pos: 'floor' },
+  { id: 'hip9090R',      name: '90/90 hip, right',      alt: '',                            area: 'hips', pos: 'floor' },
+  { id: 'frog',          name: 'Frog stretch',           alt: "Wide-knee child's pose",      area: 'hips', pos: 'kneel' },
+  { id: 'bridgeHold',    name: 'Glute bridge hold',      alt: '',                            area: 'hips', pos: 'floor' },
+  { id: 'happyBaby',     name: 'Happy baby',             alt: 'Knees-to-chest rocks',        area: 'hips', pos: 'floor' },
+  { id: 'savasana',      name: 'Savasana / deep breathing', alt: '',                         area: 'back', pos: 'floor' },
+  { id: 'calfWall',      name: 'Calf stretch at the wall', alt: 'Seated calf stretch',       area: 'legs', pos: 'stand' },
+  { id: 'quadKneel',     name: 'Kneeling quad stretch',  alt: 'Standing quad stretch',       area: 'legs', pos: 'kneel' },
+  { id: 'hamstringL',    name: 'Hamstring stretch, left',  alt: 'Seated, knee soft',        area: 'legs', pos: 'stand' },
+  { id: 'hamstringR',    name: 'Hamstring stretch, right', alt: 'Seated, knee soft',        area: 'legs', pos: 'stand' },
+  { id: 'tricepReach',   name: 'Overhead tricep reach',  alt: '',                            area: 'shoulders', pos: 'stand' },
+  { id: 'wristCircles',  name: 'Wrist circles & shakes', alt: '',                            area: 'shoulders', pos: 'stand' }
 ];
 
+// The plain cards for a warm-up or cool-down slot nothing fits (everything
+// that would do is left out): see WARM-UP AND COOL-DOWN in js/workouts.js.
 const warmupExercise = {
   name: 'Easy movement',
   cue: 'Skip, arm circles, squats, lunges, shake it out',

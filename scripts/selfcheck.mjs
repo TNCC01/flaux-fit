@@ -18,8 +18,7 @@ const SRC = ['js/exercises.js', 'js/workouts.js', 'js/generator.js'];
 
 // The app files are browser globals, not modules, evaluate them together
 // and hand back everything they declared at top level.
-function loadApp() {
-  const src = SRC.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+function loadApp(src = SRC.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n')) {
   const names = [...src.matchAll(/^const ([A-Za-z_][A-Za-z0-9_]*)\s*=/gm)].map(m => m[1]);
   const fns = [...src.matchAll(/^function ([A-Za-z_][A-Za-z0-9_]*)/gm)].map(m => m[1]);
   const all = [...new Set([...names, ...fns])];
@@ -32,7 +31,7 @@ const {
   INTERVALS, CLASSICS, STRETCH_ROUTINES, DEFAULT_EQUIPMENT,
   describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits, sectionInterval,
   freezeWorkout, thawWorkout, BLOCK_MAKERS, withWorkRest, cleanWorkRest, nextLevel, cleanRepScales, targetDiff,
-  LEVEL_MIN, LEVEL_MAX,
+  LEVEL_MIN, LEVEL_MAX, warmupPlan, cooldownPlan, warmupCard, cooldownCard, WARMUP_REHEARSAL,
   planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL
 } = A;
 
@@ -385,6 +384,78 @@ if (new Set(work).size !== 1) {
   fail(`interval styles disagree on total work: ${work.join(' vs ')}s`);
 }
 
+// ------------------------------------- 7b. warm-up and cool-down moves
+// The warm-up is real moves with figures and the cool-down stretches,
+// filling exactly the seconds the plan gives each (so a session still runs
+// to the minute), about 30 to 45 seconds a move. Nothing in a warm-up jumps
+// or runs, needs gear that's off or that two people can't share, or is
+// something left out; No floor work leaves standing stretches only. And
+// it's the same every time it's worked out: nothing random goes into it.
+let bookendsChecked = 0;
+function checkBookends(label, w, equipment, blockedTags = []) {
+  const opts = { hasEquip: (id) => equipment[id] !== false, blockedTags };
+  const warm = warmupPlan(w, opts), cool = cooldownPlan(w, opts);
+  const sum = (xs) => xs.reduce((t, x) => t + x.sec, 0);
+  bookendsChecked++;
+  if (sum(warm) !== w.warmupSec) fail(`${label}: the warm-up's moves run ${sum(warm)}s, the plan gives it ${w.warmupSec}s`);
+  if (sum(cool) !== w.cooldownSec) fail(`${label}: the cool-down's stretches run ${sum(cool)}s, the plan gives it ${w.cooldownSec}s`);
+  if (w.warmupSec > 0 && warm.length !== Math.min(8, Math.ceil(w.warmupSec / 45))) fail(`${label}: ${warm.length} warm-up moves in ${w.warmupSec}s`);
+  warm.forEach(m => {
+    const ex = EXERCISES[m.id];
+    if (!ex) { fail(`${label}: a warm-up move nothing fitted ("${m.id}")`); return; }
+    if (m.sec < 25 || m.sec > 60) fail(`${label}: ${m.id} runs ${m.sec}s of the warm-up`);
+    if (ex.tags.includes('impact') || ex.tags.includes('running')) fail(`${label}: ${m.id} in the warm-up jumps or runs`);
+    if (ex.tags.some(t => blockedTags.includes(t))) fail(`${label}: ${m.id} in the warm-up is left out (${blockedTags.join(',')})`);
+    if (!ex.equipment.every(e => equipment[e] !== false)) fail(`${label}: ${m.id} in the warm-up needs gear that is switched off`);
+    if (ex.equipment.some(e => SINGLE_INSTANCE.includes(e))) fail(`${label}: ${m.id} in the warm-up needs gear two people can't share`);
+    if (!MOVES[m.id] && !MOVES[ex.img]) fail(`${label}: ${m.id} in the warm-up has no figure`);
+    const card = warmupCard(m.id, m.sec);
+    if (!card.img || !card.cue || card.reps) fail(`${label}: ${m.id}'s warm-up card is missing its figure or cue`);
+    if (ex.sideCue && !card.cue.includes(`${Math.round(m.sec / 2)}s`)) fail(`${label}: ${m.id} should swap sides halfway through its ${m.sec}s`);
+  });
+  if (new Set(warm.map(m => EXERCISES[m.id] && EXERCISES[m.id].img)).size !== warm.length) fail(`${label}: the same move twice in the warm-up`);
+  if (w.cooldownSec > 0 && cool.length !== Math.min(10, Math.ceil(w.cooldownSec / 45))) fail(`${label}: ${cool.length} stretches in ${w.cooldownSec}s`);
+  cool.forEach((m, i) => {
+    const st = STRETCHES.find(x => x.id === m.id);
+    if (!st) { fail(`${label}: a cool-down stretch nothing fitted ("${m.id}")`); return; }
+    if (m.sec < 25 || m.sec > 60) fail(`${label}: ${m.id} gets ${m.sec}s of the cool-down`);
+    // the two sides of a stretch, back to back and as long as each other
+    const next = cool[i + 1] && STRETCHES.find(x => x.id === cool[i + 1].id);
+    const prev = cool[i - 1] && STRETCHES.find(x => x.id === cool[i - 1].id);
+    if (/, left$/.test(st.name) && !(next && next.name === st.name.replace(/left$/, 'right') && Math.abs(cool[i + 1].sec - m.sec) <= 1)) {
+      fail(`${label}: ${m.id} in the cool-down isn't followed by its other side for as long`);
+    }
+    if (/, right$/.test(st.name) && !(prev && prev.name === st.name.replace(/right$/, 'left'))) fail(`${label}: ${m.id} in the cool-down without its left side first`);
+    if (blockedTags.includes('floor') && st.pos !== 'stand') fail(`${label}: ${m.id} in the cool-down is floor work, which is left out`);
+    const card = cooldownCard(m.id);
+    if (card.name !== st.name || !card.cue || card.img) fail(`${label}: ${m.id}'s cool-down card reads "${card.name}"`);
+  });
+  if (new Set(cool.map(m => m.id)).size !== cool.length) fail(`${label}: the same stretch twice in the cool-down`);
+  if (JSON.stringify([warmupPlan(w, opts), cooldownPlan(w, opts)]) !== JSON.stringify([warm, cool])) fail(`${label}: worked out again, the warm-up or cool-down came out different`);
+  return { warm, cool };
+}
+// and the stretches follow what was worked: a legs session stretches only
+// legs and hips, and one aimed at the chest and shoulders or the core
+// (which brings some legs along) stretches those too
+{
+  const areaOf = (id) => Object.keys(A.COOLDOWN_STRETCHES).find(a => A.COOLDOWN_STRETCHES[a].some(u => u.includes(id))) || id;
+  for (const [regions, want, only] of [[['legs'], ['legs', 'hips'], true], [['push'], ['shoulders']], [['pull'], ['shoulders', 'back']], [['core'], ['back']]]) {
+    for (const seed of [77, 4242]) {
+      const w = generateWorkout({ minutes: 30, people: 1, intervalId: 'short', regions, equipment: ALL_EQUIP, seed, recent: [] });
+      const got = cooldownPlan(w, {}).map(m => areaOf(m.id)).filter(a => a !== 'savasana');
+      if (only ? got.some(a => !want.includes(a)) : !want.every(a => got.includes(a))) {
+        fail(`a ${regions[0]} session's cool-down stretches ${got.join(', ')}, not ${only ? 'only ' : ''}${want.join(' and ')}`);
+      }
+    }
+  }
+}
+CLASSICS.forEach(c => {
+  // a classic's bookends come from its length, as the app works them out
+  const w = { ...c, ...A.classicBookends(c) };
+  checkBookends(`classic "${w.id}"`, w, ALL_EQUIP);
+  checkBookends(`classic "${w.id}" (bodyweight only, no floor)`, w, bodyOnly, ['floor']);
+});
+
 // ------------------------------------------------- 8. generator sweep
 const REGION_SUBSETS = [];
 for (let mask = 1; mask < (1 << REGION_IDS.length); mask++) {
@@ -452,6 +523,13 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
         if (off > 0) fail(`${label} runs ${off}s over the ${minutes} min picked`);
         if (w.warmupSec < 60 || w.cooldownSec < 60) fail(`${label}: bookends squeezed to nothing`);
         if (off === 0) exact++;
+        const { warm } = checkBookends(label, w, equipment, blockedTags);
+        // with the gear and nothing left out, the warm-up ends on a light go
+        // at the first block's movement
+        const lead = WARMUP_REHEARSAL[EXERCISES[w.blocks[0].ids[0]].pattern];
+        if (equipLabel === 'full kit' && !blockedTags.length && warm.length >= 2 && !warm.some(m => lead.includes(m.id))) {
+          fail(`${label}: the warm-up has no go at block 1's ${EXERCISES[w.blocks[0].ids[0]].pattern} (${warm.map(m => m.id).join(', ')})`);
+        }
 
         // A sentence, not a capital in the middle of one.
         if (/, [A-Z]/.test(w.blurb)) fail(`${label} blurb has a capital mid-sentence: "${w.blurb}"`);
@@ -532,6 +610,7 @@ mixes.forEach((mix, mi) => {
     if (next !== w.blocks.length) fail(`${label}: sections cover ${next} of ${w.blocks.length} blocks`);
     if (w.warmupSec < 60 || w.cooldownSec < 60) fail(`${label}: bookends squeezed to nothing`);
     checkBlocks(label, w, EQUIP_CASES[mi % EQUIP_CASES.length][1]);
+    checkBookends(label, w, EQUIP_CASES[mi % EQUIP_CASES.length][1]);
   }
 });
 
@@ -561,6 +640,14 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
       }
       if (w.request.goal !== 'surf') fail(`${label}: the request doesn't remember the surf goal`);
       checkBlocks(label, w, equipment);
+      // a surfer's warm-up: shoulder prep and a slow pop-up first, then the
+      // upper back turning
+      const { warm } = checkBookends(label, w, equipment);
+      const has = (fn) => warm.some(m => EXERCISES[m.id] && fn(m.id));
+      if (!has(id => id === 'popUp')) fail(`${label}: no pop-up in the warm-up (${warm.map(m => m.id).join(', ')})`);
+      if (!has(id => (EXERCISES[id].surf || []).includes('shoulders'))) fail(`${label}: no shoulder prep in the warm-up (${warm.map(m => m.id).join(', ')})`);
+      if (warm.length >= 3 && !has(id => id === 'thoracicRotation')) fail(`${label}: no upper-back rotation in the warm-up`);
+      if (warm[warm.length - 1].id !== 'popUp') fail(`${label}: the warm-up should end on the pop-up, it ends on ${warm[warm.length - 1].id}`);
     }
   }
 }
@@ -627,6 +714,7 @@ for (const prog of PROGRAMS) {
         if (secs(w) !== secs(flat)) fail(`${label}: the week's split changed how long the blocks run`);
       }
       checkBlocks(`${label}, ${minutes} min`, w, equipment);
+      checkBookends(`${label}, ${minutes} min`, w, equipment, blockedTags);
       const left = w.blocks.flatMap(b => b.ids).filter(id => EXERCISES[id].tags.some(t => blockedTags.includes(t)));
       if (left.length) fail(`${label}, ${minutes} min: left out ${blockedTags.join(',')} but got ${left.join(', ')}`);
       const style = day.mix ? day.mix[0] : day.style;
@@ -780,7 +868,10 @@ let levelsChecked = 0;
       minutes: 30, people: 2, intervalId: 'short', regions: REGION_IDS,
       equipment: ALL_EQUIP, excluded: [], blockedTags: [], seed, recent: ids.slice(40, 60)
     });
-    return w.error ? `error: ${w.error}` : w.exerciseIds.join(',');
+    if (w.error) return `error: ${w.error}`;
+    // the warm-up sorts its parts too
+    const opts = { blockedTags: ['floor'] };
+    return `${w.exerciseIds.join(',')} | ${JSON.stringify([warmupPlan(w, opts), cooldownPlan(w, opts), cooldownPlan(w, {})])}`;
   };
   const seeds = [1, 77, 4242, 90210];
   const withNative = seeds.map(build);
@@ -804,6 +895,43 @@ let levelsChecked = 0;
            `so it would differ between Safari and Chrome`);
     }
   });
+}
+
+// ---------------- 12b. the warm-up leaves the main blocks as they were
+// The warm-up and cool-down are worked out from the session after it's
+// built and draw nothing from the generator's random numbers, so every
+// seed builds the same main blocks as the last release (origin/main, where
+// git knows it): a link shared before this, or a favourite saved before it
+// kept its moves, rebuilds what it always did. If a change to the
+// generator means to change the picks, those links and favourites change
+// with it.
+let sameAsMain = 0;
+{
+  let mainSrc = null;
+  try {
+    mainSrc = SRC.map(f => execFileSync('git', ['show', `origin/main:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })).join('\n');
+  } catch (e) { /* no git or no origin/main here: nothing to compare with */ }
+  if (mainSrc) {
+    const M = loadApp(mainSrc);
+    const shape = (w) => w.error ? `error: ${w.error}`
+      : JSON.stringify([w.name, w.blocks.map(b => [b.name, b.ids]), w.warmupSec, w.cooldownSec, w.blockRestSec,
+                        (w.sections || []).map(x => [x.intervalId, x.start, x.count, x.minutes])]);
+    const styles = [...Object.keys(INTERVALS).map(id => [id]), ['mix', ['emom', 'short', 'amrap']]];
+    for (const [intervalId, mix] of styles) {
+      for (const goal of [undefined, 'surf']) {
+        for (const [i, [equipLabel, equipment]] of EQUIP_CASES.entries()) {
+          for (const seed of [3, 4242, 90210]) {
+            const minutes = minutesList[(seed + i) % minutesList.length];
+            const blockedTags = TAG_CASES[(seed + i) % TAG_CASES.length];
+            const opts = { minutes, people: 2, intervalId, mix, goal, regions: REGION_IDS, equipment, excluded: [], blockedTags, seed, recent: ids.slice(5, 25) };
+            const now = shape(generateWorkout(opts)), then = shape(M.generateWorkout(opts));
+            sameAsMain++;
+            if (now !== then) fail(`seed ${seed} ${intervalId}${goal ? ' surf' : ''} ${minutes} min, ${equipLabel}: builds different main blocks from origin/main, so links and favourites made before would change`);
+          }
+        }
+      }
+    }
+  }
 }
 
 // ---------------------------------- 13. favourites never change
@@ -959,6 +1087,8 @@ console.log(`generator sweep    ${generated} combinations, ${errored} correctly 
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 console.log(`frozen favourites  ${frozenChecked} built and frozen, the same run after thawing; the golden one unchanged`);
 console.log(`personal levels    ${levelsChecked} builds with two levels: the same moves, only the reps differ`);
+console.log(`warm-up, cool-down ${bookendsChecked} sessions: real moves and stretches, to the second, nothing that jumps`);
+console.log(`main blocks        ${sameAsMain ? `${sameAsMain} builds the same as origin/main` : 'not compared (no origin/main here)'}`);
 if (warnings.length) {
   console.log(`\n${warnings.length} warning(s):`);
   warnings.forEach(w => console.log(`  - ${w}`));
