@@ -7,19 +7,30 @@ Static files, no build step. Deploys to Vercel.
 
 ## How it works
 
-On a first visit FIT asks what gear you've got, with everything unticked,
-and saves the answer as the Home gear set. After that the home screen has
-three cards:
+On a first visit FIT asks who's training (just you, or you and a mate) and
+what gear you've got, with everything unticked, including the weights of
+any kettlebells, dumbbells or barbell you tick (kettlebells ticked with no
+bell picked asks for the bells before Done), and saves the answer as the
+Home gear set. Someone whose first visit is a shared link gets the workout
+straight away and the question on the way home. After that the home screen
+has three cards:
 
-- **Build a workout**: what it's for, how many of you, your gear, how long
+- **Today** (Build a workout): how long you've got and how many of you,
+  filled in from last time, where you're training once there's more than
+  one place, a line with the style and goal, and Start. **Change** opens
+  the full setup: what it's for, how many of you, your gear, how long
   you've got and the style. Target areas and anything you'd rather not do
   sit under **More options**, closed by default, with a line saying what's
   set ("Whole body · nothing left out") so a choice from last time can't
-  catch you out.
-- **Programs**: a session a day that builds week by week (Surf Fit).
+  catch you out. While Surf Fit is on and today's session is still to do,
+  the card is that session instead, with "Something else today" to set it
+  aside for the day (a reload the same day keeps that).
+- **Programs**: a session a day that builds week by week (Surf Fit). The
+  card says where you're up to ("Surf Fit · week 2 of 6").
 - **Saved & ready-made**: your favourites and recent sessions, the 16 named
   classics, and the stretch routines (the Stretching filter shows just
-  those).
+  those). A classic runs in the style last picked in setup, and its card
+  says which.
 
 Built workouts are **generated on the spot** rather than
 pulled from a table of presets. The input space (10 equipment items × 8
@@ -73,16 +84,21 @@ external rotations, surf stance holds, deep squat holds, open-book
 rotations), and Surf Mobility in the stretch library covers hips, upper
 back, shoulders and ankles.
 
-**Programs** (a fifth path on the home screen) run a session a day that
+**Programs** (a card on the home screen) run a session a day that
 builds week by week. The first is **Surf Fit**, six weeks on a weekly
 rhythm: paddle power, pop-ups and legs, mobility, an engine mix (EMOM then
-AMRAP), paddle and shoulders, pop-ups and turns, and an easy day. Reps start
-at 80% and build each fortnight to 110% (`repScale`). Each day builds
-through the generator with the day's style and focus, at whatever length you
-pick, with today's people, gear and weights. Progress moves on when a day is
-done, not by the calendar, so a missed day waits; "I surfed today" counts a
-surf instead. The screen shows the week, the day, a streak and a strip of
-this week's days. Programs are defined in `PROGRAMS` in `js/workouts.js`.
+AMRAP), paddle and shoulders, pop-ups and turns, and an easy day. Rep
+targets start at 80% and build over the six weeks to 110% (`repScale`);
+timed days have no reps to scale. Each day builds through the generator
+with the day's style and focus, at whatever length you pick, with today's
+people, gear and weights, and leaves out whatever Build a workout leaves
+out (the day's card says what, with a Change link). Every length is on
+offer: picked shorter than its mix needs, the Engine day runs its EMOM on
+its own (`programStyle`). Progress moves on when a day is done, not by the
+calendar, so a missed day waits; "I surfed today" counts a surf instead,
+with an Undo straight after in case of a mis-tap. The screen shows the
+week, the day, a streak and a strip of this week's days. Programs are
+defined in `PROGRAMS` in `js/workouts.js`.
 
 **Mix** runs two or three of these styles back to back in one session,
 in the order you tap them, and still fits the minutes you picked exactly,
@@ -93,7 +109,10 @@ leftover seconds go on the cool-down. A 30-minute EMOM, short bursts and
 AMRAP mix is a 4-minute warm-up, a 6-minute EMOM, two short-burst blocks,
 a 6-minute AMRAP and a 3-minute cool-down, with a 75-second changeover
 between styles that says what's coming and how it works. Setup shows that
-breakdown as you pick, or the shortest session the mix fits in. All the
+breakdown as you pick. Times shorter than the mix fits in are dimmed, on
+setup and the home card, and turning Mix on or adding a style moves the
+time up to the shortest that fits, so a mix can't be refused for want of
+time. All the
 exercises are picked in one pass, so muscle groups and gear are spread
 across the whole session, not chosen per section.
 
@@ -102,7 +121,8 @@ of three or more exercises, 4 of two, 5 of one, which lands around three
 minutes for most people. The clock counts up, each person taps Done when
 they finish (the time is saved like an AMRAP score, and shows as "Last
 time" next go), and once everyone's done the rest of the four-minute cap
-counts down as rest. Miss the cap and it's logged as capped.
+counts down as rest. Miss the cap and it's logged as capped. A block
+skipped before anyone scores shows as "–" in history, not 0 or capped.
 
 Cues that name a time ("swap sides at 10s", "change every 5s") are written
 from the live interval, so they stay truthful in both styles. Weight-swap
@@ -111,7 +131,7 @@ rather than hardcoded.
 
 ## What's in the library
 
-- **157 movements** across five body regions (chest & shoulders, back &
+- **183 movements** across five body regions (chest & shoulders, back &
   arms, core & abs, legs & glutes, cardio) and fourteen movement patterns
 - **A 3D figure for every movement**, shown on the workout card at its
   best angle. Drag sideways to turn it. Tap it and a sheet opens over the
@@ -139,18 +159,44 @@ rather than hardcoded.
 - Exclusions: four quick constraint filters (no jumping / floor work /
   overhead / running) plus a searchable list of every movement
 - Warm-up and cool-down that scale with the session instead of wrapping a
-  10-minute workout in 10 minutes of walking
+  10-minute workout in 10 minutes of walking. Blocks come in four-minute
+  lumps, so the cool-down takes up any time they leave short, and when
+  they run over (15 and 40 minutes) the bookends give it back, so every
+  length runs to the minute: 20 minutes runs 20:00
 - Injury alternative for every movement
 - Adjustable exercise text size, for reading across a room
 - Workout history, so a generated session you liked but forgot to save is
   still there afterwards, with one tap to reopen it or save it properly.
-  Deliberately browser-only: it sits in localStorage with the other
+  The last 200 sessions are kept, each with who trained (so a score stays
+  with the person who made it after a rename, and "Last time" follows the
+  person, not the spot) and, for a program day, its name and where it sits
+  ("Pop-ups & legs", "Surf Fit · Week 1, Day 2"). Clear history takes two
+  taps. Deliberately browser-only: it sits in localStorage with the other
   preferences, there is no account and no server, and clearing the browser
-  clears it too
-- Wall-clock timer, wake lock, audio cues, two-tap reset
+  clears it too. Once there's a finished session, a favourite or a program,
+  FIT asks the browser to keep its storage (`navigator.storage.persist`).
+  Two tabs open at once take each other's history, favourites and program
+  progress as they save, so neither writes over the other; a tab still on
+  an older version has its stale copy merged in rather than taken. On an
+  iPhone or iPad the home-screen app keeps its own storage, separate from
+  Safari's, and the Add to Home Screen hint says so
+- Wall-clock timer, wake lock (kept through a pause), audio cues that still
+  play with an iPhone on silent (a setting, since it pauses other music;
+  FIT gives the sound back when you leave the workout, and after time in
+  the background the first tap brings the beeps back for sure, while a
+  scroll leaves the sound that's playing alone),
+  two-tap reset, and two taps on Menu once a workout is going. Tap the
+  timer to pause or resume; Start, Skip and Reset stay on screen however
+  long the cards get, in one row on a phone
+- A finish screen with Done (home, or back to the program for a program
+  day), Start over, and Save and Share. Skipping to the end without ever
+  pressing Start doesn't count as a session done
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
-  tablet, with no account and no server involved
+  tablet, for the same number of people, with no account and no server
+  involved. The message says the minutes, style and people, and Share stays
+  on screen once the workout is going. A link passed on keeps the gear it
+  was first built with, so the third person gets the same session too
 - Works offline after the first visit. A service worker caches the app
   and the 3D figures, so it opens in the gym with no wifi
 
@@ -186,8 +232,14 @@ scripts/export-sequence.mjs   expand a workout to timed steps as JSON
 and every movement's data, about 300 KB over the wire) when it installs,
 on the first visit. Everything is served network-first with a four-second
 timeout, so online you always get the current version and a flaky
-connection falls back to the cache rather than hanging. Bump `VERSION` in
-`sw.js` to force old caches out, though nothing depends on remembering to.
+connection falls back to the cache rather than hanging. A file that comes
+in after the timeout is still cached. Bump `VERSION` in `sw.js` with every
+release that changes the app's files: the cache is otherwise refreshed one
+file at a time, and a slow load could leave the new `index.html` cached
+beside the old `app.js`. A new `VERSION` installs the whole app into a
+fresh cache and deletes the old one. The one load that brings the update
+in can still pair the two; if the scripts fail on that load, the page
+loads again as soon as the new cache takes over.
 
 ## 3D movements
 
@@ -226,8 +278,9 @@ npm test                         # self-check, then the browser suite
 `node scripts/selfcheck.mjs` needs nothing installed. It validates every
 exercise's fields, that every movement has 3D data and a bodyweight
 fallback, that no block hands one item to two people in any round of either
-interval style, that duration labels match what the timer actually runs,
-and that all 1240 generator input combinations either build a valid workout
+interval style, that duration labels match what the timer actually runs
+and that a session runs to the minutes picked, that the export script for
+the Garmin work matches the timer in every style, and that all 1240 generator input combinations either build a valid workout
 or refuse for a good reason. It also proves a workout rebuilds exactly from
 its stored request and seed, and that a seed builds the same workout
 whatever sort algorithm the browser uses. Safari and Chrome sort

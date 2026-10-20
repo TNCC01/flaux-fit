@@ -4,9 +4,19 @@
   APP SHELL: views, setup flows, rendering and the timer.
 */
 
+// This script with the page from the release before it (see the same
+// check in index.html): if it fails while the page loads, load again once
+// this release's offline copy takes over.
+window.addEventListener('error', function retry() {
+  window.removeEventListener('error', retry);
+  if (document.readyState !== 'complete' && navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+  }
+});
+
 const TIME_OPTIONS = [10, 15, 20, 25, 30, 40, 45, 60];
 const RECENT_CAP = 60;          // exercise ids remembered for variety
-const HISTORY_CAP = 40;         // sessions kept in the history list
+const HISTORY_CAP = 200;        // sessions kept in the history list (a 42-day program and then some)
 // Re-opening the same workout inside this window updates its history entry
 // instead of adding another, so a reset or a second go is still one session.
 const HISTORY_MERGE_MS = 3 * 60 * 60 * 1000;
@@ -18,8 +28,9 @@ const PREFS_KEY = 'fit-prefs-2';
 const state = {
   view: 'welcome',
 
-  // Preferences (persisted, see PERSISTED below)
-  people: 2,
+  // Preferences (persisted, see PERSISTED below). A new visitor starts
+  // solo; the first-visit question asks (see renderGearQuestion).
+  people: 1,
   nameA: '', nameB: '',
   equipment: { ...DEFAULT_EQUIPMENT, kettlebells: true },
   // the weights you own: kettlebells and dumbbell pairs in kg, and what the
@@ -42,6 +53,8 @@ const state = {
   blockedTags: [],
   excluded: [],
   muteAudio: false,
+  // on an iPhone, beep with the silent switch on (see applyAudioSession)
+  beepOnSilent: true,
   showAlts: false,
   showPhotos: true,
   textScale: 1,
@@ -61,17 +74,25 @@ const state = {
   remainingInPhase: 0,
   elapsedTotal: 0,
   running: false,
+  // Start was pressed on this workout (set in startTimer, cleared by a
+  // reset): only then does finishing count it as done, and leaving it take
+  // two taps
+  started: false,
   elapsedAtResume: 0,
   runStartWall: 0,
   lastBeep: null,
   tickHandle: null,
   wakeLock: null,
-  excludeSearch: ''
+  excludeSearch: '',
+  // "Something else today" on the home card: the day it was tapped, so the
+  // program session comes back tomorrow (see renderToday). Saved, so a
+  // reload the same day keeps it.
+  todayOther: null
 };
 
 const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'gearSets', 'gearSetId',
-  'regions', 'blockedTags', 'excluded', 'muteAudio', 'showAlts', 'showPhotos',
-  'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked'];
+  'regions', 'blockedTags', 'excluded', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
+  'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked', 'todayOther'];
 
 function loadPrefs() {
   try {
@@ -104,21 +125,80 @@ function loadPrefs() {
     if (!Array.isArray(state.saved)) state.saved = [];
     if (!Array.isArray(state.history)) state.history = [];
     if (!Array.isArray(state.blockedTags)) state.blockedTags = [];
-    if (state.people !== 1 && state.people !== 2) state.people = 2;
+    if (state.people !== 1 && state.people !== 2) state.people = 1;
     if (!TIME_OPTIONS.includes(state.minutes)) state.minutes = 20;
+    fitMixMinutes();
     if (typeof state.textScale !== 'number' || !(state.textScale > 0)) state.textScale = 1;
     if (typeof state.nameA !== 'string') state.nameA = '';
     if (typeof state.nameB !== 'string') state.nameB = '';
+    state.beepOnSilent = state.beepOnSilent !== false;
     // stored prefs from before the gear question means it's not a first visit
     state.gearAsked = p.gearAsked !== false;
+    if (state.todayOther !== dayKey(Date.now())) state.todayOther = null;   // only lasts the day
   } catch (e) { /* corrupt store: fall back to defaults */ }
 }
+// Saved with the prefs, so another tab can tell a save from this version
+// (or a later one) from one made by a tab still running an older FIT.
+const PREFS_SCHEMA = 2;
 function savePrefs() {
   try {
-    const out = {};
+    const out = { schema: PREFS_SCHEMA };
     PERSISTED.forEach(k => { out[k] = state[k]; });
     localStorage.setItem(PREFS_KEY, JSON.stringify(out));
   } catch (e) { /* private mode / quota: preferences just won't stick */ }
+}
+// Another tab saved (one left open from before, or the one a shared link
+// opened). Its history, favourites and program progress are the newest,
+// and already include this tab's (each tab hears the other's saves), so
+// take them in. Otherwise this tab's next save would write its older copy
+// over them. Settings stay as they are here until a reload, so a workout
+// on screen isn't changed under you.
+//
+// A tab still on the version before this one hears nothing, so what it
+// writes is the copy it loaded when it opened. That gets added to this
+// tab's lists rather than taking their place, and saved straight back, so
+// a session or program day done here isn't lost to it.
+window.addEventListener('storage', (e) => {
+  if (e.key !== PREFS_KEY || !e.newValue) return;
+  let p;
+  try { p = JSON.parse(e.newValue); } catch (err) { return; }
+  if (!p || typeof p !== 'object') return;
+  const older = !(p.schema >= PREFS_SCHEMA);
+  const programs = p.programs && typeof p.programs === 'object' && !Array.isArray(p.programs)
+    ? Object.fromEntries(Object.entries(p.programs)
+        .filter(([id, x]) => PROGRAMS.some(q => q.id === id) && x && Array.isArray(x.done)))
+    : null;
+  if (older) {
+    mergeOlderSave(p, programs);
+    savePrefs();
+  } else {
+    if (Array.isArray(p.history)) state.history = p.history;
+    if (Array.isArray(p.saved)) state.saved = p.saved;
+    if (programs) state.programs = programs;
+  }
+  // redraw whatever lists them
+  if (state.view === 'welcome') renderToday();
+  else if (state.view === 'library') renderLibrary();
+  else if (state.view === 'program') renderProgram();
+});
+// An older tab's lists added to this tab's: its sessions not already here
+// (the same session, reopened within the merge window, counts as here),
+// its favourites by seed, and its program days by day number.
+function mergeOlderSave(p, programs) {
+  if (Array.isArray(p.history)) {
+    const extra = p.history.filter(h => h && typeof h.at === 'number' && !state.history.some(x =>
+      x.key === h.key && Math.abs(x.at - h.at) < HISTORY_MERGE_MS));
+    state.history = [...state.history, ...extra].sort((a, b) => b.at - a.at).slice(0, HISTORY_CAP);
+  }
+  if (Array.isArray(p.saved)) {
+    state.saved = [...p.saved.filter(s => s && !state.saved.some(x => x.seed === s.seed)), ...state.saved];
+  }
+  Object.entries(programs || {}).forEach(([id, theirs]) => {
+    const ours = state.programs[id];
+    if (!ours) { state.programs[id] = theirs; return; }
+    const extra = theirs.done.filter(d => d && !ours.done.some(x => x.n === d.n));
+    if (extra.length) ours.done = [...ours.done, ...extra].sort((a, b) => a.at - b.at);
+  });
 }
 
 // What a session is for. Surf fitness builds around paddling, pop-ups,
@@ -207,8 +287,9 @@ function sectionsOf(w) {
   if (w.sections) return w.sections;
   return [{ intervalId: intervalFor(w).id, start: 0, count: w.blocks.length, minutes: 0, blockRestSec: w.blockRestSec }];
 }
-// A workout's style for history and comparisons: 'mix' or the interval's id.
-const styleIdOf = (w) => (w.sections ? 'mix' : intervalFor(w).id);
+// A workout's style for history and comparisons: 'stretch' for a stretch
+// routine, 'mix', or the interval's id.
+const styleIdOf = (w) => (w.format === 'stretch' ? 'stretch' : w.sections ? 'mix' : intervalFor(w).id);
 const buildCtx = (w, ivOverride) => {
   const iv = ivOverride || intervalFor(w);
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
@@ -227,17 +308,18 @@ const els = {
   libraryView: $('libraryView'), workoutView: $('workoutView'), programView: $('programView'),
   pathProgram: $('pathProgram'), programBody: $('programBody'), programNote: $('programNote'),
   btnProgramBack: $('btnProgramBack'), programTitle: $('programTitle'),
-  pathBuild: $('pathBuild'), pathLibrary: $('pathLibrary'),
+  pathLibrary: $('pathLibrary'), pathProgramGo: $('pathProgramGo'), todayCard: $('todayCard'),
   gearView: $('gearView'), onboardGear: $('onboardGear'), btnGearDone: $('btnGearDone'),
+  onboardPeople: $('onboardPeople'), onboardWeights: $('onboardWeights'), gearNote: $('gearNote'),
   btnMoreOptions: $('btnMoreOptions'), moreOptions: $('moreOptions'), moreSummary: $('moreSummary'),
-  scroller: $('scroller'),
-  welcomeFoot: $('welcomeFoot'), welcomeNote: $('welcomeNote'),
+  scroller: $('scroller'), scrollHint: $('scrollHint'),
+  welcomeNote: $('welcomeNote'), welcomeSub: $('welcomeSub'),
   btnFullscreen: $('btnFullscreen'), installHint: $('installHint'),
 
   btnSetupBack: $('btnSetupBack'), setupTitle: $('setupTitle'),
   peoplePicker: $('peoplePicker'), nameInputs: $('nameInputs'),
   nameA: $('nameA'), nameB: $('nameB'),
-  equipmentPicker: $('equipmentPicker'), weightPicker: $('weightPicker'), timePicker: $('timePicker'),
+  equipmentPicker: $('equipmentPicker'), weightPicker: $('weightPicker'), timePicker: $('timePicker'), timeHint: $('timeHint'),
   mixPicker: $('mixPicker'), gearSetPicker: $('gearSetPicker'), goalPicker: $('goalPicker'), goalHint: $('goalHint'), rowRegions: $('rowRegions'),
   intervalPicker: $('intervalPicker'),
   bodyMap: $('bodyMap'), regionPicker: $('regionPicker'), tagPicker: $('tagPicker'),
@@ -264,9 +346,10 @@ const els = {
   upcoming: $('upcoming'), preStart: $('preStart'),
   previewList: $('previewList'),
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'), btnShare: $('btnShare'),
-  btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'),
+  btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'), btnAgain: $('btnAgain'),
   workoutNote: $('workoutNote'),
-  showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio')
+  showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio'),
+  beepOnSilent: $('beepOnSilent'), silentToggle: $('silentToggle'), silentHint: $('silentHint')
 };
 
 const PHASE_COLOR = {
@@ -378,14 +461,95 @@ function buildSequence(workout, people) {
 
 // =====================================================================
 // AUDIO
+// An iPhone plays Web Audio on the ringer channel unless told otherwise,
+// so the silent switch mutes every beep. Telling Safari the sound is
+// 'playback' (the AudioSession API, iOS 16.4 and later) moves it onto the
+// media channel with videos and music, which the switch leaves alone. The
+// catch: playback takes over from other apps, so Spotify pauses while FIT
+// has sound, hence the setting, and FIT gives the sound back when you
+// leave the workout. Safari on a Mac has navigator.audioSession too but no
+// silent switch, so it's left to touch screens (an iPad asking for the
+// desktop site still has touch points); desktop and Android are untouched.
+// The older trick of looping a silent <audio> element is left out: it puts
+// a player on the lock screen and later Safaris broke it.
 // =====================================================================
 let audioCtx = null;
-function ensureAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+const CAN_SILENT = 'audioSession' in navigator && navigator.maxTouchPoints > 0;
+function applyAudioSession() {
+  if (!CAN_SILENT) return;
+  const want = state.beepOnSilent && !state.muteAudio ? 'playback' : 'auto';
+  try {
+    if (navigator.audioSession.type !== want) navigator.audioSession.type = want;
+  } catch (e) { /* a Safari that only half has it */ }
 }
+// Safari parks the context as 'interrupted' after a phone call or Siri,
+// and 'suspended' after time away, so anything short of running gets a
+// resume. It can refuse outside a tap; the next beep, tap or return to
+// the app tries again.
+function ensureAudio() {
+  try {
+    applyAudioSession();
+    if (!audioCtx || audioCtx.state === 'closed') audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state !== 'running') Promise.resolve(audioCtx.resume()).catch(() => {});
+  } catch (e) { /* no Web Audio: the timer runs silent */ }
+}
+// iOS can also leave the context saying 'running' with no sound: after a
+// call, after another app's sound, or when the home-screen app comes back
+// from the background. So once the page has been hidden, a return to a
+// running workout suspends and resumes it, and the first tap after that
+// (or the Start that sets it going) swaps in a new context, since a tap
+// is always allowed to start sound.
+let audioStale = false;
+function rearmAudio() {
+  const ctx = audioCtx;
+  if (!ctx || ctx.state === 'closed') return ensureAudio();
+  applyAudioSession();
+  try { Promise.resolve(ctx.suspend()).then(() => ctx.resume()).catch(() => {}); } catch (e) { /* see beep() */ }
+}
+// A new context only starts on a tap, and the touch that ends a scroll
+// isn't one. So the old context keeps the beeps going until the new one is
+// actually running, and only then is it swapped in and the old one closed;
+// until that happens audioStale stays set, so the next tap tries again.
+let audioNext = null;
+function freshAudio() {
+  ensureAudio();
+  if (navigator.userActivation && !navigator.userActivation.isActive) return;
+  try {
+    if (audioNext && audioNext.state === 'closed') audioNext = null;
+    const next = audioNext || (audioNext = new (window.AudioContext || window.webkitAudioContext)());
+    const swap = () => {
+      if (audioNext !== next) return;           // let go of in the meantime
+      audioNext = null;
+      audioStale = false;
+      const old = audioCtx;
+      audioCtx = next;
+      if (old && old !== next) {
+        try { Promise.resolve(old.close()).catch(() => {}); } catch (e) { /* already gone */ }
+      }
+    };
+    if (next.state === 'running') swap();
+    else Promise.resolve(next.resume()).then(swap, () => {});
+  } catch (e) { /* no Web Audio: the timer runs silent */ }
+}
+// Out of the workout, FIT lets go: the session back to 'auto' so your
+// music can carry on, and the context suspended so nothing of FIT's keeps
+// running in the background. The next Start takes it again.
+function releaseAudio() {
+  if (audioNext) {
+    const next = audioNext;
+    audioNext = null;
+    try { Promise.resolve(next.close()).catch(() => {}); } catch (e) { /* already gone */ }
+  }
+  if (!audioCtx) return;
+  if (CAN_SILENT) {
+    try { if (navigator.audioSession.type !== 'auto') navigator.audioSession.type = 'auto'; } catch (e) { /* see applyAudioSession() */ }
+  }
+  try { Promise.resolve(audioCtx.suspend()).catch(() => {}); } catch (e) { /* see beep() */ }
+}
+// Beeps belong to the workout screen: the second note of a chime still due
+// when you leave must not take the sound back from your music.
 function beep(freq, duration, volume = 0.4) {
-  if (state.muteAudio) return;
+  if (state.muteAudio || state.view !== 'workout') return;
   try {
     ensureAudio();
     const osc = audioCtx.createOscillator();
@@ -404,7 +568,7 @@ function workChime() {
   setTimeout(() => { beep(1320, 0.6, 0.5); beep(1980, 0.5, 0.12); }, 140);
 }
 function restChime() {
-  if (state.muteAudio) return;
+  if (state.muteAudio || state.view !== 'workout') return;
   try {
     ensureAudio();
     const duration = 0.45;
@@ -440,15 +604,26 @@ function chimeFor(kind) {
 
 // =====================================================================
 // WAKE LOCK
+// Held from Start until the workout stops or you leave it, pauses
+// included, so a water break doesn't let the phone lock. The browser lets
+// go of it whenever the page is hidden; keepAwake says to ask again when
+// it's back (see the visibilitychange handler).
 // =====================================================================
+let keepAwake = false, wakeLockAsked = false;
 async function requestWakeLock() {
-  if (!('wakeLock' in navigator) || state.wakeLock) return;
+  keepAwake = true;
+  if (!('wakeLock' in navigator) || state.wakeLock || wakeLockAsked) return;
+  wakeLockAsked = true;
   try {
-    state.wakeLock = await navigator.wakeLock.request('screen');
-    state.wakeLock.addEventListener('release', () => { state.wakeLock = null; });
+    const lock = await navigator.wakeLock.request('screen');
+    lock.addEventListener('release', () => { if (state.wakeLock === lock) state.wakeLock = null; });
+    state.wakeLock = lock;
   } catch (e) { /* denied or unsupported, the timer is still correct */ }
+  wakeLockAsked = false;
+  if (!keepAwake) releaseWakeLock();      // stopped while the request was out
 }
 function releaseWakeLock() {
+  keepAwake = false;
   if (!state.wakeLock) return;
   const lock = state.wakeLock;
   state.wakeLock = null;
@@ -462,6 +637,7 @@ function setView(v) {
   state.view = v;
   ['welcome', 'gear', 'setup', 'library', 'program', 'workout'].forEach(name => {
     els[name + 'View'].classList.toggle('active', v === name);
+    document.body.classList.toggle('view-' + name, v === name);   // for the scroll fade (css)
   });
   els.scroller.scrollTop = 0;
   queueScrollHint();
@@ -504,24 +680,107 @@ function esc(s) {
 function goWelcome() {
   stopTimer();
   state.programRun = null;
+  state.programMinutes = null;
   state.workout = null;
+  // someone who came in on a shared link answers the first-visit question
+  // on the way home
+  if (!state.gearAsked) { openGearQuestion(); return; }
   els.welcomeNote.textContent = '';
   setView('welcome');
-  renderWelcomeFoot();
+  renderToday();
 }
 
-function renderWelcomeFoot() {
-  const iv = currentInterval();
-  const gear = GEAR.filter(g => state.equipment[g.id] !== false).length;
-  const style = state.mixOn ? `mix (${state.mixStyles.map(id => INTERVALS[id].label).join(', ')})`
-    : `${iv.label.toLowerCase()} (${iv.sub})`;
-  els.welcomeFoot.textContent =
-    `${Object.keys(EXERCISES).length} movements · ${style} · ` +
-    `${gear}/${GEAR.length} kit items on · ` +
-    `${state.people === 1 ? 'solo' : 'two people'}`;
+// ------------------------------------------------------------ today card
+// The top of home: how long, how many and where, filled in from last time,
+// then Start. While a program is on and today's session is still to do,
+// the card is that session instead, with "Something else today" to swap
+// back to a built workout for the day.
+function renderToday() {
+  const card = els.todayCard;
+  card.innerHTML = '';
+  const prog = PROGRAMS[0];
+  const ps = programStatus(prog);
+  renderProgramPath(prog, ps);
+  const waiting = ps && !ps.finished && !ps.doneToday;
+  const today = dayKey(Date.now());
+  // what FIT is, until you know: a session done or a program started
+  els.welcomeSub.hidden = state.history.length > 0 || !!ps;
+
+  if (waiting && state.todayOther !== today) {
+    fillProgramDay(card, prog, ps.st, ps.day, {
+      tagline: `${prog.name} · Week ${ps.day.week}, Day ${ps.n + 1}`,
+      rerender: renderToday, note: els.welcomeNote
+    });
+    card.appendChild(linkButton('Something else today', () => { state.todayOther = today; savePrefs(); renderToday(); }));
+    return;
+  }
+
+  // With a program on, its line takes the place of "Today" above the
+  // name, so Start stays on the first screen of a small phone.
+  let tagline = '<div class="card-tagline">Today</div>';
+  if (waiting) {
+    const top = document.createElement('div');
+    top.className = 'today-top';
+    top.appendChild(linkButton(`Back to today's ${prog.name} session`, () => { state.todayOther = null; savePrefs(); renderToday(); }));
+    card.appendChild(top);
+    tagline = '';
+  } else if (ps && ps.doneToday) {
+    tagline = `<div class="card-tagline today-line">${esc(`${prog.name}: today's done${ps.last.surfed ? ' (a surf counts)' : ''}. Next up: ${ps.day.name}.`)}</div>`;
+  }
+  const head = document.createElement('div');
+  head.innerHTML = `${tagline}<div class="card-name">Build a workout</div>`;
+  const floor = mixFloor();
+  card.append(head, pickerLabel('How long have you got?'),
+    timeChips(TIME_OPTIONS, state.minutes, m => { state.minutes = m; savePrefs(); renderToday(); }, floor));
+  if (floor > TIME_OPTIONS[0]) card.append(programHint(mixFloorText(floor)));
+  card.append(...peopleGearRows(true, renderToday));
+  // everything else comes from last time, and Change opens the full setup
+  const style = document.createElement('div');
+  style.className = 'today-style';
+  style.textContent = `${todayStyleText()} · `;
+  const change = linkButton('Change', openSetup);
+  change.id = 'pathBuild';
+  change.setAttribute('aria-label', 'Change the style, goal and gear');
+  style.appendChild(change);
+  const go = document.createElement('button');
+  go.className = 'program-go today-go';
+  go.textContent = 'Start';
+  go.addEventListener('click', () => {
+    els.welcomeNote.textContent = '';
+    const err = buildAndOpen(requestFromState());
+    if (err) els.welcomeNote.textContent = err;
+  });
+  card.append(style, go);
+}
+// "Short bursts · General fitness", plus target areas or things left out
+// when they're set, so a choice from last time can't catch you out.
+function todayStyleText() {
+  const parts = [state.mixOn ? `Mix: ${state.mixStyles.map(id => INTERVALS[id].label).join(', ')}` : currentInterval().label,
+                 GOALS.find(g => g.id === state.goal).label];
+  if (state.goal !== 'surf' && state.regions.length < REGIONS.length) {
+    parts.push(REGIONS.filter(r => state.regions.includes(r.id)).map(r => r.label).join(', '));
+  }
+  const n = state.blockedTags.length + state.excluded.length;
+  if (n) parts.push(`${n} thing${n === 1 ? '' : 's'} left out`);
+  return parts.join(' · ');
+}
+// The Programs card says where you're up to.
+function renderProgramPath(prog, ps) {
+  els.pathProgramGo.textContent = !ps ? `Start ${prog.name} →`
+    : ps.finished ? `${prog.name} · all ${prog.weeks} weeks done →`
+    : `${prog.name} · Week ${ps.day.week} of ${prog.weeks} →`;
+}
+function linkButton(text, onClick) {
+  const b = document.createElement('button');
+  b.className = 'link-btn';
+  b.textContent = text;
+  b.addEventListener('click', onClick);
+  return b;
 }
 
 function openSetup() {
+  // Back returns to the Programs screen when its Change opened setup
+  state.setupFrom = state.view === 'program' ? 'program' : 'welcome';
   setMoreOptions(false);
   els.btnBuild.textContent = 'Build my workout';
   els.buildNote.textContent = '';
@@ -666,8 +925,8 @@ function renderEquipmentPicker() {
   });
 }
 // A row of weights under an item that's switched on: tick the ones you own
-// (or, for the bar, what it's loaded to).
-function weightRow(kind) {
+// (or, for the bar, what it's loaded to). A tap redraws the screen it's on.
+function weightRow(kind, rerender = renderEquipmentPicker) {
   const spec = WEIGHT_CHOICES[kind];
   const row = document.createElement('div');
   row.className = 'weight-row';
@@ -681,7 +940,7 @@ function weightRow(kind) {
       else state.weights[kind] = on ? state.weights[kind].filter(x => x !== kg)
                                     : [...state.weights[kind], kg].sort((a, b) => a - b);
       savePrefs();
-      renderEquipmentPicker();
+      rerender();
     });
     c.textContent = `${kg}kg`;
     c.setAttribute('aria-pressed', String(on));
@@ -711,8 +970,10 @@ function weightRow(kind) {
 
 function renderTimePicker() {
   els.timePicker.innerHTML = '';
+  const floor = mixFloor();
   TIME_OPTIONS.forEach(m => {
-    const b = tappable('chip' + (state.minutes === m ? ' active' : ''), () => {
+    const b = tappable('chip' + (state.minutes === m ? ' active' : '') + (m < floor ? ' dim' : ''), () => {
+      if (m < floor) return;
       state.minutes = m;
       savePrefs();
       renderTimePicker();
@@ -720,14 +981,19 @@ function renderTimePicker() {
     });
     b.textContent = `${m} min`;
     b.setAttribute('aria-pressed', String(state.minutes === m));
+    if (m < floor) b.setAttribute('aria-disabled', 'true');
     els.timePicker.appendChild(b);
   });
+  els.timeHint.hidden = !(floor > TIME_OPTIONS[0]);
+  els.timeHint.textContent = els.timeHint.hidden ? '' : mixFloorText(floor);
 }
 
 function renderIntervalPicker() {
   els.intervalPicker.innerHTML = '';
   const card = (on, name, sub, blurb, pick) => {
-    const b = tappable('interval-card' + (on ? ' active' : ''), () => { pick(); savePrefs(); renderIntervalPicker(); });
+    const b = tappable('interval-card' + (on ? ' active' : ''), () => {
+      pick(); fitMixMinutes(); savePrefs(); renderIntervalPicker(); renderTimePicker();
+    });
     b.innerHTML = `
       <div class="interval-name">${esc(name)}</div>
       <div class="interval-sub">${esc(sub)}</div>
@@ -758,8 +1024,10 @@ function renderMixPicker() {
     const c = tappable('chip mix-chip' + (at >= 0 ? ' active' : ''), () => {
       if (at >= 0) state.mixStyles = state.mixStyles.filter(x => x !== id);
       else if (state.mixStyles.length < 3) state.mixStyles = [...state.mixStyles, id];
+      fitMixMinutes();
       savePrefs();
       renderMixPicker();
+      renderTimePicker();
     });
     c.innerHTML = at >= 0 ? `<b>${at + 1}</b> ${esc(INTERVALS[id].label)}` : esc(INTERVALS[id].label);
     c.setAttribute('aria-pressed', String(at >= 0));
@@ -770,6 +1038,22 @@ function renderMixPicker() {
   note.className = 'picker-hint mix-plan';
   note.textContent = mixPlanText();
   els.mixPicker.appendChild(note);
+}
+// With Mix on, the shortest time on offer the mix fits in. Shorter time
+// chips are dimmed, and turning Mix on or adding a style raises the minutes
+// to it, so a build can't fail for want of time.
+function mixFloor() {
+  if (!state.mixOn || state.mixStyles.length < 2) return 0;
+  const min = mixMinimumMinutes(state.mixStyles);
+  return (min && TIME_OPTIONS.find(m => m >= min)) || 0;
+}
+function fitMixMinutes() {
+  const floor = mixFloor();
+  if (floor && state.minutes < floor) state.minutes = floor;
+}
+// Said under the time chips while some are dimmed.
+function mixFloorText(floor) {
+  return `This mix needs at least ${floor} min. For less time, take a style out or pick a single style.`;
 }
 function mixPlanText() {
   const s = state.mixStyles;
@@ -936,8 +1220,12 @@ function liveOpts(request, extra) {
 
 // Builds and opens a workout. Returns an error message, or null on success.
 function buildAndOpen(request, seed, extra) {
-  const w = generateWorkout(liveOpts(request, { seed: seed || newSeed(), ...extra }));
+  const opts = liveOpts(request, { seed: seed || newSeed(), ...extra });
+  const w = generateWorkout(opts);
   if (w.error) return w.error;
+  // the gear and leave-outs it was built with, so a link passed on from
+  // here rebuilds this workout, not one for this device's gear
+  w.builtWith = { equipment: opts.equipment, excluded: opts.excluded };
   state.lastRequest = request;
   openWorkout(w);
   return null;
@@ -1024,7 +1312,16 @@ function renderLibrary() {
     const clear = document.createElement('button');
     clear.className = 'mini-btn section-action';
     clear.textContent = 'Clear history';
+    // two taps, like Reset, so one stray tap can't wipe every session
+    let clearTimer = null;
     clear.addEventListener('click', () => {
+      if (!clear.dataset.sure) {
+        clear.dataset.sure = '1';
+        clear.textContent = 'Tap again to clear';
+        clearTimer = setTimeout(() => { delete clear.dataset.sure; clear.textContent = 'Clear history'; }, 3000);
+        return;
+      }
+      clearTimeout(clearTimer);
       state.history = [];
       savePrefs();
       renderLibrary();
@@ -1056,6 +1353,9 @@ function namedCard(w) {
     ? `<div class="card-time-detail">${parts.workMin} min work + ${parts.bookendsMin} min warm-up/cool-down</div>` : '';
   const adapted = workoutAdapted(w)
     ? '<div class="card-adapted">Adapted for your equipment</div>' : '';
+  // a classic runs in the style last picked in setup, so the card says which
+  const style = w.format === 'tabata'
+    ? `<span>·</span> <span class="card-style">${esc(intervalFor(w).label)}</span>` : '';
   card.innerHTML = `
     <div class="card-name">${esc(w.name)}</div>
     <div class="card-tagline">${esc(w.tagline)}</div>
@@ -1063,6 +1363,7 @@ function namedCard(w) {
       <span class="duration">${parts.totalMin} min</span>
       <span>·</span>
       <span class="focus-tag ${focusClassMap[w.focus]}">${focusLabelMap[w.focus]}</span>
+      ${style}
     </div>
     ${detail}
     <div class="card-blurb">${esc(w.blurb)}</div>
@@ -1070,18 +1371,21 @@ function namedCard(w) {
   return card;
 }
 
-// How a history entry's style reads: "Every minute on the minute", or for
-// a mix "Mix: EMOM, Short bursts, AMRAP".
+// How a history entry's style reads, by the name it's picked by: "Short
+// bursts", "EMOM", or for a mix "Mix: EMOM, Short bursts, AMRAP". A stretch
+// routine is "Stretching" (older entries kept the style picked in setup).
 function styleLabel(rec) {
+  if (rec.intervalId === 'stretch' || STRETCH_ROUTINES.some(x => x.id === rec.workoutId)) return 'Stretching';
   if (rec.intervalId === 'mix') {
     const list = (rec.request && rec.request.mix) || [];
     return `Mix: ${list.map(id => (INTERVALS[id] || {}).label).filter(Boolean).join(', ')}`;
   }
-  return (INTERVALS[rec.intervalId] || {}).sub || '';
+  return (INTERVALS[rec.intervalId] || {}).label || '';
 }
 
 // An AMRAP session's rounds, block by block ("Rounds: 4 · 5 · 4"), or a
-// For Time one's finishing times ("Times: 3:12 · 2:58 · capped").
+// For Time one's finishing times ("Times: 3:12 · 2:58 · capped"). A block
+// skipped with no score shows as "–".
 function scoreLine(rec) {
   if (!rec.scores || !rec.scores.some(s => s.a || s.b)) return '';
   // each block knows its kind of score; older entries go by the style
@@ -1090,30 +1394,42 @@ function scoreLine(rec) {
   const mixed = new Set(scored.map(kind)).size > 1;
   const one = (s, w) => {
     const v = s[w];
-    const val = kind(s) === 'fortime' ? (v ? fmt(v) : 'capped') : (v || 0);
+    const val = s.skipped && !v ? '–' : kind(s) === 'fortime' ? (v ? fmt(v) : 'capped') : (v || 0);
     return mixed ? `${kind(s) === 'fortime' ? 'time' : 'rounds'} ${val}` : val;
   };
   const row = (w) => scored.map(s => one(s, w)).join(' · ');
   const what = mixed ? 'Scores' : kind(scored[0]) === 'fortime' ? 'Times' : 'Rounds';
   const text = rec.people === 2
-    ? `${what}: ${personName('a')} ${row('a')}, ${personName('b')} ${row('b')}`
+    ? `${what}: ${nameIn(rec, 'a')} ${row('a')}, ${nameIn(rec, 'b')} ${row('b')}`
     : `${what}: ${row('a')}`;
   return `<div class="card-score">${esc(text)}</div>`;
+}
+// Who was A or B in a history entry: the name kept with it, or for older
+// entries that kept none, today's name.
+function nameIn(rec, which) {
+  if (!rec.names) return personName(which);
+  return rec.names[which] || (which === 'a' ? 'Person A' : 'Person B');
+}
+// "solo", "Wayne & Dave", or "2 people" when nobody was named (or the
+// entry is from before names were kept).
+function whoLabel(rec) {
+  if (rec.people === 1) return 'solo';
+  return rec.names && (rec.names.a || rec.names.b) ? `${nameIn(rec, 'a')} & ${nameIn(rec, 'b')}` : '2 people';
 }
 
 function historyCard(rec) {
   const wrap = document.createElement('div');
   wrap.className = 'workout-card history-card ' + (focusClassMap[rec.focus] || 'whole');
   const alreadySaved = rec.generated && state.saved.some(s => s.seed === rec.seed);
+  // a program day goes by its own name ("Pop-ups & legs"), not "Surf fitness · 20 min"
+  const prog = rec.program;
   wrap.innerHTML = `
-    <div class="card-name">${esc(rec.name)}</div>
-    <div class="card-tagline">${esc(whenLabel(rec.at))}</div>
+    <div class="card-name">${esc(prog ? prog.day : rec.name)}</div>
+    <div class="card-tagline">${esc(whenLabel(rec.at))}${prog ? ` · ${esc(prog.where)}` : ''}</div>
     <div class="card-meta">
       <span class="duration">${rec.minutes} min</span>
-      <span>·</span>
-      <span>${rec.people === 1 ? 'solo' : '2 people'}</span>
-      <span>·</span>
-      <span>${esc(styleLabel(rec))}</span>
+      <span><span class="sep">·</span> ${esc(whoLabel(rec))}</span>
+      <span><span class="sep">·</span> ${esc(styleLabel(rec))}</span>
     </div>
     <div class="card-blurb">${esc(rec.blurb || '')}</div>
     ${scoreLine(rec)}
@@ -1141,6 +1457,7 @@ function historyCard(rec) {
         request: rec.request, savedOn: new Date().toLocaleDateString()
       });
       savePrefs();
+      keepStorage();
       renderLibrary();
     });
     actions.appendChild(save);
@@ -1195,12 +1512,17 @@ function openWorkout(workout) {
   state.pick = {};
   const before = state.history.find(h => h.key === historyKey(workout) && h.scores
     && h.intervalId === styleIdOf(workout));       // a classic can be run in any style
-  state.lastScores = before ? before.scores : null;
+  state.lastScores = before ? lastScoresFrom(before) : null;
   state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
   seekTo(0);
   state.running = false;
+  state.started = false;
+  disarmBack();
 
-  els.workoutTitle.textContent = workout.name;
+  // a program day goes by its own name ("Paddle & shoulders"), as on home
+  // and in history, not "Surf fitness · 20 min"
+  const run = programRunLabel();
+  els.workoutTitle.textContent = run ? run.day : workout.name;
   els.peopleBadge.textContent = state.people === 1
     ? '1 person'
     : ((state.nameA || '').trim() || (state.nameB || '').trim()
@@ -1228,6 +1550,19 @@ function openWorkout(workout) {
 function personName(which) {
   const raw = which === 'a' ? state.nameA : state.nameB;
   return (raw || '').trim() || (which === 'a' ? 'Person A' : 'Person B');
+}
+// Last time's scores, each moved to whoever made it: with Dave and Wayne
+// swapped round, each still sees their own, and a new name sees none. An
+// unnamed person only matches the same spot. Entries from before names
+// were kept go by spot. A block skipped without a score has no last time.
+function lastScoresFrom(rec) {
+  const score = (s, v) => (v && !(s.skipped && !s[v]) ? s[v] : undefined);
+  if (!rec.names) return rec.scores.map(s => s && ({ ...s, a: score(s, 'a'), b: score(s, 'b') }));
+  const now = { a: (state.nameA || '').trim(), b: state.people === 2 ? (state.nameB || '').trim() : '' };
+  const spots = rec.people === 2 ? ['a', 'b'] : ['a'];
+  const from = (w) => [w, ...spots].find(v => spots.includes(v) && rec.names[v] === now[w] && (now[w] || v === w));
+  const fa = from('a'), fb = from('b');
+  return rec.scores.map(s => s && ({ ...s, a: score(s, fa), b: score(s, fb) }));
 }
 
 function renderPreview() {
@@ -1396,6 +1731,7 @@ function onCounterTap(e) {
   if (step === 'done') s[w] = Math.max(1, Math.round(phaseElapsed(phase)));
   else if (step === 'undo') s[w] = 0;
   else s[w] = Math.max(0, s[w] + +step);
+  delete s.skipped;                        // done after a reset, so not skipped after all
   saveScores();
   render();
 }
@@ -1566,8 +1902,16 @@ function renderRoundDots(phase) {
     label.textContent = phase.forTime ? `Finish the rounds, ${fmtMin(phase.duration)} cap`
       : `As many rounds as you can in ${fmtMin(phase.duration)}`;
     els.roundDots.appendChild(label);
-  } else if (phase.totalRounds) renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
-  else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind);
+  } else if (phase.totalRounds) {
+    renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
+    // an EMOM's rest is the rest of the minute, which nothing else says
+    if (phase.emom) {
+      const how = document.createElement('div');
+      how.className = 'round-hint';
+      how.textContent = "Do the reps, then rest till the minute's up";
+      els.roundDots.appendChild(how);
+    }
+  } else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind, 'Stretch');
   else if (phase.totalBlocks) {
     const label = document.createElement('div');
     label.className = 'round-count';
@@ -1643,23 +1987,33 @@ function clearBleed() {
 // =====================================================================
 // RENDER
 // =====================================================================
+// Text that's read out when it changes (aria-live) is only written then.
+const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+
 function render() {
   const phase = state.sequence[state.currentIdx];
   if (!phase) return;
 
+  // a phase on screen means the finish screen has gone (see finish)
+  els.workoutView.classList.remove('finished');
+  els.btnAgain.hidden = true;
   els.timerCard.className = 'timer-card ' + phase.kind;
-  els.phaseLabel.textContent = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
+  let label = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
     : phase.changeover ? 'Change over' : (PHASE_LABEL[phase.kind] || '');
   els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
   if (phase.forTime) {
     // the clock counts up while you race it; once everyone's done it counts
     // down the rest of the cap
     const done = allDone(phase);
-    els.phaseLabel.textContent = done ? 'Rest' : 'For time';
+    label = done ? 'Rest' : 'For time';
     if (!done) els.timeDisplay.textContent = fmt(Math.floor(phaseElapsed(phase)));
   }
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
-  els.blockName.textContent = phase.name;
+  // the phase and block are read out as they change (aria-live), so only
+  // write them when they do, not five times a second
+  setText(els.phaseLabel, label);
+  setText(els.blockName, phase.name);
+  setText(els.btnSkip, phase.kind === 'stretch' ? 'Skip' : 'Skip block');
   els.overallProgress.style.width =
     `${Math.min(100, (state.elapsedTotal / state.totalDuration) * 100)}%`;
 
@@ -1704,7 +2058,8 @@ function render() {
 
   els.btnStart.textContent = state.running ? 'Pause' : (state.elapsedTotal > 0 ? 'Resume' : 'Start');
   els.btnStart.classList.toggle('running', state.running);
-  els.preStart.style.display = (!state.running && state.elapsedTotal === 0) ? '' : 'none';
+  // once it's going, only Share is left of the pre-start strip (css)
+  els.preStart.classList.toggle('underway', state.running || state.elapsedTotal > 0);
 }
 
 function renderUpcoming() {
@@ -1712,16 +2067,20 @@ function renderUpcoming() {
   if (!next) { els.upcoming.innerHTML = ''; return; }
   const short = (which, fallback) =>
     ((which === 'a' ? state.nameA : state.nameB) || '').trim() || fallback;
+  const work = (p) => state.people === 2
+    ? `${short('a', 'A')}: ${withReps(p.a)} · ` +
+      `${short('b', 'B')}: ${withReps(p.b)}`
+    : withReps(p.a);
+  // a rest says what it's resting for
+  const then = state.sequence[state.currentIdx + 2];
   let preview;
-  if (next.kind === 'rest') preview = `Rest ${next.duration}s`;
+  if (next.kind === 'rest') preview = then && then.kind === 'work'
+    ? `Rest ${next.duration}s, then ${work(then)}` : `Rest ${next.duration}s`;
   else if (next.amrap) preview = `AMRAP: ${next.a.circuit.map(x => x.name).join(', ')}`;
   else if (next.forTime) preview = `For time, ${next.a.lapRounds} rounds: ${next.a.circuit.map(x => x.name).join(', ')}`;
-  else if (next.kind === 'work') {
-    preview = state.people === 2
-      ? `${short('a', 'A')}: ${withReps(next.a)} · ` +
-        `${short('b', 'B')}: ${withReps(next.b)}`
-      : withReps(next.a);
-  } else preview = next.name;
+  else if (next.kind === 'work') preview = work(next);
+  else if (next.kind === 'stretch') preview = next.a.name;
+  else preview = next.name;
   const c = PHASE_COLOR[next.kind];
   const swatch = c ? `background:${c.hex};box-shadow:0 0 8px 1px rgba(${c.rgb},0.7)` : '';
   els.upcoming.innerHTML =
@@ -1782,8 +2141,11 @@ function tickClock() {
     // only announce the one we actually landed on.
     state.currentIdx = idx;
     state.lastBeep = null;
-    enterPhaseVisual(state.sequence[idx].kind, remaining);
-    chimeFor(state.sequence[idx].kind);
+    const kind = state.sequence[idx].kind;
+    enterPhaseVisual(kind, remaining);
+    chimeFor(kind);
+    // the how-to sheet covers the timer: get it out of the way to go again
+    if (kind === 'work' || kind === 'stretch') closeMove();
   }
   state.remainingInPhase = remaining;
 
@@ -1799,9 +2161,10 @@ function tickClock() {
 function startTimer() {
   if (state.running) return;
   if (state.currentIdx >= state.sequence.length) seekTo(0);
-  ensureAudio();
+  if (audioStale) freshAudio(); else ensureAudio();
   requestWakeLock();
   state.running = true;
+  state.started = true;
   state.elapsedAtResume = state.elapsedTotal;
   state.runStartWall = Date.now();
   state.lastBeep = null;
@@ -1819,8 +2182,7 @@ function pauseTimer() {
   freezeBleed();
   state.running = false;
   clearTick();
-  releaseWakeLock();
-  render();
+  render();                                // the wake lock stays on through a pause
 }
 
 function clearTick() {
@@ -1833,46 +2195,81 @@ function stopTimer() {
   releaseWakeLock();
 }
 
+// Back to the top as if just opened: rounds counted from 0 again, and not
+// started, so skipping through after a reset doesn't count as done.
 function resetWorkout() {
   stopTimer();
+  state.scores = {};
+  state.pick = {};
+  state.started = false;
   seekTo(0);
   if (state.sequence[0]) enterPhaseVisual(state.sequence[0].kind, state.remainingInPhase);
   render();
 }
 
+// The finish screen: Done to go back, Start over, and Save and Share. The
+// position goes past the end, so render() leaves this screen alone and
+// Start over begins again from the top.
 function finish() {
   stopTimer();
-  markHistoryComplete();
-  completeProgramDay();
+  state.currentIdx = state.sequence.length;
+  // skipping through without ever pressing Start isn't a session done
+  if (state.started) {
+    markHistoryComplete();
+    completeProgramDay();
+  }
   bigBell();
+  // and once the bell has rung, the sound goes back (unless Start over has
+  // it going again)
+  setTimeout(() => { if (!state.running) releaseAudio(); }, 2000);
   clearBleed();
+  disarmBack();
   els.workoutView.classList.remove('resting');
+  els.workoutView.classList.add('finished');
   els.timerCard.className = 'timer-card';
-  els.phaseLabel.textContent = 'Done';
+  setText(els.phaseLabel, 'Done');
   els.timeDisplay.textContent = '✓';
-  els.blockName.textContent = 'Workout complete. Nice work.';
+  // the last tick can land a fraction short of the end ("19:59 / 20:00")
+  els.totalTime.textContent = `Total ${fmt(Math.min(state.elapsedTotal, state.totalDuration))} / ${fmt(state.totalDuration)}`;
+  setText(els.blockName, 'Workout complete. Nice work.');
   els.roundDots.innerHTML = '';
   els.exerciseA.textContent = 'Well done.';
-  els.cueA.textContent = '';
+  els.repsA.textContent = els.cueA.textContent = '';
   setAlt(els.alternativeA, '');
   updateAnim(els.animA, null);
   updateAnim(els.animB, null);
   if (state.people === 2) {
     els.exerciseB.textContent = 'Well done.';
-    els.cueB.textContent = '';
+    els.repsB.textContent = els.cueB.textContent = '';
     setAlt(els.alternativeB, '');
   }
+  // no laps or +1 round buttons left over from the last block
+  for (const w of ['A', 'B']) {
+    els['circuit' + w].hidden = els['counter' + w].hidden = true;
+    els['circuit' + w].closest('.person').classList.remove('amrap');
+  }
   els.upcoming.innerHTML = '';
-  els.btnStart.textContent = 'Start over';
+  document.getElementById('btnNextBlock').hidden = true;
+  closeNextSheet();
+  els.btnStart.textContent = 'Done';
   els.btnStart.classList.remove('running');
+  els.btnAgain.hidden = false;
   els.overallProgress.style.width = '100%';
-  els.preStart.style.display = 'none';
+  els.preStart.classList.remove('underway'); // Save and Share; the preview and Shuffle hide (css)
 }
+const isFinished = () => state.currentIdx >= state.sequence.length;
 
 function skipBlock() {
   if (!state.sequence.length) return;
   const cur = state.sequence[state.currentIdx];
   if (!cur) return;
+  // a scored block skipped before anyone logged a score shows as skipped
+  // in history, not as 0 rounds or capped
+  const s = state.scores[cur.blockIdx];
+  if ((cur.amrap || cur.forTime) && !(s && (s.a || s.b))) {
+    state.scores[cur.blockIdx] = { a: 0, b: 0, skipped: true };
+    saveScores();
+  }
   let target = state.currentIdx + 1;
   if (cur.kind !== 'stretch') {
     // Walk to the first phase that isn't part of this block.
@@ -1941,11 +2338,24 @@ function recordHistory() {
     seed: w.seed || null,
     request: w.request || null,
     workoutId: w.generated ? null : w.id,
+    // who it was, so a score stays with the person who made it after a
+    // rename, and which program day, so the card can say so
+    names: { a: (state.nameA || '').trim(), b: state.people === 2 ? (state.nameB || '').trim() : '' },
+    program: programRunLabel(),
     at: now,
     completed: false
   });
   state.history = state.history.slice(0, HISTORY_CAP);
   savePrefs();
+}
+// The program day being run, as history keeps it: "Pop-ups & legs" and
+// where it sits ("Surf Fit · Week 1, Day 2"), or null for any other session.
+function programRunLabel() {
+  const run = state.programRun;
+  const prog = run && PROGRAMS.find(p => p.id === run.id);
+  if (!prog) return null;
+  const day = programDay(prog, run.n);
+  return { id: prog.id, n: run.n, day: day.name, where: `${prog.name} · Week ${day.week}, Day ${run.n + 1}` };
 }
 
 function markHistoryComplete() {
@@ -1953,6 +2363,22 @@ function markHistoryComplete() {
   if (!w) return;
   const entry = state.history.find(h => h.key === historyKey(w));
   if (entry && !entry.completed) { entry.completed = true; savePrefs(); }
+  keepStorage();
+}
+
+// Once there's something worth keeping (a finished session, a favourite, a
+// program under way), ask the browser not to clear FIT's storage to free up
+// space. Asked once a visit; a browser without it, or one that says no,
+// carries on as before.
+let storageAsked = false;
+function keepStorage() {
+  if (storageAsked || !navigator.storage || !navigator.storage.persist) return;
+  storageAsked = true;
+  try {
+    (navigator.storage.persisted ? navigator.storage.persisted() : Promise.resolve(false))
+      .then(on => on || navigator.storage.persist())
+      .catch(() => { /* not allowed here: localStorage still works */ });
+  } catch (e) { /* as above */ }
 }
 
 // Rebuild a workout from a history entry (or a saved favourite: same shape).
@@ -1996,12 +2422,26 @@ function whenLabel(ts) {
 // =====================================================================
 const SHARE_VERSION = 1;
 
+// Both kinds carry how many people it's on screen for (a favourite reopened
+// with a mate is two, whatever it was built for), so the link opens the same.
+// A built one carries the gear and leave-outs it was built with, which for
+// a link being passed on are the sender's, not this device's.
 function sharePayload(w) {
   if (w.generated) {
-    return { v: SHARE_VERSION, seed: w.seed, request: w.request,
-             equipment: effectiveEquip(), excluded: state.excluded.slice() };
+    const built = w.builtWith || { equipment: effectiveEquip(), excluded: state.excluded };
+    return { v: SHARE_VERSION, seed: w.seed, request: { ...w.request, people: state.people },
+             equipment: { ...built.equipment }, excluded: built.excluded.slice() };
   }
-  return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id };
+  return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id, people: state.people };
+}
+
+// What goes with the link, so it says what it is before anyone opens it:
+// "FIT: Lower body · 20 min · Short bursts · 2 people". A built workout's
+// name already ends in its minutes.
+function shareText(w) {
+  const style = styleLabel({ intervalId: styleIdOf(w), request: w.request });
+  return [`FIT: ${w.name}`, ...(w.generated ? [] : [`${durationParts(w).totalMin} min`]), style,
+          state.people === 1 ? '1 person' : '2 people'].join(' · ');
 }
 
 // URL-safe base64 of UTF-8 text, and back.
@@ -2028,10 +2468,14 @@ function openSharedLink(hash) {
   catch (e) { return 'That link is not a FIT workout.'; }
   if (!payload || typeof payload !== 'object') return 'That link is not a FIT workout.';
   if (payload.v !== SHARE_VERSION) return 'That link was made by a different version of FIT.';
+  if (!payload.id && (!payload.seed || !payload.request)) return 'That link is missing its workout.';
+  // it opens for as many people as it was sent for (a classic's link from
+  // before it said keeps today's count)
+  const people = payload.id ? payload.people : payload.request.people;
+  if (people === 1 || people === 2) { state.people = people; savePrefs(); }
   if (payload.id) {
     return openFromRecord({ workoutId: payload.id, intervalId: payload.intervalId, generated: false });
   }
-  if (!payload.seed || !payload.request) return 'That link is missing its workout.';
   return buildAndOpen(payload.request, payload.seed, {
     equipment: payload.equipment || effectiveEquip(),
     excluded: Array.isArray(payload.excluded) ? payload.excluded : [],
@@ -2047,7 +2491,8 @@ function openLinkFromHash() {
   history.replaceState(null, '', location.pathname + location.search);
   if (err) {
     goWelcome();
-    els.welcomeNote.textContent = err;
+    // a first visit lands on the gear question, so the note goes there
+    (state.gearAsked ? els.welcomeNote : els.gearNote).textContent = err;
   } else {
     els.workoutNote.textContent = 'Opened from a shared link.';
   }
@@ -2080,9 +2525,19 @@ function programStreak(st) {
   while (days.has(dayKey(d))) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
+// Where a program is up to: null before it's started, finished, or the day
+// that's next and whether today's session is already done.
+function programStatus(prog) {
+  const st = state.programs[prog.id];
+  if (!st) return null;
+  const n = st.done.length;
+  if (n >= prog.weeks * prog.days.length) return { st, n, finished: true };
+  const last = st.done[n - 1];
+  return { st, n, day: programDay(prog, n), last, doneToday: !!last && dayKey(last.at) === dayKey(Date.now()) };
+}
 function renderProgram() {
   const prog = PROGRAMS[0];
-  const st = state.programs[prog.id];
+  const ps = programStatus(prog);
   const total = prog.weeks * prog.days.length;
   els.programTitle.textContent = prog.name;
   const body = els.programBody;
@@ -2097,33 +2552,31 @@ function renderProgram() {
   const rhythm = `<ol class="program-rhythm">${prog.days.map(d =>
     `<li><b>${esc(d.name)}</b> <span>${esc(d.about)}</span></li>`).join('')}</ol>`;
 
-  if (!st) {
+  if (!ps) {
     const c = add(`<div class="card-name">${esc(prog.name)}</div>
       <div class="card-tagline">${esc(prog.tagline)}</div>
       <div class="card-blurb">${esc(prog.blurb)}</div>
       <div class="picker-label">Each week</div>${rhythm}
-      <div class="card-blurb">Reps start a little lighter and build every fortnight. Pick how long you've got each day.</div>`);
+      <div class="card-blurb">Rep targets start a little lighter and build over the ${prog.weeks} weeks. Pick how long you've got each day.</div>`);
     const go = document.createElement('button');
     go.textContent = `Start ${prog.name}`;
     go.addEventListener('click', () => {
       state.programs[prog.id] = { startedAt: Date.now(), done: [] };
       savePrefs();
+      keepStorage();
       renderProgram();
     });
     c.appendChild(go);
     return;
   }
 
-  const n = st.done.length;
-  if (n >= total) {
+  if (ps.finished) {
     const c = add(`<div class="card-name">${prog.weeks} weeks done</div>
-      <div class="card-blurb">That's the whole of ${esc(prog.name)}. Go again from the start, or keep using Surf fitness in Quick and Custom.</div>`);
+      <div class="card-blurb">That's the whole of ${esc(prog.name)}. Go again from the start, or keep choosing Surf fitness in Build a workout.</div>`);
     c.appendChild(restartButton(prog));
     return;
   }
-  const day = programDay(prog, n);
-  const last = st.done[st.done.length - 1];
-  const doneToday = last && dayKey(last.at) === dayKey(Date.now());
+  const { st, n, day, last, doneToday } = ps;
   const streak = programStreak(st);
   add(`<div class="program-progress">
       <div><b>Week ${day.week}</b> of ${prog.weeks}</div>
@@ -2135,7 +2588,7 @@ function renderProgram() {
       const rec = st.done.find(x => x.n === at);
       const cls = rec ? 'done' : at === n ? 'now' : '';
       return `<div class="program-dot ${cls}" title="Day ${at + 1}: ${esc(d.name)}" aria-label="Day ${at + 1}, ${esc(d.name)}${rec ? (rec.surfed ? ', surfed' : ', done') : ''}">
-        <b>${at + 1}</b><span>${esc(d.short || d.name)}</span><i>${rec ? (rec.surfed ? 'Surf' : '✓') : at === n ? 'Today' : ''}</i></div>`;
+        <b>${at + 1}</b><span>${esc(d.short || d.name)}</span><i>${rec ? (rec.surfed ? 'Surf' : '✓') : at === n ? (doneToday ? 'Next' : 'Today') : ''}</i></div>`;
     }).join('')}</div>`, 'program-status');
 
   if (doneToday && !state.programAhead) {
@@ -2168,100 +2621,164 @@ function restartButton(prog) {
   });
   return b;
 }
-// Today's session: what it's for, how long you've got, and go.
+// Today's session on the program screen, above the weekly rhythm.
 function renderProgramToday(prog, st, day) {
   const c = document.createElement('div');
   c.className = 'workout-card program-card program-today';
-  c.innerHTML = `<div class="card-tagline">Today · week ${day.week}</div>
+  fillProgramDay(c, prog, st, day, {
+    tagline: `Today · Week ${day.week}`, rerender: renderProgram, note: els.programNote,
+    gearHint: 'To add a place or change its gear: '
+  });
+  els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
+}
+// Today's session: what it's for, how long you've got, and go. The program
+// screen and the home card both show it, so they say how to redraw and
+// where a message goes.
+function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint }) {
+  c.innerHTML = `<div class="card-tagline">${esc(tagline)}</div>
     <div class="card-name">${esc(day.name)}</div>
     <div class="card-blurb">${esc(day.about)}</div>`;
+  // the notes go under Start, so Start stays on the first screen of a phone
+  const notes = [];
   if (!day.stretch) {
-    const min = day.mix ? (mixMinimumMinutes(day.mix) || 25) : 10;
-    const options = TIME_OPTIONS.filter(m => m >= min);
-    if (!options.includes(state.programMinutes)) state.programMinutes = options.includes(day.minutes) ? day.minutes : options[0];
-    const row = document.createElement('div');
-    row.className = 'chip-row';
-    options.forEach(m => {
-      const chip = tappable('chip' + (m === state.programMinutes ? ' active' : ''), () => { state.programMinutes = m; renderProgram(); });
-      chip.textContent = `${m} min`;
-      chip.setAttribute('aria-pressed', String(m === state.programMinutes));
-      row.appendChild(chip);
-    });
-    const label = document.createElement('div');
-    label.className = 'picker-label';
-    label.textContent = 'How long have you got?';
-    c.append(label, row);
+    if (!TIME_OPTIONS.includes(state.programMinutes)) state.programMinutes = TIME_OPTIONS.includes(day.minutes) ? day.minutes : 20;
+    c.append(pickerLabel('How long have you got?'),
+      timeChips(TIME_OPTIONS, state.programMinutes, m => { state.programMinutes = m; rerender(); }));
+    // every length is on offer; a mix that won't fit says what it runs as
+    const style = programStyle(day, state.programMinutes);
+    if (style.short) {
+      notes.push(programHint(`${state.programMinutes} min is too short for ${day.mix.map(id => INTERVALS[id].label).join(' and ')}, so today it's just the ${INTERVALS[style.intervalId].label}.`));
+    }
+    // the leave-outs from Build a workout apply here too, so say so
+    const out = leftOutList();
+    if (out) {
+      const line = programHint(`Left out, as in Build a workout: ${out}. `);
+      line.classList.add('program-out');
+      line.appendChild(linkButton('Change', () => { openSetup(); setMoreOptions(true); }));
+      notes.push(line);
+    }
   }
-  c.append(...programSetupRows(!day.stretch));
+  c.append(...peopleGearRows(!day.stretch, rerender, gearHint));
   const go = document.createElement('button');
   go.className = 'program-go';
   go.textContent = "Start today's session";
-  go.addEventListener('click', () => startProgramDay(prog, day));
+  go.addEventListener('click', () => {
+    const err = startProgramDay(prog, day);
+    if (err) note.textContent = err;
+  });
+  c.append(go, ...notes);
   const surfed = document.createElement('button');
   surfed.className = 'secondary';
   surfed.textContent = 'I surfed today';
   surfed.addEventListener('click', () => {
     st.done.push({ n: day.n, at: Date.now(), surfed: true });
     savePrefs();
-    renderProgram();
-    els.programNote.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Saved & ready-made is good after a session.';
+    rerender();
+    note.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Saved & ready-made is good after a session. ';
+    // a mis-tap can be taken back: only today's surf, and only the last one
+    note.appendChild(linkButton('Undo', () => {
+      const now = state.programs[prog.id];
+      const last = now && now.done[now.done.length - 1];
+      if (last && last.surfed && dayKey(last.at) === dayKey(Date.now())) { now.done.pop(); savePrefs(); }
+      note.textContent = '';
+      rerender();
+    }));
   });
-  c.append(go, surfed);
-  els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
+  c.append(surfed);
+}
+function programHint(text) {
+  const el = document.createElement('div');
+  el.className = 'program-hint';
+  el.textContent = text;
+  return el;
+}
+// "no jumping, no floor work and 2 movements": what Build a workout leaves
+// out, or '' when nothing is.
+function leftOutList() {
+  const parts = EXCLUSION_TAGS.filter(t => state.blockedTags.includes(t.id)).map(t => t.label.toLowerCase());
+  const n = state.excluded.length;
+  if (n) parts.push(`${n} movement${n === 1 ? '' : 's'}`);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join('');
+}
+function pickerLabel(text) {
+  const label = document.createElement('div');
+  label.className = 'picker-label';
+  label.textContent = text;
+  return label;
+}
+// "10 min", "15 min"...; tapping one hands it to onPick. Times under
+// `floor` (see mixFloor) are dimmed and can't be picked.
+function timeChips(options, current, onPick, floor = 0) {
+  const row = document.createElement('div');
+  row.className = 'chip-row time-chips';
+  options.forEach(m => {
+    const chip = tappable('chip' + (m === current ? ' active' : '') + (m < floor ? ' dim' : ''),
+      () => { if (m >= floor) onPick(m); });
+    chip.textContent = `${m} min`;
+    chip.setAttribute('aria-pressed', String(m === current));
+    if (m < floor) chip.setAttribute('aria-disabled', 'true');
+    row.appendChild(chip);
+  });
+  return row;
 }
 // Who's training and where, so today's session can be checked and changed
-// without going back into setup. Stretch days don't use gear, so they only
-// get the people row.
-function programSetupRows(withGear) {
+// without going back into setup. The place only shows once there's more
+// than one to pick from, and stretch days don't use gear, so they only get
+// the people row.
+function peopleGearRows(withGear, rerender, gearHint) {
   const rows = [];
   const pick = (text, options) => {
-    const label = document.createElement('div');
-    label.className = 'picker-label';
-    label.textContent = text;
     const row = document.createElement('div');
     row.className = 'chip-row';
     options.forEach(o => {
-      const chip = tappable('chip' + (o.on ? ' active' : ''), () => { if (!o.on) { o.pick(); savePrefs(); renderProgram(); } });
+      const chip = tappable('chip' + (o.on ? ' active' : ''), () => { if (!o.on) { o.pick(); savePrefs(); rerender(); } });
       chip.textContent = o.text;
       chip.setAttribute('aria-pressed', String(o.on));
       chip.dataset.pick = o.key;
       row.appendChild(chip);
     });
-    rows.push(label, row);
+    rows.push(pickerLabel(text), row);
   };
   pick('How many of you?', [1, 2].map(n => ({
     key: `people-${n}`, text: n === 1 ? '1 person' : '2 people', on: state.people === n,
     pick: () => { state.people = n; renderPeoplePicker(); }
   })));
-  if (withGear) {
-    ensureGearSets();
+  if (withGear) ensureGearSets();
+  if (withGear && state.gearSets.length > 1) {
     pick('Training at', state.gearSets.map(g => ({
       key: `gear-${g.id}`, text: g.name, on: g.id === state.gearSetId, pick: () => useGearSet(g.id)
     })));
-    const note = document.createElement('div');
-    note.className = 'program-hint';
-    note.textContent = 'To add a place or change its gear, use Build a workout on the home screen.';
-    rows.push(note);
+    // with a way there: on home a waiting session hides Build a workout
+    if (gearHint) {
+      const note = programHint(gearHint);
+      note.appendChild(linkButton('Change', openSetup));
+      rows.push(note);
+    }
   }
   return rows;
 }
+// Opens the day's session. Returns an error message, or null.
 function startProgramDay(prog, day) {
   state.programRun = { id: prog.id, n: day.n };
   if (day.stretch) {
     const w = STRETCH_ROUTINES.find(x => x.id === day.stretch);
     openWorkout(w);
-    return;
+    return null;
   }
+  const minutes = state.programMinutes || day.minutes;
+  // a mix too long for the minutes runs as its first style (see programStyle)
+  const { intervalId, mix } = programStyle(day, minutes);
   const request = {
-    minutes: state.programMinutes || day.minutes,
+    minutes,
     people: state.people,
-    intervalId: day.mix ? 'mix' : day.style,
-    mix: day.mix ? day.mix.slice() : undefined,
+    intervalId, mix,
     goal: prog.goal, surfFocus: day.focus, repScale: day.repScale,
-    regions: REGIONS.map(r => r.id), blockedTags: []
+    // the leave-outs from Build a workout, the same as any other session
+    regions: REGIONS.map(r => r.id), blockedTags: state.blockedTags.slice()
   };
   const err = buildAndOpen(request);
-  if (err) { state.programRun = null; els.programNote.textContent = err; }
+  if (err) state.programRun = null;
+  return err;
 }
 // Called when a session finishes: tick off the program day it was.
 function completeProgramDay() {
@@ -2276,17 +2793,30 @@ function completeProgramDay() {
 
 // =====================================================================
 // FIRST VISIT
-// Before anything else, a new visitor says what gear they've got, so the
-// first workout doesn't hand them kettlebell swings with no kettlebell.
-// Everything starts off; whatever's ticked becomes the Home gear set.
+// Before anything else, a new visitor says who's training and what gear
+// they've got, so the first workout doesn't hand them kettlebell swings
+// with no kettlebell, or a Person A and B when they're on their own.
+// Everything starts off, weights included; whatever's ticked becomes the
+// Home gear set.
 // =====================================================================
 function openGearQuestion() {
   GEAR.forEach(g => { state.equipment[g.id] = false; });
+  state.weights = { kb: [], db: [], bar: 10 };
+  els.gearNote.textContent = '';
   renderGearQuestion();
   setView('gear');
 }
 function renderGearQuestion() {
+  els.onboardPeople.innerHTML = '';
+  [[1, 'Just me'], [2, 'Me and a mate']].forEach(([n, text]) => {
+    const on = state.people === n;
+    const b = tappable('chip people-chip' + (on ? ' active' : ''), () => { state.people = n; renderGearQuestion(); });
+    b.textContent = text;
+    b.setAttribute('aria-pressed', String(on));
+    els.onboardPeople.appendChild(b);
+  });
   els.onboardGear.innerHTML = '';
+  els.onboardWeights.innerHTML = '';
   GEAR.forEach(g => {
     const on = state.equipment[g.id] !== false;
     const b = tappable('chip' + (on ? ' active' : ''), () => {
@@ -2296,11 +2826,23 @@ function renderGearQuestion() {
     b.textContent = g.label;
     b.setAttribute('aria-pressed', String(on));
     els.onboardGear.appendChild(b);
+    // the same weight chips as setup, under each ticked item that has them
+    if (on && g.weights) els.onboardWeights.appendChild(weightRow(g.weights, renderGearQuestion));
   });
   const any = GEAR.some(g => state.equipment[g.id] !== false);
   els.btnGearDone.textContent = any ? 'Done' : 'Just bodyweight for now';
+  if (els.gearNote.textContent === NO_BELLS && !noBells()) els.gearNote.textContent = '';
 }
+// Kettlebells ticked with no bell picked would quietly mean no kettlebell
+// moves at all, so Done asks for the bells first.
+const NO_BELLS = "Tick the bells you've got, or untick Kettlebells.";
+const noBells = () => state.equipment.kettlebells !== false && !state.weights.kb.length;
 function finishGearQuestion() {
+  if (noBells()) {
+    els.gearNote.textContent = NO_BELLS;
+    els.gearNote.scrollIntoView({ block: 'nearest' });
+    return;
+  }
   state.gearAsked = true;
   saveIntoGearSet();
   savePrefs();
@@ -2310,7 +2852,6 @@ function finishGearQuestion() {
 // =====================================================================
 // EVENT WIRING
 // =====================================================================
-els.pathBuild.addEventListener('click', openSetup);
 // the library always opens on everything, whatever focus was picked last time
 els.pathLibrary.addEventListener('click', () => {
   state.filterFocus = 'all';
@@ -2319,10 +2860,29 @@ els.pathLibrary.addEventListener('click', () => {
 });
 els.btnMoreOptions.addEventListener('click', () => setMoreOptions(els.moreOptions.hidden));
 els.btnGearDone.addEventListener('click', finishGearQuestion);
-els.btnSetupBack.addEventListener('click', goWelcome);
+els.btnSetupBack.addEventListener('click', () => (state.setupFrom === 'program' ? openProgram() : goWelcome()));
 els.btnLibraryBack.addEventListener('click', goWelcome);
 // a program's session goes back to the program, anything else to the menu
-els.btnBack.addEventListener('click', () => (state.programRun ? openProgram() : goWelcome()));
+function leaveWorkout() {
+  disarmBack();
+  releaseAudio();
+  if (state.programRun) openProgram(); else goWelcome();
+}
+// Two-tap leave once a workout is going, like Reset, so a stray tap on
+// Menu can't throw the session away.
+let backArmed = false, backTimer = null;
+function disarmBack() {
+  clearTimeout(backTimer);
+  backArmed = false;
+  els.btnBack.textContent = '← Menu';
+}
+const inProgress = () => state.started && (state.running || state.elapsedTotal > 0) && !isFinished();
+els.btnBack.addEventListener('click', () => {
+  if (backArmed || !inProgress()) return leaveWorkout();
+  backArmed = true;
+  els.btnBack.textContent = 'Tap again';      // short, so the title beside it keeps its room
+  backTimer = setTimeout(disarmBack, 2000);
+});
 els.btnProgramBack.addEventListener('click', goWelcome);
 els.pathProgram.addEventListener('click', openProgram);
 
@@ -2361,7 +2921,11 @@ els.btnClearExclude.addEventListener('click', () => {
 els.btnBuild.addEventListener('click', () => {
   els.buildNote.textContent = '';
   const err = buildAndOpen(requestFromState());
-  if (err) els.buildNote.textContent = err;
+  if (!err) return;
+  // the note sits under the button at the very end of a long page, so
+  // bring it up beside the button rather than leave the tap looking dead
+  els.buildNote.textContent = err;
+  els.buildNote.scrollIntoView({ block: 'center' });
 });
 
 els.btnShuffle.addEventListener('click', () => {
@@ -2380,6 +2944,7 @@ els.btnSave.addEventListener('click', () => {
     savedOn: new Date().toLocaleDateString()
   });
   savePrefs();
+  keepStorage();
   els.btnSave.textContent = '★ Saved';
   els.btnSave.disabled = true;
 });
@@ -2392,7 +2957,7 @@ els.btnShare.addEventListener('click', async () => {
   try {
     // The share sheet where there is one (iOS, Android), the clipboard
     // elsewhere, and the bare link as the last resort.
-    if (navigator.share) { await navigator.share({ title, text: title, url }); return; }
+    if (navigator.share) { await navigator.share({ title, text: shareText(w), url }); return; }
     await navigator.clipboard.writeText(url);
     els.workoutNote.textContent = 'Link copied. Open it on any phone or tablet for this exact workout.';
   } catch (e) {
@@ -2401,9 +2966,12 @@ els.btnShare.addEventListener('click', async () => {
   }
 });
 
-els.btnStart.addEventListener('click', () => {
-  if (state.running) pauseTimer(); else startTimer();
-});
+// Start, pause and resume from the big button or a tap on the timer. On
+// the finish screen the button is Done.
+const toggleTimer = () => (state.running ? pauseTimer() : startTimer());
+els.btnStart.addEventListener('click', () => (isFinished() ? leaveWorkout() : toggleTimer()));
+els.timerCard.addEventListener('click', () => { if (!isFinished()) toggleTimer(); });
+els.btnAgain.addEventListener('click', () => { els.workoutNote.textContent = ''; resetWorkout(); startTimer(); });
 els.btnSkip.addEventListener('click', () => { disarmReset(); skipBlock(); });
 
 // Two-tap reset, so a stray tap can't wipe a session mid-workout.
@@ -2432,8 +3000,26 @@ els.showAlts.addEventListener('change', (e) => {
 });
 els.muteAudio.addEventListener('change', (e) => {
   state.muteAudio = e.target.checked;
+  if (audioCtx) applyAudioSession();      // muted, FIT has no reason to pause your music
   savePrefs();
 });
+// Takes effect from the next sound, never before FIT has made one, so just
+// opening the app leaves someone's music alone.
+els.beepOnSilent.addEventListener('change', (e) => {
+  state.beepOnSilent = e.target.checked;
+  if (audioCtx) applyAudioSession();
+  savePrefs();
+});
+// A tap is the one moment Safari always lets audio restart, so a context
+// still stuck after a call comes back on the next touch of the screen, and
+// after time in the background the first tap starts a fresh one (a scroll
+// doesn't count as a tap, so the old one plays on until then; see
+// freshAudio).
+document.addEventListener('touchend', () => {
+  if (!state.running || !audioCtx) return;
+  if (audioStale) freshAudio();
+  else if (audioCtx.state !== 'running') ensureAudio();
+}, { passive: true });
 
 document.querySelectorAll('.text-size .mini-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -2457,7 +3043,14 @@ function applyTextScale() {
 // =====================================================================
 function updateScrollHint() {
   const el = els.scroller;
-  const more = el.scrollHeight - el.clientHeight - el.scrollTop > 8;
+  let more = el.scrollHeight - el.clientHeight - el.scrollTop > 8;
+  // Not over the home Start, which on a short screen sits at the bottom
+  // edge: under the fade it looks switched off.
+  if (more && state.view === 'welcome') {
+    const go = els.todayCard.querySelector('.today-go, .program-go');
+    const r = go && go.getBoundingClientRect();
+    if (r && r.top < innerHeight && r.bottom > innerHeight - els.scrollHint.offsetHeight) more = false;
+  }
   document.body.classList.toggle('can-scroll', more);
 }
 let scrollHintQueued = false;
@@ -2520,11 +3113,17 @@ function setupFullscreen() {
 }
 
 // Coming back to the app re-derives the position from the clock, so a
-// spell in the background can't leave the workout behind.
+// spell in the background can't leave the workout behind. The browser let
+// go of the wake lock while the page was hidden, so a started workout,
+// paused or not, asks for it again, and a running one wakes its audio
+// (Safari leaves it 'interrupted' after a call, or silent while it still
+// says 'running', so it's re-armed either way; see rearmAudio).
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && audioCtx) audioStale = true;
   if (document.visibilityState !== 'visible') return;
+  if (keepAwake) requestWakeLock();
   if (!state.running) return;
-  requestWakeLock();
+  if (audioStale) rearmAudio(); else ensureAudio();
   tickClock();
 });
 
@@ -2536,12 +3135,15 @@ els.nameA.value = state.nameA || '';
 els.nameB.value = state.nameB || '';
 els.showAlts.checked = state.showAlts;
 els.muteAudio.checked = state.muteAudio;
+els.beepOnSilent.checked = state.beepOnSilent;
+// only an iPhone or iPad can play through the silent switch, so only they ask
+els.silentToggle.hidden = els.silentHint.hidden = !CAN_SILENT;
 els.showPhotos.checked = state.showPhotos !== false;
 document.body.classList.toggle('show-alternatives', state.showAlts);
 document.body.classList.toggle('hide-photos', state.showPhotos === false);
 applyTextScale();
 setupFullscreen();
-renderWelcomeFoot();
+renderToday();
 updateScrollHint();
 // a shared link opens straight away; the gear question waits for a plain visit
 if (location.hash.startsWith('#w=')) openLinkFromHash();

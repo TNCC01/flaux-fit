@@ -581,7 +581,7 @@ export default {
         'Walk with short, steady steps at a normal pace.',
         'Keep the trunk tall and do not lean towards or away from the bell.',
         'Grip the handle hard and keep the shoulder down.',
-        'Walk down the driveway, put the bell down with a flat back, swap hands and walk back.',
+        'Walk out, put the bell down with a flat back, swap hands and walk back.',
       ],
       cues: ['Walk tall', 'Shoulders level', 'Grip hard'],
       mistakes: [
@@ -611,7 +611,7 @@ export default {
         'Walk with short, steady steps at a normal pace.',
         'Stay tall and resist the pull of the dumbbell to the side.',
         'Keep the shoulder on the loaded side down and back.',
-        'Walk down the driveway, swap hands and walk back.',
+        'Walk out, swap hands and walk back.',
       ],
       cues: ['One dumbbell, stay level', 'Walk tall', 'Short, smooth steps'],
       mistakes: [

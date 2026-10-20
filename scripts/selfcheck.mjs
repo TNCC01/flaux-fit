@@ -10,6 +10,7 @@
 */
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SRC = ['js/exercises.js', 'js/workouts.js', 'js/generator.js'];
@@ -29,7 +30,7 @@ const {
   EXERCISES, EQUIPMENT, REGIONS, EXCLUSION_TAGS, SINGLE_INSTANCE, STRETCHES,
   INTERVALS, CLASSICS, STRETCH_ROUTINES, DEFAULT_EQUIPMENT,
   describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits,
-  planMix, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, mixMinimumMinutes
+  planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL
 } = A;
 
 const failures = [];
@@ -90,6 +91,31 @@ const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const need = ['move.html', 'vendor/three/three.min.js',
   ...['js/move', 'js/moves'].flatMap(d => fs.readdirSync(path.join(ROOT, d)).filter(f => f.endsWith('.js')).map(f => `${d}/${f}`))];
 need.forEach(f => { if (!sw.includes(`'/${f}'`)) fail(`sw.js does not precache /${f}`); });
+
+// A shared link previews as FIT in Messages or WhatsApp, not a bare
+// address: a title, a line on what it is, and the app icon at a full
+// address (most apps won't fetch a relative one).
+{
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const og = (k) => (html.match(new RegExp(`<meta property="og:${k}" content="([^"]*)">`)) || [])[1];
+  if (!og('title') || !/FIT/.test(og('title'))) fail('index.html: og:title missing or does not say FIT');
+  if (!og('description') || og('description').length < 40) fail('index.html: og:description missing or too short to say what FIT is');
+  if (!/^https:\/\/[^/]+\/icon-512\.png$/.test(og('image') || '')) fail(`index.html: og:image should be the full address of icon-512.png, got ${og('image')}`);
+  if (!fs.existsSync(path.join(ROOT, 'icon-512.png'))) fail('icon-512.png is missing');
+}
+
+// What's said on screen fits wherever you train: a mate's place or a park,
+// not one particular house with a driveway and a mailbox.
+{
+  const HOUSE = /driveway|mailbox|letterbox/i;
+  const said = [
+    ...ids.map(id => [id, [EXERCISES[id].name, EXERCISES[id].cue, EXERCISES[id].alt].join(' | ')]),
+    ...EXCLUSION_TAGS.map(t => [`tag ${t.id}`, `${t.label} | ${t.blurb}`]),
+    ...CLASSICS.map(w => [`classic ${w.id}`, [w.blurb, ...w.blocks.map(b => b.name)].join(' | ')]),
+    ...Object.keys(MOVES).map(k => [`3D ${k}`, JSON.stringify(MOVES[k].coaching || {})])
+  ];
+  said.forEach(([where, text]) => { if (HOUSE.test(text)) fail(`${where}: says "${text.match(HOUSE)[0]}"`); });
+}
 
 // -------------------------------------------------------- 3. stretch data
 const stretchIds = STRETCHES.map(s => s.id);
@@ -252,7 +278,7 @@ const EQUIP_CASES = [
 const TAG_CASES = [[], ['impact'], ['floor'], ['impact', 'floor', 'running'],
                    ['impact', 'floor', 'overhead', 'running']];
 
-let generated = 0, errored = 0;
+let generated = 0, errored = 0, exact = 0;
 const minutesList = [10, 15, 20, 25, 30, 40, 45, 60];
 
 for (const [equipLabel, equipment] of EQUIP_CASES) {
@@ -295,6 +321,19 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
         const real = Math.round(realSeconds(w, ivId) / 60);
         if (claimed !== real) fail(`${label} card says ${claimed} min but runs ${real} min`);
 
+        // And it runs to the minutes picked. Anything short of the mark goes
+        // on the cool-down, unless blocks went unfilled; whole blocks that
+        // overshoot (15 and 40 min) take it off the bookends instead.
+        const off = realSeconds(w, ivId) - minutes * 60;
+        const unfilled = w.notes.some(n => n.startsWith('Only '));
+        if (off < 0 && !unfilled) fail(`${label} runs ${-off}s short of the ${minutes} min picked`);
+        if (off > 0) fail(`${label} runs ${off}s over the ${minutes} min picked`);
+        if (w.warmupSec < 60 || w.cooldownSec < 60) fail(`${label}: bookends squeezed to nothing`);
+        if (off === 0) exact++;
+
+        // A sentence, not a capital in the middle of one.
+        if (/, [A-Z]/.test(w.blurb)) fail(`${label} blurb has a capital mid-sentence: "${w.blurb}"`);
+
         // Every movement must be usable under this equipment set.
         w.exerciseIds.forEach(id => {
           if (!EXERCISES[id].equipment.every(e => equipment[e] !== false)) {
@@ -307,6 +346,24 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
       }
     }
   }
+}
+// Every length runs to the second in every style: pick 20 minutes and the
+// timer says 20:00. 15 and 40 get there by trimming the bookends, keeping
+// the blocks a favourite saved at that length was built with.
+for (const minutes of minutesList) {
+  for (const ivId of Object.keys(INTERVALS)) {
+    const w = generateWorkout({ minutes, people: 1, intervalId: ivId, regions: REGION_IDS,
+      equipment: ALL_EQUIP, seed: 4000 + minutes, recent: [] });
+    if (w.error) { fail(`${ivId} at ${minutes} min: ${w.error}`); continue; }
+    if (realSeconds(w, ivId) !== minutes * 60) fail(`${ivId} at ${minutes} min runs ${realSeconds(w, ivId)}s, not ${minutes * 60}s`);
+    if (w.name !== `Full Body · ${minutes} min`) fail(`${ivId} at ${minutes} min is called "${w.name}"`);
+  }
+}
+// and 15 and 40 keep the blocks they always had, so a favourite saved at
+// either length rebuilds the same moves
+for (const [minutes, n] of [[15, 3], [40, 7]]) {
+  const plan = planBlocks(minutes, INTERVALS[DEFAULT_INTERVAL]);
+  if (plan.blocks !== n) fail(`${minutes} min plans ${plan.blocks} blocks, not the ${n} it was built with before`);
 }
 
 // --------------------------------------------- 8b. mixed sessions
@@ -385,10 +442,30 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
     }
   }
 }
+// Surf hides the target areas, so its notes and errors never name them,
+// and a note says which parts of surfing had to go.
+{
+  const areaLabels = REGIONS.map(r => r.label);
+  for (const [equipLabel, equipment] of EQUIP_CASES) for (const blockedTags of TAG_CASES) {
+    const w = generateWorkout({ minutes: 20, people: 1, intervalId: 'short', goal: 'surf', equipment, blockedTags,
+      regions: REGION_IDS, seed: 6100, recent: [] });
+    const said = w.error || w.notes.join(' ');
+    const named = areaLabels.filter(l => said.includes(l));
+    if (named.length) fail(`surf, ${equipLabel}, no:${blockedTags.join(',') || '-'}: names target areas (${named.join(', ')}): ${said}`);
+  }
+  const legsOnly = generateWorkout({ minutes: 20, people: 1, intervalId: 'short', goal: 'surf', equipment: bodyOnly,
+    blockedTags: ['floor'], regions: REGION_IDS, seed: 6101, recent: [] });
+  if (!legsOnly.notes.some(n => n.includes('paddle strength'))) fail(`surf, bodyweight, no floor work: no note that paddling was skipped: ${legsOnly.notes.join(' ')}`);
+  const none = generateWorkout({ minutes: 20, people: 1, intervalId: 'short', goal: 'surf', equipment: bodyOnly,
+    excluded: ids, regions: REGION_IDS, seed: 6102, recent: [] });
+  if (!none.error || /target areas/.test(none.error)) fail(`surf with everything left out: "${none.error}"`);
+}
 
 // ------------------------------------------------------ 8d. programs
-// Every day of every program builds at every length the program screen
-// offers it, with every kit, and the build-up keeps targets sensible.
+// Every day of every program builds at every length (the program screen
+// offers them all; a mix too long for the time runs as its first style),
+// with every kit and every leave-out, and the build-up keeps targets
+// sensible.
 let programDays = 0;
 for (const prog of PROGRAMS) {
   const total = prog.weeks * prog.days.length;
@@ -403,15 +480,21 @@ for (const prog of PROGRAMS) {
     }
     const min = day.mix ? mixMinimumMinutes(day.mix) : 10;
     if (!min || min > day.minutes) fail(`${label}: suggests ${day.minutes} min but needs ${min}`);
-    for (const minutes of minutesList.filter(m => m >= (min || 10))) {
+    for (const minutes of minutesList) {
       const [equipLabel, equipment] = EQUIP_CASES[(n + minutes) % EQUIP_CASES.length];
-      const w = generateWorkout({ minutes, people: 2, intervalId: day.mix ? 'mix' : day.style, mix: day.mix,
-        goal: prog.goal, surfFocus: day.focus, repScale: day.repScale, equipment,
+      const blockedTags = TAG_CASES[(n + minutes) % TAG_CASES.length];
+      const { intervalId, mix, short } = programStyle(day, minutes);
+      if (!!short !== !!(day.mix && minutes < min)) fail(`${label}, ${minutes} min: ran as ${intervalId}, the mix needs ${min}`);
+      if (short && intervalId !== day.mix[0]) fail(`${label}, ${minutes} min: too short for the mix should run ${day.mix[0]}, got ${intervalId}`);
+      const w = generateWorkout({ minutes, people: 2, intervalId, mix,
+        goal: prog.goal, surfFocus: day.focus, repScale: day.repScale, equipment, blockedTags,
         regions: REGION_IDS, seed: 9000 + n * 100 + minutes, recent: [] });
-      if (w.error) { fail(`${label}, ${minutes} min, ${equipLabel}: ${w.error}`); continue; }
+      if (w.error) { fail(`${label}, ${minutes} min, ${equipLabel}, no:${blockedTags.join(',') || '-'}: ${w.error}`); continue; }
       programDays++;
       if (w.repScale !== day.repScale) fail(`${label}: the build-up didn't reach the workout`);
       checkBlocks(`${label}, ${minutes} min`, w, equipment);
+      const left = w.blocks.flatMap(b => b.ids).filter(id => EXERCISES[id].tags.some(t => blockedTags.includes(t)));
+      if (left.length) fail(`${label}, ${minutes} min: left out ${blockedTags.join(',')} but got ${left.join(', ')}`);
       const style = day.mix ? day.mix[0] : day.style;
       if (!INTERVALS[style].reps) continue;           // timed styles have no reps to scale
       const ctx = { ...ctxFor(style, equipment), repScale: day.repScale };
@@ -420,6 +503,47 @@ for (const prog of PROGRAMS) {
         if (!d.reps || /^0|NaN/.test(d.reps)) fail(`${label}: ${id} reads "${d.reps}"`);
       });
     }
+  }
+}
+
+// --------------------------------------------------- 8e. the export script
+// scripts/export-sequence.mjs hands the Garmin work the steps the timer
+// runs. Every style exports at its real length with no empty steps, EMOM
+// targets and AMRAP / For Time laps come through, and what it can't do (a
+// classic as a mix) is refused with a reason rather than exported wrong.
+let exported = 0;
+{
+  const run = (args) => JSON.parse(execFileSync('node', [path.join(ROOT, 'scripts/export-sequence.mjs'), ...args], { encoding: 'utf8' }));
+  const power = CLASSICS.find(w => w.id === 'power-hour');
+  const pb = A.classicBookends(power);
+  const powerSec = pb.warmupSec + pb.cooldownSec + power.blocks.length * 240 + (power.blocks.length - 1) * power.blockRestSec;
+  const cases = [
+    ...Object.keys(INTERVALS).map(id => [`generated ${id}, 20 min`, ['--generate', '--minutes', '20', '--interval', id], 1200, id]),
+    ...Object.keys(INTERVALS).map(id => [`power-hour as ${id}, two people`, ['power-hour', '--interval', id, '--people', '2'], powerSec, id]),
+    ['generated mix, 30 min', ['--generate', '--minutes', '30', '--interval', 'mix', '--mix', 'emom,short,amrap'], 1800, 'mix']
+  ];
+  for (const [label, args, want, style] of cases) {
+    let out;
+    try { out = run(args); } catch (e) { fail(`export ${label}: ${String(e.stderr || e).trim()}`); continue; }
+    exported++;
+    if (out.totalSeconds !== want) fail(`export ${label}: ${out.totalSeconds}s, the timer runs ${want}s`);
+    if (out.steps.some(x => !(x.seconds > 0))) fail(`export ${label}: a step with no length`);
+    const work = out.steps.filter(x => x.kind === 'work');
+    const iv = INTERVALS[style];
+    if (iv && iv.reps && !iv.lap && work.some(x => x.seconds !== 60 || !x.reps)) fail(`export ${label}: an EMOM minute without its reps`);
+    if (iv && iv.lap && work.some(x => !x.lap || !x.lap.length || !x.lap.every(e => e.reps) || (iv.forTime && !(x.laps > 0)))) {
+      fail(`export ${label}: a lap step without its exercises, reps or laps`);
+    }
+    if (iv && iv.lap && args.includes('2') && work.some(x => !x.lapB)) fail(`export ${label}: no lap for person B`);
+    if (style === 'mix' && (out.interval.id !== 'mix' || out.steps.filter(x => x.kind === 'changeover').length !== 2)) {
+      fail(`export ${label}: not three sections with a changeover between each`);
+    }
+  }
+  try {
+    run(['power-hour', '--interval', 'mix']);
+    fail('export: a classic as a mix should be refused');
+  } catch (e) {
+    if (!/a classic runs in one style/.test(String(e.stderr))) fail(`export: a classic as a mix is refused without saying why: ${e.stderr}`);
   }
 }
 
@@ -525,8 +649,9 @@ console.log(`3D movements       ${Object.keys(MOVES).length}, ${need.length} fil
 console.log(`classics           ${CLASSICS.length} + ${STRETCH_ROUTINES.length} stretch routines`);
 console.log(`mixed sessions     ${mixBuilt} built, ${mixRefused} correctly refused as too short`);
 console.log(`surf fitness       ${surfBuilt} sessions, surf exercises only, pop-ups and paddling in each`);
-console.log(`programs           ${programDays} program-day builds, every day at every length`);
-console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused`);
+console.log(`programs           ${programDays} program-day builds, every day at every length, leave-outs kept`);
+console.log(`export script      ${exported} exports, every style, lengths match the timer`);
+console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused, ${exact} to the second`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 if (warnings.length) {
   console.log(`\n${warnings.length} warning(s):`);

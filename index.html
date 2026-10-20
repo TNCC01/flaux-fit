@@ -19,6 +19,13 @@
 <meta name="apple-mobile-web-app-title" content="FIT">
 <meta name="theme-color" content="#0d9488">
 <title>FIT, the Flaux workout timer</title>
+<!-- What a link preview shows in Messages, WhatsApp and the like. A shared
+     workout rides after the #, which a preview never sees, so every link
+     gets this one; the share text says which workout it is. The image has
+     to be a full address for most apps to fetch it. -->
+<meta property="og:title" content="FIT, the Flaux workout timer">
+<meta property="og:description" content="A timed workout for the time and gear you've got, for one or two people. Opens in the browser, no account needed.">
+<meta property="og:image" content="https://fit.flaux.com.au/icon-512.png">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -36,7 +43,7 @@
   content. See the note above #scroller in css/app.css.
 -->
 <div id="scroller">
-<div class="app">
+<main class="app">
 
   <!-- ============== WELCOME VIEW ============== -->
   <div class="view active" id="welcomeView">
@@ -53,22 +60,21 @@
 
     <div class="menu-header">
       <h1 class="menu-title">How do you want to work out today?</h1>
+      <!-- for newcomers; it goes once there's a session or a program (renderToday) -->
+      <p class="menu-sub" id="welcomeSub">FIT builds a timed workout for the time and gear you've got, for one or two people.</p>
     </div>
     <div class="build-note" id="welcomeNote"></div>
 
     <div class="path-grid">
-      <div class="path-card primary" id="pathBuild" role="button" tabindex="0">
-        <div class="path-icon" aria-hidden="true">⚡</div>
-        <div class="path-name">Build a workout</div>
-        <div class="path-blurb">Tell me how long you've got, how many of you and the style, and I'll build a session around your gear.</div>
-        <div class="path-go">Start here →</div>
-      </div>
+      <!-- Today: how long and how many, then Start. Filled in by renderToday(),
+           and it's today's program session instead while one is waiting. -->
+      <div class="program-card today-card" id="todayCard"></div>
 
       <div class="path-card" id="pathProgram" role="button" tabindex="0">
         <div class="path-icon" aria-hidden="true">≋</div>
         <div class="path-name">Programs</div>
         <div class="path-blurb">A session a day that builds week by week. Surf Fit: paddling, pop-ups and legs, with easy days built in.</div>
-        <div class="path-go">Today's session →</div>
+        <div class="path-go" id="pathProgramGo">Start Surf Fit →</div>
       </div>
 
       <div class="path-card" id="pathLibrary" role="button" tabindex="0">
@@ -84,20 +90,30 @@
       <p class="install-hint" id="installHint" hidden>
         To lose the address bar and tabs for good: tap Share, then
         <strong>Add to Home Screen</strong>, and open FIT from the icon.
+        Best done before you start: the home-screen app keeps its own
+        history, favourites and program, separate from Safari's.
       </p>
     </div>
-
-    <p class="welcome-foot" id="welcomeFoot"></p>
   </div>
 
-  <!-- ============== FIRST VISIT: GEAR ============== -->
+  <!-- ============== FIRST VISIT: WHO AND GEAR ============== -->
   <div class="view" id="gearView">
     <div class="menu-header">
-      <h1 class="menu-title">First up, what gear have you got?</h1>
+      <p class="menu-sub">Welcome to FIT. It builds a timed workout for the time and gear you've got, for one or two people.</p>
+      <h1 class="menu-title">First up, two quick questions</h1>
     </div>
-    <p class="gear-intro">Tick what you can use. Anything that needs gear you haven't got is swapped for a bodyweight move.</p>
-    <div class="chip-row" id="onboardGear"></div>
-    <p class="picker-hint">You can change this and set your weights any time in Build a workout.</p>
+    <div class="build-note" id="gearNote"></div>
+    <div class="gear-ask">
+      <div class="picker-label">Who's training?</div>
+      <div class="chip-row" id="onboardPeople"></div>
+    </div>
+    <div class="gear-ask">
+      <div class="picker-label">What gear have you got?</div>
+      <p class="gear-intro">Tick what you can use. Anything that needs gear you haven't got is swapped for a bodyweight move.</p>
+      <div class="chip-row" id="onboardGear"></div>
+      <div class="weight-picker" id="onboardWeights"></div>
+    </div>
+    <p class="picker-hint">You can change any of this later: tap Change on the home screen.</p>
     <button class="build-btn" id="btnGearDone">Just bodyweight for now</button>
   </div>
 
@@ -122,8 +138,8 @@
         <div class="chip people-chip" data-people="2" role="button" tabindex="0">2 people</div>
       </div>
       <div class="name-inputs" id="nameInputs">
-        <input type="text" id="nameA" placeholder="Person A (optional)" maxlength="14" autocomplete="off" enterkeyhint="done">
-        <input type="text" id="nameB" placeholder="Person B (optional)" maxlength="14" autocomplete="off" enterkeyhint="done">
+        <input type="text" id="nameA" placeholder="Name (optional)" maxlength="14" autocomplete="off" enterkeyhint="done" aria-label="Person A's name">
+        <input type="text" id="nameB" placeholder="Name (optional)" maxlength="14" autocomplete="off" enterkeyhint="done" aria-label="Person B's name">
       </div>
     </div>
 
@@ -138,6 +154,7 @@
     <div class="picker-row">
       <div class="picker-label">How long have you got?</div>
       <div class="chip-row" id="timePicker"></div>
+      <div class="picker-hint" id="timeHint" hidden></div>
     </div>
 
     <div class="picker-row">
@@ -256,13 +273,13 @@
     </div>
 
     <div class="block-info">
-      <div class="block-name" id="blockName"></div>
+      <div class="block-name" id="blockName" aria-live="polite"></div>
       <div class="round-dots" id="roundDots"></div>
     </div>
 
     <div class="timer-card warmup" id="timerCard">
       <div class="ring" id="phaseRing" aria-hidden="true"></div>
-      <div class="phase-label" id="phaseLabel">Press start</div>
+      <div class="phase-label" id="phaseLabel" aria-live="polite">Press start</div>
       <div class="time-display" id="timeDisplay">--:--</div>
       <div class="total-time" id="totalTime">Total 0:00</div>
     </div>
@@ -299,6 +316,7 @@
       <button id="btnStart">Start</button>
       <button class="secondary" id="btnSkip">Skip block</button>
       <button class="secondary" id="btnReset">Reset</button>
+      <button class="secondary" id="btnAgain" hidden>Start over</button>
     </div>
     <div class="build-note" id="workoutNote"></div>
 
@@ -327,16 +345,21 @@
         <input type="checkbox" id="muteAudio">
         Mute audio
       </label>
+      <label class="toggle" id="silentToggle" hidden>
+        <input type="checkbox" id="beepOnSilent" checked>
+        Beep even on silent
+      </label>
       <span class="toggle text-size">
         Text
-        <button class="mini-btn" data-scale="1">A</button>
-        <button class="mini-btn" data-scale="1.2">A</button>
-        <button class="mini-btn" data-scale="1.45">A</button>
+        <button class="mini-btn" data-scale="1" aria-label="Text size normal">A</button>
+        <button class="mini-btn" data-scale="1.2" aria-label="Text size large">A</button>
+        <button class="mini-btn" data-scale="1.45" aria-label="Text size largest">A</button>
       </span>
+      <p class="toggle-hint" id="silentHint" hidden>"Beep even on silent" can pause Spotify or other music while you train. Turn it off to keep your music going; the beeps then need the ringer on.</p>
     </div>
   </div>
 
-</div>
+</main>
 </div>
 
 <!-- Every exercise in the coming block, as moving thumbnails, so a rest
@@ -363,6 +386,19 @@
   </div>
 </div>
 
+<!-- The first load after an update can pair this page with the last
+     release's scripts: a file slow to come in gets the offline copy instead
+     (sw.js), and the two releases don't run together. So if the scripts
+     fail while the page loads, it loads again as soon as this release's
+     offline copy takes over. js/app.js does the same for an older page. -->
+<script>
+  window.addEventListener('error', function retry() {
+    window.removeEventListener('error', retry);
+    if (document.readyState !== 'complete' && navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+    }
+  });
+</script>
 <script src="js/exercises.js"></script>
 <script src="js/workouts.js"></script>
 <script src="js/generator.js"></script>

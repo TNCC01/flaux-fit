@@ -416,12 +416,12 @@ const CLASSICS = [
   },
   {
     id: 'driveway-demon', name: 'Driveway Demon', tagline: 'Sprint, swing, suffer',
-    focus: 'whole-body', blurb: 'Six blocks of sprints, KBs, bodyweight and holds. Use the whole driveway.',
+    focus: 'whole-body', blurb: 'Six blocks of sprints, KBs, bodyweight and holds. Find some flat ground to sprint on.',
     format: 'tabata', blockRestSec: 45,
     blocks: [
       blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10'),
       blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockAlt('Sprints & KB hold', 'sprint', 'kbRackHold15'),
       blockCycle('Climbers, skaters & crawls', ['mountainClimberFast', 'skaterHops', 'highKnees', 'bearCrawl']),
       blockAlt('Push-ups & plank', 'pushup', 'plankHold'),
       blockAlt('Ring rows & hollow rocks', 'ringRow', 'hollowRocks')
@@ -437,7 +437,7 @@ const CLASSICS = [
       blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
       blockCycle('Skipping & push-up mix', ['skipping', 'pushup', 'inchworm', 'pikePushup']),
       blockAlt('Barbell press & plank', 'barbellPress', 'plankHold'),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockAlt('Sprints & KB hold', 'sprint', 'kbRackHold15'),
       blockAlt('Ring hangs & suitcase carry', 'ringTuckHold', 'dbSuitcaseCarry'),
       blockCleanPress()
     ]
@@ -451,7 +451,7 @@ const CLASSICS = [
       blockCycle('Rows & push-up mix', ['ringRow', 'pushup', 'ringPushup', 'pikePushup']),
       blockSwap('KB swings', 'kbSwing15', 'kbSwing10'),
       blockCycle('Barbell press, rows & planks', ['barbellPress', 'plankHold', 'barbellRow', 'plankShoulderTaps']),
-      blockAlt('Driveway sprint & KB hold', 'sprint', 'kbRackHold15'),
+      blockAlt('Sprints & KB hold', 'sprint', 'kbRackHold15'),
       blockCycle('Skipping & core', ['skipping', 'hollowRocks', 'highKnees', 'bicycleCrunch']),
       blockSwap('Dumbbell press', 'dbPressHeavy', 'dbPressLight'),
       blockCycle('Lunges, step-ups & hinges', ['dbLunge', 'stepUp', 'kbDeadlift15', 'gluteBridge']),
@@ -467,7 +467,7 @@ const CLASSICS = [
       blockCycle('Jacks, knees & skaters', ['jumpingJacks', 'highKnees', 'skaterHops', 'mountainClimber']),
       blockAlt('Burpees & plank', 'burpee', 'plankHold'),
       blockCycle('Skipping & squats', ['skipping', 'airSquat', 'highKnees', 'squatJump']),
-      blockAlt('Driveway sprint & wall sit', 'sprint', 'wallSit'),
+      blockAlt('Sprints & wall sit', 'sprint', 'wallSit'),
       blockCycle('Climbers & core burners', ['mountainClimberFast', 'bicycleCrunch', 'flutterKicks', 'plankShoulderTaps']),
       blockAlt('Squat jumps & push-ups', 'squatJump', 'pushup'),
       blockCycle('Crawls & bridges', ['bearCrawl', 'gluteBridge', 'inchworm', 'singleLegBridge']),
@@ -526,7 +526,7 @@ function stretchList(routine) {
 // ---------------------------------------------------------------------
 // PROGRAMS
 // A program is a run of daily sessions planned ahead: a week of day
-// templates repeated, with the reps building fortnight by fortnight. Each
+// templates repeated, with the rep targets building over the weeks. Each
 // day builds through the same generator as everything else, so it fits the
 // time, gear and number of people on the day. Progress moves on when a day
 // is done, not by the calendar, so a missed day waits for you.
@@ -562,5 +562,14 @@ const PROGRAMS = [
 function programDay(prog, n) {
   const week = Math.min(prog.weeks, Math.floor(n / prog.days.length) + 1);
   return { ...prog.days[n % prog.days.length], n, week, repScale: prog.repScale[week - 1] || 1 };
+}
+// The style a day runs in at this length: its own, or its mix. A mix that
+// won't fit the minutes runs as its first style on its own, so a short day
+// is still a session rather than a refusal.
+function programStyle(day, minutes) {
+  if (!day.mix) return { intervalId: day.style };
+  const min = mixMinimumMinutes(day.mix);
+  if (min && minutes >= min) return { intervalId: 'mix', mix: day.mix.slice() };
+  return { intervalId: day.mix[0], short: true };
 }
 
