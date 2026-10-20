@@ -236,10 +236,7 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   font-size: clamp(1.5rem, 3.2vw, 2.2rem);
   font-weight: 800; letter-spacing: -0.02em; line-height: 1.15;
 }
-.welcome-foot {
-  color: var(--muted); font-size: 0.9rem;
-  text-align: center; padding: 0.5rem 1rem 0;
-}
+.menu-sub { color: var(--muted); font-size: 1rem; line-height: 1.45; font-weight: 500; margin-top: 0.4rem; }
 .welcome-actions {
   display: flex; flex-direction: column; align-items: center;
   gap: 0.6rem; padding: 0.35rem 0 0;
@@ -251,13 +248,22 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
 }
 .install-hint strong { color: var(--teal-bright); }
 
-/* ============== Welcome path cards ============== */
-/* 250px lets all four sit on one row on an iPad in landscape, and fall to
-   a tidy 2x2 in portrait, rather than 3-then-1. */
+/* ============== Welcome: the Today card and two path cards ============== */
+/* Stacked on a phone, the Today card across the top on an iPad in
+   portrait, and beside the other two in landscape, so all of it fits on
+   the first screen. */
 .path-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.85rem;
+}
+@media (min-width: 600px) {
+  .path-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .today-card { grid-column: 1 / -1; }
+}
+@media (min-width: 1000px) {
+  .path-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .today-card { grid-column: 1; grid-row: 1 / span 2; }
 }
 .path-card {
   background: linear-gradient(135deg, rgba(20,184,166,0.05) 0%, transparent 55%), var(--card);
@@ -274,14 +280,26 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   transition: transform 0.12s, box-shadow 0.2s, border-color 0.2s;
 }
 .path-card:hover { border-color: rgba(20,184,166,0.4); box-shadow: 0 10px 30px rgba(20,184,166,0.12); }
-.path-card.primary {
-  border-color: rgba(20,184,166,0.5);
-  background: linear-gradient(135deg, rgba(20,184,166,0.16), rgba(13,148,136,0.04) 60%), var(--card);
-}
 .path-icon { font-size: 1.9rem; line-height: 1; color: var(--teal-bright); }
 .path-name { font-size: clamp(1.3rem, 2.4vw, 1.7rem); font-weight: 850; letter-spacing: -0.01em; }
 .path-blurb { color: var(--muted); font-size: 1rem; line-height: 1.45; flex: 1; font-weight: 500; }
 .path-go { color: var(--teal-bright); font-weight: 800; font-size: 1rem; }
+/* Not a tap target itself (its chips and buttons are), so no press squash. */
+.today-card {
+  border: 2px solid rgba(20,184,166,0.5);
+  background: linear-gradient(135deg, rgba(20,184,166,0.16), rgba(13,148,136,0.04) 60%), var(--card);
+  border-radius: 1.25rem;
+  padding: 1.1rem 1.2rem 1.2rem;
+  display: flex; flex-direction: column; gap: 0.45rem;
+}
+.today-card .link-btn { align-self: flex-start; margin-top: 0; padding: 0.35rem 0; font-size: 0.95rem; }
+/* a program note above a built workout: done today, or set aside for today */
+.today-top { padding-bottom: 0.55rem; margin-bottom: 0.2rem; border-bottom: 1px solid var(--border); }
+.today-line { color: var(--muted); font-size: 0.95rem; line-height: 1.4; }
+/* pinned to the bottom with Start when the card is taller than its content */
+.today-style { color: var(--muted); font-size: 0.95rem; line-height: 1.4; margin-top: auto; padding-top: 0.5rem; }
+.today-style .link-btn { display: inline; padding: 0.35rem 0.2rem; }
+.today-go, .today-card .program-go { font-size: 1.3rem; padding: 1.1rem; margin-top: 0.4rem; }
 
 /* ============== Pickers ============== */
 .picker-row { background: var(--card); border-radius: 1rem; padding: 0.95rem 1rem; }
@@ -812,6 +830,15 @@ body.show-alternatives .alternative.has-alt { display: block; }
   .pre-actions button { flex-basis: 100%; }
 }
 
+/* The eight times in even rows: two of four on a phone, one row once the
+   card is wide enough (the home Today card and today's program session). */
+.today-card, .program-today { container-type: inline-size; }
+.time-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.time-chips .chip { padding-left: 0.3rem; padding-right: 0.3rem; text-align: center; white-space: nowrap; }
+@container (min-width: 620px) {
+  .time-chips { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
+
 /* ============== Programs ============== */
 #programBody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.9rem; }
 .program-card button { margin-top: 0.4rem; }
@@ -852,5 +879,9 @@ body.show-alternatives .alternative.has-alt { display: block; }
 
 /* ============== First visit: gear ============== */
 #gearView { gap: 1rem; padding-top: 1.25rem; }
+#gearView .menu-sub { margin: 0 0 0.6rem; }
+.gear-ask { display: flex; flex-direction: column; gap: 0.6rem; }
+.gear-ask .picker-label { margin-bottom: 0; }
+#onboardWeights:empty { display: none; }
 .gear-intro { color: var(--muted); font-size: 1.02rem; line-height: 1.45; margin: 0; }
 #onboardGear .chip { font-size: 1.05rem; padding: 0.75rem 1.05rem; }

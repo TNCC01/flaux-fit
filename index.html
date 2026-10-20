@@ -53,22 +53,20 @@
 
     <div class="menu-header">
       <h1 class="menu-title">How do you want to work out today?</h1>
+      <p class="menu-sub">FIT builds a timed workout for the time and gear you've got, for one or two people.</p>
     </div>
     <div class="build-note" id="welcomeNote"></div>
 
     <div class="path-grid">
-      <div class="path-card primary" id="pathBuild" role="button" tabindex="0">
-        <div class="path-icon" aria-hidden="true">⚡</div>
-        <div class="path-name">Build a workout</div>
-        <div class="path-blurb">Tell me how long you've got, how many of you and the style, and I'll build a session around your gear.</div>
-        <div class="path-go">Start here →</div>
-      </div>
+      <!-- Today: how long and how many, then Start. Filled in by renderToday(),
+           and it's today's program session instead while one is waiting. -->
+      <div class="program-card today-card" id="todayCard"></div>
 
       <div class="path-card" id="pathProgram" role="button" tabindex="0">
         <div class="path-icon" aria-hidden="true">≋</div>
         <div class="path-name">Programs</div>
         <div class="path-blurb">A session a day that builds week by week. Surf Fit: paddling, pop-ups and legs, with easy days built in.</div>
-        <div class="path-go">Today's session →</div>
+        <div class="path-go" id="pathProgramGo">Start Surf Fit →</div>
       </div>
 
       <div class="path-card" id="pathLibrary" role="button" tabindex="0">
@@ -86,18 +84,25 @@
         <strong>Add to Home Screen</strong>, and open FIT from the icon.
       </p>
     </div>
-
-    <p class="welcome-foot" id="welcomeFoot"></p>
   </div>
 
-  <!-- ============== FIRST VISIT: GEAR ============== -->
+  <!-- ============== FIRST VISIT: WHO AND GEAR ============== -->
   <div class="view" id="gearView">
     <div class="menu-header">
-      <h1 class="menu-title">First up, what gear have you got?</h1>
+      <p class="menu-sub">Welcome to FIT. It builds a timed workout for the time and gear you've got, for one or two people.</p>
+      <h1 class="menu-title">First up, two quick questions</h1>
     </div>
-    <p class="gear-intro">Tick what you can use. Anything that needs gear you haven't got is swapped for a bodyweight move.</p>
-    <div class="chip-row" id="onboardGear"></div>
-    <p class="picker-hint">You can change this and set your weights any time in Build a workout.</p>
+    <div class="gear-ask">
+      <div class="picker-label">Who's training?</div>
+      <div class="chip-row" id="onboardPeople"></div>
+    </div>
+    <div class="gear-ask">
+      <div class="picker-label">What gear have you got?</div>
+      <p class="gear-intro">Tick what you can use. Anything that needs gear you haven't got is swapped for a bodyweight move.</p>
+      <div class="chip-row" id="onboardGear"></div>
+      <div class="weight-picker" id="onboardWeights"></div>
+    </div>
+    <p class="picker-hint">You can change any of this later in Build a workout.</p>
     <button class="build-btn" id="btnGearDone">Just bodyweight for now</button>
   </div>
 
@@ -122,8 +127,8 @@
         <div class="chip people-chip" data-people="2" role="button" tabindex="0">2 people</div>
       </div>
       <div class="name-inputs" id="nameInputs">
-        <input type="text" id="nameA" placeholder="Person A (optional)" maxlength="14" autocomplete="off" enterkeyhint="done">
-        <input type="text" id="nameB" placeholder="Person B (optional)" maxlength="14" autocomplete="off" enterkeyhint="done">
+        <input type="text" id="nameA" placeholder="Name (optional)" maxlength="14" autocomplete="off" enterkeyhint="done" aria-label="Person A's name">
+        <input type="text" id="nameB" placeholder="Name (optional)" maxlength="14" autocomplete="off" enterkeyhint="done" aria-label="Person B's name">
       </div>
     </div>
 

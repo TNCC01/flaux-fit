@@ -82,25 +82,75 @@ const toggleAllGear = async () => { for (const g of GEAR) await p.click(`#equipm
 try {
   await p.goto(URL); await st(() => localStorage.clear()); await p.goto(URL);
 
-  step = 'first visit asks what gear you have';
+  step = 'first visit asks who is training and what gear you have';
   assert(await activeView() === 'gearView', 'a first visit opens on the gear question');
+  assert((await p.$eval('#gearView', e => e.textContent)).includes('builds a timed workout'), 'the first screen says what FIT is');
+  assert((await p.$eval('#onboardPeople .chip.active', e => e.textContent)) === 'Just me', 'one person to start');
   assert(await p.$$eval('#onboardGear .chip.active', els => els.length) === 0, 'nothing ticked to start');
   assert((await p.$eval('#btnGearDone', e => e.textContent)) === 'Just bodyweight for now', 'no gear reads as bodyweight');
   for (const g of GEAR) await p.click(`#onboardGear .chip:has-text("${g}")`);
   assert(await p.$$eval('#onboardGear .chip.active', els => els.length) === GEAR.length, 'everything ticked');
   assert((await p.$eval('#btnGearDone', e => e.textContent)) === 'Done', 'with gear it says Done');
+  assert(await p.$$eval('#onboardWeights .weight-row', els => els.length) === 3, 'a weight row under kettlebells, barbell and dumbbells');
+  assert(await st(() => state.weights.kb.length === 0), 'no bells ticked until you say');
+  await p.click('#onboardWeights .weight-row:has-text("Kettlebells you have") .chip:text-is("10kg")');
+  await p.click('#onboardWeights .weight-row:has-text("Kettlebells you have") .chip:text-is("15kg")');
+  await p.click('#onboardPeople .chip:has-text("Me and a mate")');
   await p.click('#btnGearDone');
   assert(await activeView() === 'welcomeView', 'then the home screen');
-  assert(await st(() => state.gearAsked && state.gearSets[0].name === 'Home' && state.gearSets[0].equipment.rings === true),
-         'the answer is saved as the Home gear set');
+  assert(await st(() => state.gearAsked && state.gearSets[0].name === 'Home' && state.gearSets[0].equipment.rings === true
+                        && state.gearSets[0].weights.kb.join(',') === '10,15' && state.people === 2),
+         'the answer is saved as the Home gear set, with the bells ticked and two people');
   await p.goto(URL);
   assert(await activeView() === 'welcomeView', 'and not asked again');
-  ok('first visit: the gear question, saved as Home, asked once');
+  ok('first visit: who and what gear, weights included, saved as Home, asked once');
+
+  step = 'a newcomer on a phone: one person, their own bell, Start on the first screen';
+  {
+    const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const f = await fresh.newPage();
+    f.on('pageerror', e => errors.push('newcomer: ' + e));
+    f.on('console', m => { if (m.type() === 'error') errors.push('newcomer: ' + m.text()); });
+    await f.goto(URL);
+    await f.click('#onboardGear .chip:has-text("Kettlebells")');
+    assert((await f.$eval('#onboardWeights', e => e.textContent)).includes('Tick at least one'), 'ticking kettlebells asks which bells');
+    await f.click('#onboardWeights .chip:text-is("12kg")');
+    await f.click('#btnGearDone');
+    const home = await f.evaluate(() => {
+      const card = document.getElementById('todayCard');
+      return { view: document.querySelector('.view.active').id, people: state.people, kb: loadsFor(state.weights).kb15,
+               on: [...card.querySelectorAll('.chip.active')].map(c => c.textContent).join(','),
+               places: !!card.querySelector('.chip[data-pick^="gear-"]'),
+               style: card.querySelector('.today-style').textContent,
+               go: card.querySelector('.today-go').getBoundingClientRect().bottom, height: innerHeight };
+    });
+    assert(home.view === 'welcomeView' && home.people === 1 && home.kb === '12kg', 'one person and the 12kg bell: ' + JSON.stringify(home));
+    assert(home.on === '20 min,1 person', 'the Today card starts on 20 minutes, one person: ' + home.on);
+    assert(!home.places, 'with one place there is no "Training at" row');
+    assert(home.style.startsWith('Short bursts · General fitness'), 'one line says the style and the goal: ' + home.style);
+    assert(home.go <= home.height, `Start is on the first screen (bottom ${Math.round(home.go)} of ${home.height})`);
+    await f.click('#todayCard .chip:text-is("15 min")');
+    assert(await f.evaluate(() => state.minutes) === 15, 'a time chip sets the minutes');
+    await f.click('#todayCard .today-go');
+    const built = await f.evaluate(() => ({ view: document.querySelector('.view.active').id, people: state.people,
+      min: state.workout.request.minutes, total: state.totalDuration, plan: planBlocks(15, INTERVALS.short).total,
+      badge: document.getElementById('peopleBadge').textContent }));
+    assert(built.view === 'workoutView' && built.people === 1 && built.min === 15 && built.badge === '1 person',
+           'Start builds a solo 15-minute workout: ' + JSON.stringify(built));
+    assert(built.total === built.plan, `and it runs as long as a 15-minute build does: ${built.total}s, planned ${built.plan}s`);
+    await fresh.close();
+  }
+  ok('a newcomer: just me and a 12kg bell, then 15 min and Start on the home card builds a solo session');
 
   step = 'welcome';
-  assert((await p.$$('.path-card')).length === 3, 'three path cards');
+  assert(await p.$eval('#todayCard', e => e.offsetParent !== null), 'the Today card shows');
+  assert((await p.$$('#todayCard .time-chips .chip')).length === 8, 'with the eight times');
+  assert(await p.$('#todayCard .today-go'), 'and a Start button');
+  assert((await p.$$('.path-card')).length === 2, 'Programs and Saved & ready-made beside it');
+  assert((await p.$eval('#pathProgramGo', e => e.textContent)) === 'Start Surf Fit →', 'before a program starts, the card says how to start one');
+  assert(!(await p.$('#welcomeFoot')), 'no jargon footer');
   assert(await p.$eval('#installHint', e => e.hidden), 'install hint is hidden on a desktop UA');
-  ok('welcome shows three paths, no iOS install hint on desktop');
+  ok('welcome: the Today card, Programs and Saved & ready-made; no footer, no iOS install hint on desktop');
 
   step = 'quick build, long efforts, save, start';
   await pickInterval('Long efforts');
@@ -164,6 +214,10 @@ try {
   p.once('dialog', d => d.accept("Mate's place"));
   await p.click('.gear-set-add');
   assert(await st(() => state.gearSets.map(g => g.name).join('|')) === "Home|Mate's place", 'a second set, named');
+  await p.click('#btnSetupBack');
+  assert(await p.$$eval('#todayCard .chip[data-pick^="gear-"]', els => els.map(e => e.textContent).join('|')) === "Home|Mate's place",
+         'with two places, the home card asks where you are training');
+  await p.click('#pathBuild');
   await p.click('#equipmentPicker .chip:has-text("Kettlebells")');          // no bells at the mate's
   assert(await st(() => !effectiveEquip().kb15), "kettlebells off at the mate's place");
   await p.click('.gear-set:has-text("Home")');
@@ -291,7 +345,9 @@ try {
   assert(rows === 2, 'burpee search gives 2 rows, got ' + rows);
   await p.click('#btnBuild');
   assert(await st(() => state.workout.exerciseIds.every(id => EXERCISES[id].regions.includes('legs'))), 'custom build on target');
-  await p.click('#btnBack'); await p.click('#pathBuild');
+  await p.click('#btnBack');
+  assert((await p.$eval('#todayCard .today-style', e => e.textContent)).includes('Legs & Glutes'), 'the home card says the build is legs only');
+  await p.click('#pathBuild');
   assert(await p.$eval('#moreOptions', e => e.hidden), 'closed again next time');
   assert((await p.$eval('#moreSummary', e => e.textContent)).startsWith('Legs & Glutes · '), 'the closed link still shows legs only');
   await st(() => { state.regions = REGIONS.map(r => r.id); savePrefs(); });
@@ -398,7 +454,9 @@ try {
   await st(() => { seekTo(state.sequence.findIndex(x => x.changeover)); render(); });
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Change over', 'the changeover says so');
   assert((await p.$eval('#roundDots', e => e.textContent)).includes('Short bursts'), 'and explains the next style');
-  await p.click('#btnBack'); await p.click('#pathBuild');
+  await p.click('#btnBack');
+  assert((await p.$eval('#todayCard .today-style', e => e.textContent)).startsWith('Mix: EMOM, Short bursts, AMRAP · '), 'the home card names the mix');
+  await p.click('#pathBuild');
   await p.click('.interval-card:has-text("Short bursts")');
   assert(await st(() => !state.mixOn), 'picking a single style turns the mix off');
   await p.click('#timePicker .chip:text-is("20 min")');
@@ -415,7 +473,9 @@ try {
   assert(await st(() => state.workout.exerciseIds.every(id => (EXERCISES[id].surf || []).length)), 'every exercise trains something for surfing');
   assert(await st(() => state.workout.exerciseIds.some(id => EXERCISES[id].surf.includes('popup'))), 'pop-up work is in');
   assert(await st(() => state.workout.name.startsWith('Surf fitness')), 'named for it');
-  await p.click('#btnBack'); await p.click('#pathBuild');
+  await p.click('#btnBack');
+  assert((await p.$eval('#todayCard .today-style', e => e.textContent)).includes('Short bursts · Surf fitness'), 'the home card says the goal');
+  await p.click('#pathBuild');
   await p.click('#goalPicker .chip:has-text("General fitness")');
   assert(await p.$eval('#rowRegions', e => e.style.display !== 'none'), 'target areas come back');
   await p.click('#btnBuild');
@@ -428,6 +488,22 @@ try {
   await p.click('#programBody button:has-text("Start Surf Fit")');
   assert((await p.$eval('#programBody', e => e.textContent)).includes('Day 1'), 'day 1 of the program');
   assert((await p.$$('.program-dot')).length === 7, 'the week strip has seven days');
+  // home now leads with today's session, and can set it aside for the day
+  await p.click('#btnProgramBack');
+  const homeDay = await p.$eval('#todayCard', e => e.textContent);
+  assert(homeDay.includes('Week 1, Day 1') && homeDay.includes('Paddle power'), "home shows today's session: " + homeDay.slice(0, 80));
+  assert((await p.$eval('#pathProgramGo', e => e.textContent)) === 'Surf Fit · week 1 of 6 →', 'the Programs card says where you are up to');
+  await p.click('#todayCard .link-btn:has-text("Something else today")');
+  assert(await p.$('#todayCard #pathBuild') && !(await p.$('#todayCard .program-go:has-text("today")')), 'something else today swaps in a built workout');
+  await p.click('#todayCard .link-btn:has-text("Back to today")');
+  await p.click('#todayCard .time-chips .chip:text-is("15 min")');
+  await p.click('#todayCard .program-go');
+  const fromHome = await st(() => ({ view: document.querySelector('.view.active').id, n: state.programRun && state.programRun.n,
+    goal: state.workout.request.goal, min: state.workout.request.minutes }));
+  assert(fromHome.view === 'workoutView' && fromHome.n === 0 && fromHome.goal === 'surf' && fromHome.min === 15,
+         "Start on the home card opens day 1 at 15 minutes: " + JSON.stringify(fromHome));
+  await p.click('#btnBack');
+  assert(await activeView() === 'programView', 'and back goes to the program');
   // who and where can be changed right on today's card
   const peopleBefore = await st(() => state.people);
   await st(() => {
@@ -444,8 +520,9 @@ try {
   await p.click(`.program-today .chip[data-pick="people-${peopleBefore}"]`);
   assert(await st(() => state.gearSetId === 'home' && !!effectiveEquip().kb15), 'and back home with the bells');
   await st(() => { state.gearSets = state.gearSets.filter(g => g.id !== 'mates'); renderProgram(); });
+  assert(!(await p.$('.program-today .chip[data-pick^="gear-"]')), 'with one place left, no "Training at" row');
   await p.click('.program-today .chip:text-is("15 min")');
-  await p.click('.program-go');
+  await p.click('.program-today .program-go');
   assert(await activeView() === 'workoutView', "today's session opens");
   const day1 = await st(() => ({ goal: state.workout.request.goal, focus: state.workout.request.surfFocus,
     scale: state.workout.repScale, style: state.workout.request.intervalId, min: state.workout.request.minutes }));
@@ -463,8 +540,11 @@ try {
   assert(prog === '0,1s', 'a surf counts as day 2: ' + prog);
   assert((await p.$eval('.program-progress', e => e.textContent)).includes('Day 3'), 'on to day 3');
   await p.click('#btnProgramBack');
+  const doneLine = await p.$eval('#todayCard .today-line', e => e.textContent);
+  assert(doneLine.includes("today's done") && doneLine.includes('Next up: Mobility'), 'home says today is done and what is next: ' + doneLine);
+  assert(await p.$('#todayCard .today-go'), 'with a built workout still one tap away');
   await p.click('#pathBuild'); await p.click('#btnBuild');     // the next step starts from a workout
-  ok('Programs: who and where change on the day card; Surf Fit day 1 builds lighter for week 1, finishing ticks it off, a surf counts as a day');
+  ok("Programs: today's session leads the home card; who and where change on the day card; Surf Fit day 1 builds lighter for week 1, finishing ticks it off, a surf counts as a day");
 
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathLibrary');
@@ -527,8 +607,8 @@ try {
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
   await p.goto(URL);
-  assert(await st(() => state.people === 2 && state.minutes === 20 && state.textScale === 1 && Array.isArray(state.blockedTags)),
-         'junk preference values fell back to defaults');
+  assert(await st(() => state.people === 1 && state.minutes === 20 && state.textScale === 1 && Array.isArray(state.blockedTags)),
+         'junk preference values fell back to defaults (one person)');
   assert(await st(() => state.saved.length === 2), 'saved favourites survived the reload');
   ok('corrupt preference values fall back to defaults, favourites persist');
 
@@ -557,8 +637,9 @@ try {
   assert(await st(() => !!navigator.serviceWorker.controller), 'page is controlled by the worker');
   await context.setOffline(true);
   await p.reload();
-  assert((await p.$$('.path-card')).length === 3, 'welcome renders with no network');
-  await p.click('#pathBuild'); await p.click('#btnBuild');
+  assert(await p.$eval('#todayCard', e => e.querySelectorAll('.time-chips .chip').length === 8 && !!e.querySelector('.today-go')),
+         'welcome and its Today card render with no network');
+  await p.click('#todayCard .today-go');
   assert(await activeView() === 'workoutView', 'a workout builds with no network');
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
   await figureDrawn('#animA');

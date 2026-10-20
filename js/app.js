@@ -18,8 +18,9 @@ const PREFS_KEY = 'fit-prefs-2';
 const state = {
   view: 'welcome',
 
-  // Preferences (persisted, see PERSISTED below)
-  people: 2,
+  // Preferences (persisted, see PERSISTED below). A new visitor starts
+  // solo; the first-visit question asks (see renderGearQuestion).
+  people: 1,
   nameA: '', nameB: '',
   equipment: { ...DEFAULT_EQUIPMENT, kettlebells: true },
   // the weights you own: kettlebells and dumbbell pairs in kg, and what the
@@ -66,7 +67,10 @@ const state = {
   lastBeep: null,
   tickHandle: null,
   wakeLock: null,
-  excludeSearch: ''
+  excludeSearch: '',
+  // "Something else today" on the home card: the day it was tapped, so the
+  // program session comes back tomorrow (see renderToday; not saved)
+  todayOther: null
 };
 
 const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'gearSets', 'gearSetId',
@@ -104,7 +108,7 @@ function loadPrefs() {
     if (!Array.isArray(state.saved)) state.saved = [];
     if (!Array.isArray(state.history)) state.history = [];
     if (!Array.isArray(state.blockedTags)) state.blockedTags = [];
-    if (state.people !== 1 && state.people !== 2) state.people = 2;
+    if (state.people !== 1 && state.people !== 2) state.people = 1;
     if (!TIME_OPTIONS.includes(state.minutes)) state.minutes = 20;
     if (typeof state.textScale !== 'number' || !(state.textScale > 0)) state.textScale = 1;
     if (typeof state.nameA !== 'string') state.nameA = '';
@@ -227,11 +231,12 @@ const els = {
   libraryView: $('libraryView'), workoutView: $('workoutView'), programView: $('programView'),
   pathProgram: $('pathProgram'), programBody: $('programBody'), programNote: $('programNote'),
   btnProgramBack: $('btnProgramBack'), programTitle: $('programTitle'),
-  pathBuild: $('pathBuild'), pathLibrary: $('pathLibrary'),
+  pathLibrary: $('pathLibrary'), pathProgramGo: $('pathProgramGo'), todayCard: $('todayCard'),
   gearView: $('gearView'), onboardGear: $('onboardGear'), btnGearDone: $('btnGearDone'),
+  onboardPeople: $('onboardPeople'), onboardWeights: $('onboardWeights'),
   btnMoreOptions: $('btnMoreOptions'), moreOptions: $('moreOptions'), moreSummary: $('moreSummary'),
   scroller: $('scroller'),
-  welcomeFoot: $('welcomeFoot'), welcomeNote: $('welcomeNote'),
+  welcomeNote: $('welcomeNote'),
   btnFullscreen: $('btnFullscreen'), installHint: $('installHint'),
 
   btnSetupBack: $('btnSetupBack'), setupTitle: $('setupTitle'),
@@ -504,21 +509,94 @@ function esc(s) {
 function goWelcome() {
   stopTimer();
   state.programRun = null;
+  state.programMinutes = null;
   state.workout = null;
   els.welcomeNote.textContent = '';
   setView('welcome');
-  renderWelcomeFoot();
+  renderToday();
 }
 
-function renderWelcomeFoot() {
-  const iv = currentInterval();
-  const gear = GEAR.filter(g => state.equipment[g.id] !== false).length;
-  const style = state.mixOn ? `mix (${state.mixStyles.map(id => INTERVALS[id].label).join(', ')})`
-    : `${iv.label.toLowerCase()} (${iv.sub})`;
-  els.welcomeFoot.textContent =
-    `${Object.keys(EXERCISES).length} movements · ${style} · ` +
-    `${gear}/${GEAR.length} kit items on · ` +
-    `${state.people === 1 ? 'solo' : 'two people'}`;
+// ------------------------------------------------------------ today card
+// The top of home: how long, how many and where, filled in from last time,
+// then Start. While a program is on and today's session is still to do,
+// the card is that session instead, with "Something else today" to swap
+// back to a built workout for the day.
+function renderToday() {
+  const card = els.todayCard;
+  card.innerHTML = '';
+  const prog = PROGRAMS[0];
+  const ps = programStatus(prog);
+  renderProgramPath(prog, ps);
+  const waiting = ps && !ps.finished && !ps.doneToday;
+  const today = dayKey(Date.now());
+
+  if (waiting && state.todayOther !== today) {
+    fillProgramDay(card, prog, ps.st, ps.day, {
+      tagline: `${prog.name} · Week ${ps.day.week}, Day ${ps.n + 1}`,
+      rerender: renderToday, note: els.welcomeNote
+    });
+    card.appendChild(linkButton('Something else today', () => { state.todayOther = today; renderToday(); }));
+    return;
+  }
+
+  if (waiting || (ps && ps.doneToday)) {
+    const top = document.createElement('div');
+    top.className = 'today-top';
+    if (waiting) {
+      top.appendChild(linkButton(`Back to today's ${prog.name} session`, () => { state.todayOther = null; renderToday(); }));
+    } else {
+      top.className += ' today-line';
+      top.textContent = `${prog.name}: today's done${ps.last.surfed ? ' (a surf counts)' : ''}. Next up: ${ps.day.name}.`;
+    }
+    card.appendChild(top);
+  }
+  const head = document.createElement('div');
+  head.innerHTML = '<div class="card-tagline">Today</div><div class="card-name">Build a workout</div>';
+  card.append(head, pickerLabel('How long have you got?'),
+    timeChips(TIME_OPTIONS, state.minutes, m => { state.minutes = m; savePrefs(); renderToday(); }),
+    ...peopleGearRows(true, renderToday));
+  // everything else comes from last time, and Change opens the full setup
+  const style = document.createElement('div');
+  style.className = 'today-style';
+  style.textContent = `${todayStyleText()} · `;
+  const change = linkButton('Change', openSetup);
+  change.id = 'pathBuild';
+  change.setAttribute('aria-label', 'Change the style, goal and gear');
+  style.appendChild(change);
+  const go = document.createElement('button');
+  go.className = 'program-go today-go';
+  go.textContent = 'Start';
+  go.addEventListener('click', () => {
+    els.welcomeNote.textContent = '';
+    const err = buildAndOpen(requestFromState());
+    if (err) els.welcomeNote.textContent = err;
+  });
+  card.append(style, go);
+}
+// "Short bursts · General fitness", plus target areas or things left out
+// when they're set, so a choice from last time can't catch you out.
+function todayStyleText() {
+  const parts = [state.mixOn ? `Mix: ${state.mixStyles.map(id => INTERVALS[id].label).join(', ')}` : currentInterval().label,
+                 GOALS.find(g => g.id === state.goal).label];
+  if (state.goal !== 'surf' && state.regions.length < REGIONS.length) {
+    parts.push(REGIONS.filter(r => state.regions.includes(r.id)).map(r => r.label).join(', '));
+  }
+  const n = state.blockedTags.length + state.excluded.length;
+  if (n) parts.push(`${n} thing${n === 1 ? '' : 's'} left out`);
+  return parts.join(' · ');
+}
+// The Programs card says where you're up to.
+function renderProgramPath(prog, ps) {
+  els.pathProgramGo.textContent = !ps ? `Start ${prog.name} →`
+    : ps.finished ? `${prog.name} · all ${prog.weeks} weeks done →`
+    : `${prog.name} · week ${ps.day.week} of ${prog.weeks} →`;
+}
+function linkButton(text, onClick) {
+  const b = document.createElement('button');
+  b.className = 'link-btn';
+  b.textContent = text;
+  b.addEventListener('click', onClick);
+  return b;
 }
 
 function openSetup() {
@@ -666,8 +744,8 @@ function renderEquipmentPicker() {
   });
 }
 // A row of weights under an item that's switched on: tick the ones you own
-// (or, for the bar, what it's loaded to).
-function weightRow(kind) {
+// (or, for the bar, what it's loaded to). A tap redraws the screen it's on.
+function weightRow(kind, rerender = renderEquipmentPicker) {
   const spec = WEIGHT_CHOICES[kind];
   const row = document.createElement('div');
   row.className = 'weight-row';
@@ -681,7 +759,7 @@ function weightRow(kind) {
       else state.weights[kind] = on ? state.weights[kind].filter(x => x !== kg)
                                     : [...state.weights[kind], kg].sort((a, b) => a - b);
       savePrefs();
-      renderEquipmentPicker();
+      rerender();
     });
     c.textContent = `${kg}kg`;
     c.setAttribute('aria-pressed', String(on));
@@ -2080,9 +2158,19 @@ function programStreak(st) {
   while (days.has(dayKey(d))) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
+// Where a program is up to: null before it's started, finished, or the day
+// that's next and whether today's session is already done.
+function programStatus(prog) {
+  const st = state.programs[prog.id];
+  if (!st) return null;
+  const n = st.done.length;
+  if (n >= prog.weeks * prog.days.length) return { st, n, finished: true };
+  const last = st.done[n - 1];
+  return { st, n, day: programDay(prog, n), last, doneToday: !!last && dayKey(last.at) === dayKey(Date.now()) };
+}
 function renderProgram() {
   const prog = PROGRAMS[0];
-  const st = state.programs[prog.id];
+  const ps = programStatus(prog);
   const total = prog.weeks * prog.days.length;
   els.programTitle.textContent = prog.name;
   const body = els.programBody;
@@ -2097,7 +2185,7 @@ function renderProgram() {
   const rhythm = `<ol class="program-rhythm">${prog.days.map(d =>
     `<li><b>${esc(d.name)}</b> <span>${esc(d.about)}</span></li>`).join('')}</ol>`;
 
-  if (!st) {
+  if (!ps) {
     const c = add(`<div class="card-name">${esc(prog.name)}</div>
       <div class="card-tagline">${esc(prog.tagline)}</div>
       <div class="card-blurb">${esc(prog.blurb)}</div>
@@ -2114,16 +2202,13 @@ function renderProgram() {
     return;
   }
 
-  const n = st.done.length;
-  if (n >= total) {
+  if (ps.finished) {
     const c = add(`<div class="card-name">${prog.weeks} weeks done</div>
       <div class="card-blurb">That's the whole of ${esc(prog.name)}. Go again from the start, or keep using Surf fitness in Quick and Custom.</div>`);
     c.appendChild(restartButton(prog));
     return;
   }
-  const day = programDay(prog, n);
-  const last = st.done[st.done.length - 1];
-  const doneToday = last && dayKey(last.at) === dayKey(Date.now());
+  const { st, n, day, last, doneToday } = ps;
   const streak = programStreak(st);
   add(`<div class="program-progress">
       <div><b>Week ${day.week}</b> of ${prog.weeks}</div>
@@ -2168,89 +2253,110 @@ function restartButton(prog) {
   });
   return b;
 }
-// Today's session: what it's for, how long you've got, and go.
+// Today's session on the program screen, above the weekly rhythm.
 function renderProgramToday(prog, st, day) {
   const c = document.createElement('div');
   c.className = 'workout-card program-card program-today';
-  c.innerHTML = `<div class="card-tagline">Today · week ${day.week}</div>
+  fillProgramDay(c, prog, st, day, {
+    tagline: `Today · week ${day.week}`, rerender: renderProgram, note: els.programNote,
+    gearHint: 'To add a place or change its gear, use Build a workout on the home screen.'
+  });
+  els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
+}
+// Today's session: what it's for, how long you've got, and go. The program
+// screen and the home card both show it, so they say how to redraw and
+// where a message goes.
+function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint }) {
+  c.innerHTML = `<div class="card-tagline">${esc(tagline)}</div>
     <div class="card-name">${esc(day.name)}</div>
     <div class="card-blurb">${esc(day.about)}</div>`;
   if (!day.stretch) {
     const min = day.mix ? (mixMinimumMinutes(day.mix) || 25) : 10;
     const options = TIME_OPTIONS.filter(m => m >= min);
     if (!options.includes(state.programMinutes)) state.programMinutes = options.includes(day.minutes) ? day.minutes : options[0];
-    const row = document.createElement('div');
-    row.className = 'chip-row';
-    options.forEach(m => {
-      const chip = tappable('chip' + (m === state.programMinutes ? ' active' : ''), () => { state.programMinutes = m; renderProgram(); });
-      chip.textContent = `${m} min`;
-      chip.setAttribute('aria-pressed', String(m === state.programMinutes));
-      row.appendChild(chip);
-    });
-    const label = document.createElement('div');
-    label.className = 'picker-label';
-    label.textContent = 'How long have you got?';
-    c.append(label, row);
+    c.append(pickerLabel('How long have you got?'),
+      timeChips(options, state.programMinutes, m => { state.programMinutes = m; rerender(); }));
   }
-  c.append(...programSetupRows(!day.stretch));
+  c.append(...peopleGearRows(!day.stretch, rerender, gearHint));
   const go = document.createElement('button');
   go.className = 'program-go';
   go.textContent = "Start today's session";
-  go.addEventListener('click', () => startProgramDay(prog, day));
+  go.addEventListener('click', () => {
+    const err = startProgramDay(prog, day);
+    if (err) note.textContent = err;
+  });
   const surfed = document.createElement('button');
   surfed.className = 'secondary';
   surfed.textContent = 'I surfed today';
   surfed.addEventListener('click', () => {
     st.done.push({ n: day.n, at: Date.now(), surfed: true });
     savePrefs();
-    renderProgram();
-    els.programNote.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Saved & ready-made is good after a session.';
+    rerender();
+    note.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Saved & ready-made is good after a session.';
   });
   c.append(go, surfed);
-  els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
+}
+function pickerLabel(text) {
+  const label = document.createElement('div');
+  label.className = 'picker-label';
+  label.textContent = text;
+  return label;
+}
+// "10 min", "15 min"...; tapping one hands it to onPick.
+function timeChips(options, current, onPick) {
+  const row = document.createElement('div');
+  row.className = 'chip-row time-chips';
+  options.forEach(m => {
+    const chip = tappable('chip' + (m === current ? ' active' : ''), () => onPick(m));
+    chip.textContent = `${m} min`;
+    chip.setAttribute('aria-pressed', String(m === current));
+    row.appendChild(chip);
+  });
+  return row;
 }
 // Who's training and where, so today's session can be checked and changed
-// without going back into setup. Stretch days don't use gear, so they only
-// get the people row.
-function programSetupRows(withGear) {
+// without going back into setup. The place only shows once there's more
+// than one to pick from, and stretch days don't use gear, so they only get
+// the people row.
+function peopleGearRows(withGear, rerender, gearHint) {
   const rows = [];
   const pick = (text, options) => {
-    const label = document.createElement('div');
-    label.className = 'picker-label';
-    label.textContent = text;
     const row = document.createElement('div');
     row.className = 'chip-row';
     options.forEach(o => {
-      const chip = tappable('chip' + (o.on ? ' active' : ''), () => { if (!o.on) { o.pick(); savePrefs(); renderProgram(); } });
+      const chip = tappable('chip' + (o.on ? ' active' : ''), () => { if (!o.on) { o.pick(); savePrefs(); rerender(); } });
       chip.textContent = o.text;
       chip.setAttribute('aria-pressed', String(o.on));
       chip.dataset.pick = o.key;
       row.appendChild(chip);
     });
-    rows.push(label, row);
+    rows.push(pickerLabel(text), row);
   };
   pick('How many of you?', [1, 2].map(n => ({
     key: `people-${n}`, text: n === 1 ? '1 person' : '2 people', on: state.people === n,
     pick: () => { state.people = n; renderPeoplePicker(); }
   })));
-  if (withGear) {
-    ensureGearSets();
+  if (withGear) ensureGearSets();
+  if (withGear && state.gearSets.length > 1) {
     pick('Training at', state.gearSets.map(g => ({
       key: `gear-${g.id}`, text: g.name, on: g.id === state.gearSetId, pick: () => useGearSet(g.id)
     })));
-    const note = document.createElement('div');
-    note.className = 'program-hint';
-    note.textContent = 'To add a place or change its gear, use Build a workout on the home screen.';
-    rows.push(note);
+    if (gearHint) {
+      const note = document.createElement('div');
+      note.className = 'program-hint';
+      note.textContent = gearHint;
+      rows.push(note);
+    }
   }
   return rows;
 }
+// Opens the day's session. Returns an error message, or null.
 function startProgramDay(prog, day) {
   state.programRun = { id: prog.id, n: day.n };
   if (day.stretch) {
     const w = STRETCH_ROUTINES.find(x => x.id === day.stretch);
     openWorkout(w);
-    return;
+    return null;
   }
   const request = {
     minutes: state.programMinutes || day.minutes,
@@ -2261,7 +2367,8 @@ function startProgramDay(prog, day) {
     regions: REGIONS.map(r => r.id), blockedTags: []
   };
   const err = buildAndOpen(request);
-  if (err) { state.programRun = null; els.programNote.textContent = err; }
+  if (err) state.programRun = null;
+  return err;
 }
 // Called when a session finishes: tick off the program day it was.
 function completeProgramDay() {
@@ -2276,17 +2383,29 @@ function completeProgramDay() {
 
 // =====================================================================
 // FIRST VISIT
-// Before anything else, a new visitor says what gear they've got, so the
-// first workout doesn't hand them kettlebell swings with no kettlebell.
-// Everything starts off; whatever's ticked becomes the Home gear set.
+// Before anything else, a new visitor says who's training and what gear
+// they've got, so the first workout doesn't hand them kettlebell swings
+// with no kettlebell, or a Person A and B when they're on their own.
+// Everything starts off, weights included; whatever's ticked becomes the
+// Home gear set.
 // =====================================================================
 function openGearQuestion() {
   GEAR.forEach(g => { state.equipment[g.id] = false; });
+  state.weights = { kb: [], db: [], bar: 10 };
   renderGearQuestion();
   setView('gear');
 }
 function renderGearQuestion() {
+  els.onboardPeople.innerHTML = '';
+  [[1, 'Just me'], [2, 'Me and a mate']].forEach(([n, text]) => {
+    const on = state.people === n;
+    const b = tappable('chip people-chip' + (on ? ' active' : ''), () => { state.people = n; renderGearQuestion(); });
+    b.textContent = text;
+    b.setAttribute('aria-pressed', String(on));
+    els.onboardPeople.appendChild(b);
+  });
   els.onboardGear.innerHTML = '';
+  els.onboardWeights.innerHTML = '';
   GEAR.forEach(g => {
     const on = state.equipment[g.id] !== false;
     const b = tappable('chip' + (on ? ' active' : ''), () => {
@@ -2296,6 +2415,8 @@ function renderGearQuestion() {
     b.textContent = g.label;
     b.setAttribute('aria-pressed', String(on));
     els.onboardGear.appendChild(b);
+    // the same weight chips as setup, under each ticked item that has them
+    if (on && g.weights) els.onboardWeights.appendChild(weightRow(g.weights, renderGearQuestion));
   });
   const any = GEAR.some(g => state.equipment[g.id] !== false);
   els.btnGearDone.textContent = any ? 'Done' : 'Just bodyweight for now';
@@ -2310,7 +2431,6 @@ function finishGearQuestion() {
 // =====================================================================
 // EVENT WIRING
 // =====================================================================
-els.pathBuild.addEventListener('click', openSetup);
 // the library always opens on everything, whatever focus was picked last time
 els.pathLibrary.addEventListener('click', () => {
   state.filterFocus = 'all';
@@ -2541,7 +2661,7 @@ document.body.classList.toggle('show-alternatives', state.showAlts);
 document.body.classList.toggle('hide-photos', state.showPhotos === false);
 applyTextScale();
 setupFullscreen();
-renderWelcomeFoot();
+renderToday();
 updateScrollHint();
 // a shared link opens straight away; the gear question waits for a plain visit
 if (location.hash.startsWith('#w=')) openLinkFromHash();

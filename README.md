@@ -7,16 +7,23 @@ Static files, no build step. Deploys to Vercel.
 
 ## How it works
 
-On a first visit FIT asks what gear you've got, with everything unticked,
-and saves the answer as the Home gear set. After that the home screen has
-three cards:
+On a first visit FIT asks who's training (just you, or you and a mate) and
+what gear you've got, with everything unticked, including the weights of
+any kettlebells, dumbbells or barbell you tick, and saves the answer as the
+Home gear set. After that the home screen has three cards:
 
-- **Build a workout**: what it's for, how many of you, your gear, how long
+- **Today** (Build a workout): how long you've got and how many of you,
+  filled in from last time, where you're training once there's more than
+  one place, a line with the style and goal, and Start. **Change** opens
+  the full setup: what it's for, how many of you, your gear, how long
   you've got and the style. Target areas and anything you'd rather not do
   sit under **More options**, closed by default, with a line saying what's
   set ("Whole body · nothing left out") so a choice from last time can't
-  catch you out.
-- **Programs**: a session a day that builds week by week (Surf Fit).
+  catch you out. While Surf Fit is on and today's session is still to do,
+  the card is that session instead, with "Something else today" to set it
+  aside for the day.
+- **Programs**: a session a day that builds week by week (Surf Fit). The
+  card says where you're up to ("Surf Fit · week 2 of 6").
 - **Saved & ready-made**: your favourites and recent sessions, the 16 named
   classics, and the stretch routines (the Stretching filter shows just
   those).
