@@ -401,6 +401,232 @@ try {
   await p.click('#btnStart');                                   // pause
   ok('classic opens with 4 rounds, skip works, timer recovers a 3s suspension');
 
+  step = 'a reload mid-session offers Resume: the same workout, in the same block, paused, scores kept';
+  {
+    const run = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await run.addInitScript(() => {
+      if (location.protocol === 'about:' || localStorage.getItem('fit-prefs-2')) return;     // about:blank has no storage
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ gearAsked: true, people: 2, nameA: 'Wayne', nameB: 'Dave', minutes: 20,
+        intervalStyle: 'amrap', equipment: { kettlebells: true }, weights: { kb: [12, 16], db: [], bar: 10 } }));
+    });
+    const r = await run.newPage();
+    r.on('pageerror', e => errors.push('resume: ' + e));
+    r.on('console', m => { if (m.type() === 'error') errors.push('resume: ' + m.text()); });
+    const ev = (fn, arg) => r.evaluate(fn, arg);
+    const kept = () => ev(() => JSON.parse(localStorage.getItem('fit-run-1')));
+    const offered = () => r.$('#todayCard .today-resume');
+    const view = () => ev(() => document.querySelector('.view.active').id);
+    await r.goto(URL);
+    assert(!(await offered()), 'nothing to pick up to begin with');
+    await r.click('#todayCard .today-go');
+    assert(!(await kept()), 'opening a workout saves nothing until it starts');
+    await r.click('#btnStart');
+    assert(await kept(), 'Start saves it straight away');
+    assert(!(await ev(() => 'fit-run-1' in JSON.parse(localStorage.getItem('fit-prefs-2')))), 'under its own key, not with the prefs');
+    await ev(() => { localStorage.removeItem('fit-run-1'); tickClock(); });
+    assert(!(await kept()), 'a tick within five seconds of the last save writes nothing');
+    await ev(() => { runSavedAt -= 5000; tickClock(); });
+    assert(await kept(), 'a tick five seconds on saves it again');
+    // into block 2's AMRAP, scores for both and a lap pick, then 70 seconds on
+    const at = await ev(() => {
+      const i = state.sequence.findIndex(x => x.amrap && x.blockIdx === 1);
+      seekTo(i); render();
+      return { i, start: state.elapsedTotal };
+    });
+    await r.click('#counterA .count-more'); await r.click('#counterA .count-more'); await r.click('#counterB .count-more');
+    if (await r.$('#circuitA li[data-i="1"]')) await r.click('#circuitA li[data-i="1"]');
+    await ev((s) => { state.elapsedAtResume = s + 70; state.runStartWall = Date.now(); tickClock(); }, at.start);
+    const was = await ev(() => ({ ids: state.workout.exerciseIds.join(','), seed: state.workout.seed, name: state.workout.name,
+      scores: JSON.stringify(state.scores), pick: JSON.stringify(state.pick), elapsed: elapsedNow() }));
+    assert(was.scores.includes('"a":2') && was.scores.includes('"b":1'), 'scored 2 and 1: ' + was.scores);
+    // the phone throws the tab away while it's out of view: it saved on the way out
+    await ev(() => { localStorage.removeItem('fit-run-1'); window.dispatchEvent(new Event('pagehide')); });
+    const snap = await kept();
+    assert(snap && snap.idx === at.i && Math.abs(snap.elapsed - was.elapsed) < 1, 'leaving the page saves where it was: ' + JSON.stringify(snap && [snap.idx, snap.elapsed]));
+    await r.reload();
+    assert(await view() === 'welcomeView', 'a reload lands on home');
+    const line = await r.$eval('#todayCard .today-resume .resume-text', e => e.textContent);
+    const mmss = `${Math.floor(snap.elapsed / 60)}:${String(Math.floor(snap.elapsed % 60)).padStart(2, '0')}`;
+    assert(line === `Resume ${was.name}, block 2, ${mmss} in`, 'the Today card offers it by name, block and time: ' + line);
+    assert(await r.$eval('#todayCard', e => e.firstElementChild.classList.contains('today-resume')), 'at the top of the card');
+    assert(await r.$('#btnResumeRun:text-is("Resume")') && await r.$('#btnDiscardRun:text-is("Discard")'), 'with Resume and Discard');
+    await r.click('#btnResumeRun');
+    const back = await ev(() => ({ view: document.querySelector('.view.active').id, running: state.running, idx: state.currentIdx,
+      elapsed: state.elapsedTotal, ids: state.workout.exerciseIds.join(','), seed: state.workout.seed,
+      scores: JSON.stringify(state.scores), pick: JSON.stringify(state.pick), button: document.getElementById('btnStart').textContent,
+      a: document.querySelector('#counterA .count-now b').textContent, b: document.querySelector('#counterB .count-now b').textContent,
+      badge: document.getElementById('peopleBadge').textContent, note: document.getElementById('workoutNote').textContent }));
+    assert(back.view === 'workoutView' && !back.running && back.button === 'Resume', 'Resume opens the workout, paused: ' + JSON.stringify(back));
+    assert(back.idx === at.i && back.elapsed === at.start, `at the start of the block it was in (${back.elapsed}s, block began ${at.start}s)`);
+    assert(back.ids === was.ids && back.seed === was.seed, 'the same exercises');
+    assert(back.scores === was.scores && back.pick === was.pick && back.a === '2' && back.b === '1', 'with the scores and the lap pick: ' + back.scores);
+    assert(back.badge === 'Wayne & Dave' && back.note.includes('block 2'), 'for the same two people, saying where it picked up: ' + back.note);
+    await r.click('#btnBack');
+    assert(await view() === 'workoutView', 'a picked-up session takes two taps on Menu too');
+    await ev(() => disarmBack());
+    // Discard lets it go, for good
+    await r.reload();
+    await r.click('#btnDiscardRun');
+    assert(!(await kept()) && !(await offered()), 'Discard lets it go');
+    await r.reload();
+    assert(!(await offered()), 'and it stays gone');
+    ok(`reload mid-session: "${line}" on the Today card; Resume is the same workout at the start of block 2, paused, with 2 and 1 rounds and the lap pick; Discard lets it go`);
+
+    step = 'what clears a saved session, and what does not offer one';
+    // a session to pick up, then a shared link: it opens the link's workout and leaves the session be
+    await r.click('#todayCard .today-go'); await r.click('#btnStart');
+    const ownSeed = await ev(() => state.workout.seed);
+    const link = await ev(() => shareUrlFor(buildWorkout(requestFromState(), 4242)));
+    await r.goto('about:blank');
+    await r.goto(link);
+    const shared = await ev(() => ({ view: document.querySelector('.view.active').id, seed: state.workout.seed, started: state.started, elapsed: state.elapsedTotal }));
+    assert(shared.view === 'workoutView' && shared.seed === 4242 && !shared.started && shared.elapsed === 0,
+           "a shared link opens the link's workout, from the top, not the session left part-way: " + JSON.stringify(shared));
+    assert((await kept()).seed === ownSeed, 'and leaves that session to pick up later');
+    await r.click('#btnBack');
+    assert(await offered(), 'back home, it is there to pick up');
+    // finishing clears it
+    await r.click('#btnResumeRun'); await r.click('#btnStart');
+    await ev(() => { while (!isFinished()) skipBlock(); });
+    assert(!(await kept()), 'finishing clears it');
+    await r.click('#btnStart');                                 // Done
+    assert(await view() === 'welcomeView' && !(await offered()), 'and home has nothing to pick up');
+    // two taps on Menu clear it
+    await r.click('#todayCard .today-go'); await r.click('#btnStart');
+    assert(await kept(), 'a new session is saved');
+    await leaveStarted(r);
+    assert(!(await kept()) && !(await offered()), 'leaving it with two taps on Menu clears it');
+    // so do Reset and Start over (which then saves the new go as it runs)
+    await r.click('#todayCard .today-go'); await r.click('#btnStart');
+    await r.click('#btnReset'); await r.click('#btnReset');
+    assert(!(await kept()), 'Reset clears it');
+    await r.click('#btnStart');
+    await ev(() => { state.elapsedAtResume = 200; state.runStartWall = Date.now(); tickClock(); pauseTimer(); });
+    assert((await kept()).elapsed >= 200, 'a pause saves it');
+    await ev(() => { while (!isFinished()) skipBlock(); });
+    assert(!(await kept()), 'finished again, and cleared');
+    await r.click('#btnAgain');
+    const again = await kept();
+    assert(again && again.elapsed < 2 && again.idx === 0, 'Start over saves the new go from the top: ' + JSON.stringify(again && [again.idx, again.elapsed]));
+    // one that no longer builds the same (an update changed the library), one over
+    // twelve hours old, and junk are never offered, and are thrown away
+    for (const [what, spoil] of [['a changed workout', (s) => { s.sig = 'not-this'; }], ['twelve hours on', (s) => { s.savedAt -= 12.1 * 3600e3; }],
+                                  ['a bad block number', (s) => { s.idx = 999; }], ['junk', () => 'junk']]) {
+      await ev(() => window.dispatchEvent(new Event('pagehide')));
+      await r.reload();
+      assert(await offered(), `${what}: offered before it is spoilt`);
+      await ev((src) => {
+        const s = JSON.parse(localStorage.getItem('fit-run-1'));
+        const out = new Function('s', `return (${src})(s)`)(s);
+        localStorage.setItem('fit-run-1', out === 'junk' ? '{nope' : JSON.stringify(s));
+      }, spoil.toString());
+      await r.reload();
+      assert(!(await offered()) && !(await kept()), `${what}: not offered, and thrown away`);
+      await r.click('#todayCard .today-go'); await r.click('#btnStart');
+    }
+    ok('a shared link opens its own workout and leaves the session to pick up; finishing, two taps on Menu, Reset and Start over clear it; a changed workout, one twelve hours old and junk are thrown away');
+
+    step = 'a program day picks up as that day, and finishing it ticks the day off';
+    await leaveStarted(r);
+    await ev(() => { state.programs['surf-fit'] = { startedAt: Date.now(), done: [] }; savePrefs(); renderToday(); });
+    await r.click('#todayCard .program-go'); await r.click('#btnStart');
+    await r.reload();
+    const dayLine = await r.$eval('#todayCard .today-resume .resume-text', e => e.textContent);
+    assert(/^Resume Paddle power, the warm-up, 0:0\d in$/.test(dayLine), 'offered by the day\'s name: ' + dayLine);
+    assert(await r.$('#todayCard .today-resume + .card-tagline:has-text("Week 1, Day 1")'), "above today's session on the card");
+    await r.click('#btnResumeRun');
+    assert(await ev(() => state.programRun && state.programRun.n === 0 && document.getElementById('workoutTitle').textContent === 'Paddle power'),
+           'the program day comes back with it');
+    await r.click('#btnStart');
+    await ev(() => { while (!isFinished()) skipBlock(); });
+    assert(await ev(() => state.programs['surf-fit'].done.length === 1) && !(await kept()), 'finishing it ticks day 1 off and clears it');
+    await r.click('#btnStart');
+    assert(await view() === 'programView', 'and Done goes back to the program');
+    await r.click('#btnProgramBack');
+    ok(`a program day: "${dayLine}", picked up as Paddle power, finished and ticked off`);
+
+    step = 'back after time away: a short spell carries on, a long one stops and asks';
+    await ev(() => { state.intervalStyle = 'short'; savePrefs(); renderToday(); });
+    await r.click('#todayCard .today-go'); await r.click('#btnStart');
+    await ev(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work' && x.blockIdx === 1)); render(); });
+    // out of view and back, with the time passing while it's hidden
+    const away = (ms) => ev((ms) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      if (awayFrom) awayFrom.at -= ms;
+      state.runStartWall -= ms;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      delete document.visibilityState;
+    }, ms);
+    const clock = () => ev(() => ({ running: state.running, elapsed: elapsedNow(), bar: !document.getElementById('awayBar').hidden,
+      text: document.getElementById('awayText').textContent, button: document.getElementById('btnStart').textContent }));
+    const e0 = (await clock()).elapsed;
+    await away(5000);
+    const short = await clock();
+    assert(short.running && !short.bar && short.elapsed - e0 >= 4.9 && short.elapsed - e0 < 6, `5s away just carries on, caught up (+${(short.elapsed - e0).toFixed(1)}s)`);
+    await away(30000);
+    const asked = await clock();
+    assert(!asked.running && asked.bar && asked.button === 'Resume', 'away 30s, it stops and asks: ' + JSON.stringify(asked));
+    assert(asked.elapsed - short.elapsed >= 29.9 && asked.elapsed - short.elapsed < 31, `stopped where the clock had got to (+${(asked.elapsed - short.elapsed).toFixed(1)}s)`);
+    const backAt = await ev(() => awayBack);
+    assert(Math.abs(backAt - short.elapsed) < 0.5, `it remembers where you left (${backAt.toFixed(1)}s)`);
+    const leftAt = `${Math.floor(backAt / 60)}:${String(Math.floor(backAt % 60)).padStart(2, '0')}`;
+    assert(asked.text === `You were away 0:30. Go back to ${leftAt}?`, 'it says how long and where you left: ' + asked.text);
+    assert(await r.$eval('#awayBar', e => { const b = e.getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; }), 'the question is on screen');
+    await r.click('#btnAwayBack');
+    const gone = await clock();
+    assert(!gone.running && !gone.bar && gone.elapsed === backAt, `Go back: paused where you left (${gone.elapsed.toFixed(1)}s)`);
+    assert((await r.$eval('#workoutNote', e => e.textContent)) === `Back to ${leftAt}. Tap Resume when you're ready.`, 'and says so');
+    await r.click('#btnStart');
+    const e2 = (await clock()).elapsed;
+    await away(30000);
+    assert((await clock()).bar, 'away 30s again, it asks again');
+    await r.click('#btnAwayKept');
+    const keptGoing = await clock();
+    assert(keptGoing.running && !keptGoing.bar && keptGoing.elapsed - e2 >= 29.9 && keptGoing.elapsed - e2 < 32,
+           `I kept going: running on from the caught-up time (+${(keptGoing.elapsed - e2).toFixed(1)}s)`);
+    await r.click('#btnStart');                                 // pause: nothing to ask after a paused spell away
+    await away(60000);
+    assert(!(await clock()).bar && !(await clock()).running, 'a paused session away for a minute is not asked about');
+    ok('away: 5s carries on, 30s stops at the caught-up time and asks "You were away 0:30. Go back to ' + leftAt + '?"; Go back pauses where you left, I kept going runs on');
+
+    step = 'a phone on its side: the timer, both people and Pause on one screen';
+    await r.click('#btnStart');
+    await ev(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work' && x.blockIdx === 1)); render(); els.scroller.scrollTop = 0; });
+    const onScreen = (ids) => ev((ids) => ids.filter(id => {
+      const b = document.getElementById(id).getBoundingClientRect();
+      return !(b.height > 0 && b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth);
+    }), ids);
+    for (const size of [{ width: 844, height: 390 }, { width: 667, height: 375 }]) {
+      await r.setViewportSize(size);
+      await ev(() => new Promise(requestAnimationFrame));
+      const off = await onScreen(['timeDisplay', 'labelA', 'exerciseA', 'labelB', 'exerciseB', 'btnStart', 'btnSkip', 'btnReset']);
+      assert(!off.length, `${size.width} x ${size.height}: off screen: ${off}`);
+      const lay = await ev(() => {
+        const r = (id) => document.getElementById(id).getBoundingClientRect();
+        return { side: r('timeDisplay').right < r('labelA').left, pair: Math.round(r('labelA').top) === Math.round(r('labelB').top),
+                 wide: els.scroller.scrollWidth > els.scroller.clientWidth + 1, pause: document.getElementById('btnStart').textContent };
+      });
+      assert(lay.side && lay.pair && !lay.wide && lay.pause === 'Pause', `${size.width} x ${size.height}: the timer left, the two people side by side on the right: ${JSON.stringify(lay)}`);
+    }
+    // an AMRAP's +1 round buttons are on that screen too
+    await r.setViewportSize({ width: 844, height: 390 });
+    await leaveStarted(r);
+    await ev(() => { state.intervalStyle = 'amrap'; savePrefs(); renderToday(); });
+    await r.click('#todayCard .today-go'); await r.click('#btnStart');
+    await ev(() => { seekTo(state.sequence.findIndex(x => x.amrap)); render(); els.scroller.scrollTop = 0; });
+    const amrapOff = await ev(() => ['#counterA .count-more', '#counterB .count-more', '#btnStart', '#timeDisplay'].filter(s => {
+      const b = document.querySelector(s).getBoundingClientRect();
+      return !(b.height > 0 && b.top >= 0 && b.bottom <= innerHeight && b.right <= innerWidth);
+    }));
+    assert(!amrapOff.length, 'AMRAP on its side, off screen: ' + amrapOff);
+    await r.setViewportSize({ width: 1180, height: 820 });
+    assert(await ev(() => getComputedStyle(document.getElementById('workoutView')).display) === 'flex', 'an iPad keeps its own layout');
+    await run.close();
+    ok('on its side (844 x 390 and 667 x 375): the timer on the left, both people side by side on the right and Pause, Skip and Reset all on one screen; an AMRAP\'s +1 round buttons too');
+  }
+
   step = 'iPhone sound: beeps on silent, back after a call; the wake lock outlasts a pause';
   assert(await p.$eval('#silentToggle', e => e.hidden) && await p.$eval('#silentHint', e => e.hidden),
          'Chromium has no audioSession, so no silent-switch setting');

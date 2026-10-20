@@ -268,6 +268,16 @@
       <div class="people-badge" id="peopleBadge">2 people</div>
     </div>
 
+    <!-- Back after a while with the clock running: it stops where it has
+         got to and asks (see AWAY in js/app.js) -->
+    <div class="away-bar" id="awayBar" role="status" hidden>
+      <p class="away-text" id="awayText"></p>
+      <div class="away-actions">
+        <button id="btnAwayBack">Go back</button>
+        <button class="secondary" id="btnAwayKept">I kept going</button>
+      </div>
+    </div>
+
     <div class="progress-bar-wrap">
       <div class="progress-bar" id="overallProgress"></div>
     </div>

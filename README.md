@@ -191,6 +191,21 @@ rather than hardcoded.
 - A finish screen with Done (home, or back to the program for a program
   day), Start over, and Save and Share. Skipping to the end without ever
   pressing Start doesn't count as a session done
+- Never loses your place. A session under way is saved as it goes (every
+  five seconds, and on a pause, a skip, a score and whenever the app goes
+  out of view), under its own key rather than with the settings. After a
+  reload, or a phone that closed the tab, the Today card offers "Resume
+  Paddle power, block 2, 8:20 in" with Resume and Discard for twelve
+  hours: Resume builds the same workout again, for the same people, and
+  picks up at the start of that block, paused, with its scores, lap picks
+  and program day. It isn't offered when FIT opens on a shared link, and
+  it's cleared by finishing, Reset, Start over and two taps on Menu. Back
+  after more than 20 seconds away with the clock running, FIT stops where
+  the clock has got to and asks "You were away 3:12. Go back to 8:20?":
+  Go back puts it where you left, paused; I kept going carries on. A
+  shorter spell just carries on
+- A phone on its side gets its own layout: the timer and its buttons on
+  the left, the two people side by side on the right, all on one screen
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
   tablet, for the same number of people, with no account and no server
@@ -292,7 +307,9 @@ Chromium at iPad size: every path from the welcome screen, saving and
 replaying a favourite, the interval preference surviving a replay, history,
 the timer recovering time after a suspension, exclusions, stretch, text
 size, a share link opened in a fresh browser context, corrupt preferences,
-a phone-width layout, and the app opening with the network switched off.
+picking a session back up after a reload and coming back after time away,
+a phone-width layout and a phone on its side, and the app opening with the
+network switched off.
 It fails on any console error.
 
 Both run on every pull request through GitHub Actions, along with the 3D

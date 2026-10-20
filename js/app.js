@@ -334,6 +334,7 @@ const els = {
   libraryNote: $('libraryNote'),
 
   btnBack: $('btnBack'), workoutTitle: $('workoutTitle'), peopleBadge: $('peopleBadge'),
+  awayBar: $('awayBar'), awayText: $('awayText'), btnAwayBack: $('btnAwayBack'), btnAwayKept: $('btnAwayKept'),
   overallProgress: $('overallProgress'), blockName: $('blockName'), roundDots: $('roundDots'),
   phaseBleed: $('phaseBleed'), ring: $('phaseRing'),
   timerCard: $('timerCard'), phaseLabel: $('phaseLabel'),
@@ -694,8 +695,14 @@ function goWelcome() {
 // The top of home: how long, how many and where, filled in from last time,
 // then Start. While a program is on and today's session is still to do,
 // the card is that session instead, with "Something else today" to swap
-// back to a built workout for the day.
+// back to a built workout for the day. A session left part-way goes above
+// all of it, to pick up or let go (see RESUME).
 function renderToday() {
+  fillToday();
+  const line = resumeLine();
+  if (line) els.todayCard.prepend(line);
+}
+function fillToday() {
   const card = els.todayCard;
   card.innerHTML = '';
   const prog = PROGRAMS[0];
@@ -1218,14 +1225,19 @@ function liveOpts(request, extra) {
   };
 }
 
-// Builds and opens a workout. Returns an error message, or null on success.
-function buildAndOpen(request, seed, extra) {
+// Builds a workout: the workout, or { error }.
+function buildWorkout(request, seed, extra) {
   const opts = liveOpts(request, { seed: seed || newSeed(), ...extra });
   const w = generateWorkout(opts);
-  if (w.error) return w.error;
   // the gear and leave-outs it was built with, so a link passed on from
   // here rebuilds this workout, not one for this device's gear
-  w.builtWith = { equipment: opts.equipment, excluded: opts.excluded };
+  if (!w.error) w.builtWith = { equipment: opts.equipment, excluded: opts.excluded };
+  return w;
+}
+// Builds and opens a workout. Returns an error message, or null on success.
+function buildAndOpen(request, seed, extra) {
+  const w = buildWorkout(request, seed, extra);
+  if (w.error) return w.error;
   state.lastRequest = request;
   openWorkout(w);
   return null;
@@ -1518,6 +1530,7 @@ function openWorkout(workout) {
   state.running = false;
   state.started = false;
   disarmBack();
+  hideAway();
 
   // a program day goes by its own name ("Paddle & shoulders"), as on home
   // and in history, not "Surf fitness · 20 min"
@@ -1669,7 +1682,7 @@ function renderCircuit(w, ex, phase) {
     list.dataset.key = listKey;
     list.innerHTML = (ex.lapRounds ? `<li class="lap-head">${ex.lapRounds} rounds of</li>` : '') + lap.map((x, i) => `
       <li class="${i === pick ? 'picked' : ''}" data-i="${i}" role="button" tabindex="0">
-        <span class="lap-reps">${esc(x.reps)}</span><span class="lap-name">${esc(x.display || x.name)}</span>
+        <span class="lap-reps">${esc(x.reps)}</span> <span class="lap-name">${esc(x.display || x.name)}</span>
       </li>`).join('');
   }
   if (phase.forTime) return renderDone(w, counter, k);
@@ -1719,6 +1732,7 @@ function onCircuitTap(e) {
   const lap = e.currentTarget.dataset.key.split('#')[0];
   state.pick[lap] = +li.dataset.i;
   render();
+  saveRun();
 }
 function onCounterTap(e) {
   const b = e.target.closest('button[data-step]');
@@ -1734,6 +1748,7 @@ function onCounterTap(e) {
   delete s.skipped;                        // done after a reset, so not skipped after all
   saveScores();
   render();
+  saveRun();
 }
 for (const w of ['A', 'B']) {
   els['circuit' + w].addEventListener('click', onCircuitTap);
@@ -2156,6 +2171,8 @@ function tickClock() {
     state.lastBeep = null;
   }
   render();
+  // kept every few seconds, so a reload picks up about where it was
+  if (Date.now() - runSavedAt >= RUN_SAVE_MS) saveRun();
 }
 
 function startTimer() {
@@ -2170,10 +2187,12 @@ function startTimer() {
   state.lastBeep = null;
   workChime();
   state.tickHandle = setInterval(tickClock, 200);
+  hideAway();                              // going again answers it (see askAway)
   beginBleed(state.remainingInPhase);
   render();
   rememberExercises();
   recordHistory();
+  saveRun();
 }
 
 function pauseTimer() {
@@ -2183,6 +2202,7 @@ function pauseTimer() {
   state.running = false;
   clearTick();
   render();                                // the wake lock stays on through a pause
+  saveRun();
 }
 
 function clearTick() {
@@ -2199,6 +2219,8 @@ function stopTimer() {
 // started, so skipping through after a reset doesn't count as done.
 function resetWorkout() {
   stopTimer();
+  hideAway();
+  if (state.started) clearRun();
   state.scores = {};
   state.pick = {};
   state.started = false;
@@ -2212,11 +2234,13 @@ function resetWorkout() {
 // Start over begins again from the top.
 function finish() {
   stopTimer();
+  hideAway();
   state.currentIdx = state.sequence.length;
   // skipping through without ever pressing Start isn't a session done
   if (state.started) {
     markHistoryComplete();
     completeProgramDay();
+    clearRun();
   }
   bigBell();
   // and once the bell has rung, the sound goes back (unless Start over has
@@ -2285,11 +2309,13 @@ function skipBlock() {
     finish();
     return;
   }
+  hideAway();
   seekTo(target);
   enterPhaseVisual(state.sequence[target].kind, state.remainingInPhase);
   chimeFor(state.sequence[target].kind);
   if (state.running) beginBleed(state.remainingInPhase);
   render();
+  saveRun();
 }
 
 // Remember what this session used so the next generated workout leans
@@ -2348,10 +2374,10 @@ function recordHistory() {
   state.history = state.history.slice(0, HISTORY_CAP);
   savePrefs();
 }
-// The program day being run, as history keeps it: "Pop-ups & legs" and
-// where it sits ("Surf Fit · Week 1, Day 2"), or null for any other session.
-function programRunLabel() {
-  const run = state.programRun;
+// The program day being run (or one saved part-way, see RESUME), as
+// history keeps it: "Pop-ups & legs" and where it sits ("Surf Fit · Week
+// 1, Day 2"), or null for any other session.
+function programRunLabel(run = state.programRun) {
   const prog = run && PROGRAMS.find(p => p.id === run.id);
   if (!prog) return null;
   const day = programDay(prog, run.n);
@@ -2386,15 +2412,18 @@ function openFromRecord(rec) {
   if (rec.generated) {
     return buildAndOpen(rec.request, rec.seed, { recent: (rec.request && rec.request.recent) || [] });
   }
-  const w = CLASSICS.find(x => x.id === rec.workoutId) ||
-            STRETCH_ROUTINES.find(x => x.id === rec.workoutId);
+  const w = namedAsRun(rec.workoutId, rec.intervalId);
   if (!w) return 'That workout is no longer in the library.';
-  // Reopen it the way it was run: a classic takes whichever interval was
-  // selected at the time, so carry the recorded one, not today's preference.
-  const asRun = w.format === 'tabata' && rec.intervalId && INTERVALS[rec.intervalId]
-    ? { ...w, intervalId: rec.intervalId } : w;
-  openWorkout(asRun);
+  openWorkout(w);
   return null;
+}
+// A classic or stretch routine the way it was run: a classic takes
+// whichever interval was selected at the time, so carry the recorded one,
+// not today's preference. Null if it's no longer in the library.
+function namedAsRun(id, intervalId) {
+  const w = CLASSICS.find(x => x.id === id) || STRETCH_ROUTINES.find(x => x.id === id);
+  if (!w) return null;
+  return w.format === 'tabata' && intervalId && INTERVALS[intervalId] ? { ...w, intervalId } : w;
 }
 
 // "Today", "Yesterday", then the date. Nobody wants a timestamp.
@@ -2408,6 +2437,191 @@ function whenLabel(ts) {
   if (days === 1) return `Yesterday, ${time}`;
   if (days < 7) return `${then.toLocaleDateString([], { weekday: 'long' })}, ${time}`;
   return then.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+// =====================================================================
+// RESUME
+// A session under way is kept under its own key, not with the prefs (it
+// changes every few seconds and means nothing once it's over), so a
+// reload, a tab the phone threw away or a stray swipe can pick it back up
+// from the home screen. Saved every few seconds while it runs, and on a
+// pause, a skip, a score and whenever the app goes out of view. Cleared
+// when it finishes, on Reset or Start over, and when you leave it with
+// two taps on Menu. After twelve hours it isn't offered.
+//
+// The session that owns the key is the one on screen once it's started
+// (state.started), so opening something else and leaving it untouched
+// leaves an earlier session to pick up.
+// =====================================================================
+const RUN_KEY = 'fit-run-1';
+const RUN_MAX_AGE_MS = 12 * 3600e3;
+const RUN_SAVE_MS = 5000;
+let runSavedAt = 0;
+
+// A short fingerprint of a session: the exercises it was built from and
+// the shape of its timeline. A rebuild that comes out different (an update
+// changed the library, say) isn't the session that was saved. The gear
+// doesn't come into it: like a favourite, a session picked up after the
+// gear changed adapts to what's there.
+function runSig(w, seq) {
+  const ids = (w.blocks || [w]).map(b => (b.ids || []).join(','));
+  const text = JSON.stringify([ids, seq.length, seq.reduce((t, p) => t + p.duration, 0)]);
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = (h * 33 + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+// Everything needed to build the session again exactly and put it back
+// where it was: how it was built, who was training, the program day, how
+// far in, and the scores and lap picks so far.
+function saveRun() {
+  const w = state.workout;
+  if (!w || !inProgress()) return;
+  // with the question after time away still up, where you left (see AWAY)
+  const elapsed = Math.min(awayBack !== null ? awayBack : elapsedNow(), state.totalDuration);
+  const idx = locate(elapsed).idx;
+  if (idx >= state.sequence.length) return;
+  runSavedAt = Date.now();
+  const snap = {
+    v: 1, savedAt: runSavedAt, sig: runSig(w, state.sequence),
+    generated: !!w.generated, seed: w.seed || null, request: w.request || null, builtWith: w.builtWith || null,
+    workoutId: w.generated ? null : w.id, intervalId: intervalFor(w).id,
+    people: state.people, names: { a: state.nameA || '', b: state.nameB || '' },
+    programRun: state.programRun || null,
+    elapsed, idx, scores: state.scores, pick: state.pick, lastScores: state.lastScores || null
+  };
+  try { localStorage.setItem(RUN_KEY, JSON.stringify(snap)); } catch (e) { /* private mode or full: nothing to pick up later */ }
+}
+function clearRun() {
+  try { localStorage.removeItem(RUN_KEY); } catch (e) { /* as above */ }
+}
+
+// The saved session, if there's one worth offering: under twelve hours
+// old, and every part of it the right shape, since it goes straight back
+// into the timer. Anything else is thrown away.
+function readRun() {
+  let s;
+  try { s = JSON.parse(localStorage.getItem(RUN_KEY)); } catch (e) { s = undefined; }
+  if (s === null) return null;
+  const run = cleanRun(s);
+  if (!run) clearRun();
+  return run;
+}
+function cleanRun(s) {
+  const plain = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+  const count = (x) => typeof x === 'number' && Number.isFinite(x) && x >= 0;
+  const whole = (x) => Number.isInteger(x) && x >= 0;
+  if (!plain(s) || s.v !== 1 || typeof s.sig !== 'string') return null;
+  const age = Date.now() - s.savedAt;
+  if (!(age >= -60000 && age < RUN_MAX_AGE_MS)) return null;
+  if (!count(s.elapsed) || !whole(s.idx) || (s.people !== 1 && s.people !== 2)) return null;
+  if (s.generated ? !(whole(s.seed) && s.seed > 0 && plain(s.request)) : typeof s.workoutId !== 'string') return null;
+  const built = plain(s.builtWith) && plain(s.builtWith.equipment) && Array.isArray(s.builtWith.excluded)
+    ? { equipment: { ...s.builtWith.equipment }, excluded: s.builtWith.excluded.filter(id => typeof id === 'string') } : null;
+  const scores = {};
+  if (plain(s.scores)) {
+    Object.entries(s.scores).forEach(([k, v]) => {
+      if (/^\d+$/.test(k) && plain(v) && count(v.a || 0) && count(v.b || 0)) {
+        scores[k] = { a: v.a || 0, b: v.b || 0, ...(v.skipped === true ? { skipped: true } : {}) };
+      }
+    });
+  }
+  const pick = {};
+  if (plain(s.pick)) Object.entries(s.pick).forEach(([k, v]) => { if (whole(v)) pick[k] = v; });
+  const last = (x) => (count(x) ? x : undefined);
+  const names = plain(s.names) ? s.names : {};
+  const name = (x) => (typeof x === 'string' ? x.slice(0, 14) : '');
+  const prog = plain(s.programRun) && whole(s.programRun.n) && PROGRAMS.some(p => p.id === s.programRun.id);
+  return {
+    savedAt: s.savedAt, sig: s.sig, elapsed: s.elapsed, idx: s.idx, people: s.people,
+    generated: !!s.generated, seed: s.seed, request: s.request, builtWith: built,
+    workoutId: s.workoutId, intervalId: typeof s.intervalId === 'string' ? s.intervalId : null,
+    names: { a: name(names.a), b: name(names.b) },
+    programRun: prog ? { id: s.programRun.id, n: s.programRun.n } : null,
+    scores, pick,
+    lastScores: Array.isArray(s.lastScores) ? s.lastScores.map(x => (plain(x) ? { a: last(x.a), b: last(x.b) } : null)) : null
+  };
+}
+
+// The saved session built again: a built one from its seed with the gear
+// and leave-outs it was first built with, a named one by its id at the
+// style it ran in. Null if it no longer comes out the same.
+function rebuildRun(s) {
+  try {
+    let w;
+    if (s.generated) {
+      w = buildWorkout(s.request, s.seed, { recent: Array.isArray(s.request.recent) ? s.request.recent : [], ...(s.builtWith || {}) });
+      if (w.error) return null;
+    } else {
+      w = namedAsRun(s.workoutId, s.intervalId);
+      if (!w) return null;
+    }
+    const seq = buildSequence(w, s.people);
+    return runSig(w, seq) === s.sig && s.idx < seq.length ? { w, seq } : null;
+  } catch (e) { return null; }
+}
+
+// "block 2", "the warm-up", "stretch 3": where in a session a phase is.
+function phaseWhere(p) {
+  if (p.kind === 'warmup') return 'the warm-up';
+  if (p.kind === 'cooldown') return 'the cool-down';
+  if (p.kind === 'stretch') return `stretch ${p.stretchIdx + 1}`;
+  if (p.kind === 'blockrest') return `the rest before block ${p.blockIdx + 2}`;
+  return `block ${p.blockIdx + 1}`;
+}
+
+// At the top of the Today card while there's a session to pick up:
+// "Resume Paddle power, block 2, 8:20 in", with Resume and Discard.
+function resumeLine() {
+  const s = readRun();
+  const built = s && rebuildRun(s);
+  if (!built) { if (s) clearRun(); return null; }
+  const day = programRunLabel(s.programRun);
+  const box = document.createElement('div');
+  box.className = 'today-resume';
+  const text = document.createElement('div');
+  text.className = 'resume-text';
+  text.textContent = `Resume ${day ? day.day : built.w.name}, ${phaseWhere(built.seq[s.idx])}, ${fmt(s.elapsed)} in`;
+  const go = document.createElement('button');
+  go.id = 'btnResumeRun';
+  go.textContent = 'Resume';
+  go.addEventListener('click', resumeRun);
+  const drop = document.createElement('button');
+  drop.id = 'btnDiscardRun';
+  drop.className = 'secondary';
+  drop.textContent = 'Discard';
+  drop.addEventListener('click', () => { clearRun(); renderToday(); });
+  const row = document.createElement('div');
+  row.className = 'resume-actions';
+  row.append(go, drop);
+  box.append(text, row);
+  return box;
+}
+
+// Resume: the same session, with the same people, at the start of the
+// phase it was in (easier to pick up than mid-interval), paused so you
+// tap to go. Its scores, the lap exercise each card was showing and the
+// program day come back too, so finishing it still ticks the day off.
+function resumeRun() {
+  const s = readRun();
+  const built = s && rebuildRun(s);
+  if (!built) { clearRun(); renderToday(); return; }
+  state.people = s.people;
+  state.nameA = els.nameA.value = s.names.a;
+  state.nameB = els.nameB.value = s.names.b;
+  renderPeoplePicker();
+  savePrefs();
+  state.programRun = s.programRun;
+  if (s.generated) state.lastRequest = s.request;
+  openWorkout(built.w);
+  state.scores = s.scores;
+  state.pick = s.pick;
+  state.lastScores = s.lastScores;
+  state.started = true;
+  seekTo(s.idx);
+  enterPhaseVisual(state.sequence[s.idx].kind, state.remainingInPhase);
+  render();
+  els.workoutNote.textContent = `Picked up from the start of ${phaseWhere(state.sequence[s.idx])}. Tap ${els.btnStart.textContent} when you're ready.`;
 }
 
 // =====================================================================
@@ -2866,6 +3080,8 @@ els.btnLibraryBack.addEventListener('click', goWelcome);
 function leaveWorkout() {
   disarmBack();
   releaseAudio();
+  // a session left on purpose (two taps on Menu, or Done) isn't offered again
+  if (state.started) clearRun();
   if (state.programRun) openProgram(); else goWelcome();
 }
 // Two-tap leave once a workout is going, like Reset, so a stray tap on
@@ -3112,20 +3328,84 @@ function setupFullscreen() {
   document.addEventListener('webkitfullscreenchange', sync);
 }
 
+// =====================================================================
+// AWAY
 // Coming back to the app re-derives the position from the clock, so a
-// spell in the background can't leave the workout behind. The browser let
-// go of the wake lock while the page was hidden, so a started workout,
-// paused or not, asks for it again, and a running one wakes its audio
-// (Safari leaves it 'interrupted' after a call, or silent while it still
-// says 'running', so it's re-armed either way; see rearmAudio).
+// spell in the background can't leave the workout behind. A short one
+// just carries on. After a longer one (a call, a text, another app) you
+// may or may not have kept going, so the clock stops where it has got to
+// and asks: Go back puts it where you left, paused; I kept going (or
+// Resume, or a tap on the timer) carries on from where it has got to.
+// =====================================================================
+const AWAY_ASK_MS = 20000;
+let awayFrom = null;       // when the app went out of view mid-run, and how far in
+let awayBack = null;       // while the question is up: where you left
+
+// Put the clock at a point in the session, without the chimes a tick
+// sounds on the way there (seekTo goes to the start of a phase).
+function placeAt(elapsed) {
+  const { idx, remaining } = locate(elapsed);
+  state.currentIdx = idx;
+  state.elapsedTotal = state.elapsedAtResume = elapsed;
+  state.runStartWall = Date.now();
+  state.remainingInPhase = remaining;
+  state.lastBeep = null;
+  if (state.sequence[idx]) enterPhaseVisual(state.sequence[idx].kind, remaining);
+}
+function askAway(away) {
+  const caught = elapsedNow();
+  state.running = false;
+  clearTick();
+  // a spell longer than the rest of the session stops on its last second,
+  // so I kept going runs it out and it counts as done
+  placeAt(Math.max(away.elapsed, Math.min(caught, state.totalDuration - 1)));
+  awayBack = away.elapsed;
+  els.awayText.textContent = `You were away ${fmt((Date.now() - away.at) / 1000)}. Go back to ${fmt(away.elapsed)}?`;
+  els.awayBar.hidden = false;
+  els.scroller.scrollTop = 0;
+  render();
+}
+function hideAway() {
+  awayBack = null;
+  els.awayBar.hidden = true;
+}
+els.btnAwayBack.addEventListener('click', () => {
+  const back = awayBack;
+  hideAway();
+  if (back === null || isFinished()) return;
+  placeAt(back);
+  render();
+  saveRun();
+  els.workoutNote.textContent = `Back to ${fmt(back)}. Tap ${els.btnStart.textContent} when you're ready.`;
+});
+els.btnAwayKept.addEventListener('click', () => {
+  hideAway();
+  if (!isFinished()) startTimer();
+});
+
+// The browser let go of the wake lock while the page was hidden, so a
+// started workout, paused or not, asks for it again, and a running one
+// wakes its audio (Safari leaves it 'interrupted' after a call, or silent
+// while it still says 'running', so it's re-armed either way; see
+// rearmAudio). Going out of view saves the session (see RESUME), in case
+// the phone closes the tab while it's away.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && audioCtx) audioStale = true;
+  if (document.visibilityState === 'hidden') {
+    if (audioCtx) audioStale = true;
+    awayFrom = state.running ? { at: Date.now(), elapsed: elapsedNow() } : null;
+    saveRun();
+    return;
+  }
   if (document.visibilityState !== 'visible') return;
+  const away = awayFrom;
+  awayFrom = null;
   if (keepAwake) requestWakeLock();
   if (!state.running) return;
   if (audioStale) rearmAudio(); else ensureAudio();
-  tickClock();
+  if (away && Date.now() - away.at > AWAY_ASK_MS) askAway(away);
+  else tickClock();
 });
+window.addEventListener('pagehide', saveRun);
 
 // =====================================================================
 // INIT

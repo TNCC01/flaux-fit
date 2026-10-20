@@ -17,7 +17,7 @@
   a 3D file is added, list it in MOVE_3D (scripts/selfcheck.mjs checks the
   list is complete).
 */
-const VERSION = 'fit-v6';
+const VERSION = 'fit-v7';
 const NETWORK_TIMEOUT_MS = 4000;
 
 const SHELL = [
