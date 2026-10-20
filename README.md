@@ -109,7 +109,8 @@ of three or more exercises, 4 of two, 5 of one, which lands around three
 minutes for most people. The clock counts up, each person taps Done when
 they finish (the time is saved like an AMRAP score, and shows as "Last
 time" next go), and once everyone's done the rest of the four-minute cap
-counts down as rest. Miss the cap and it's logged as capped.
+counts down as rest. Miss the cap and it's logged as capped. A block
+skipped before anyone scores shows as "–" in history, not 0 or capped.
 
 Cues that name a time ("swap sides at 10s", "change every 5s") are written
 from the live interval, so they stay truthful in both styles. Weight-swap
@@ -156,7 +157,12 @@ rather than hardcoded.
   clears it too
 - Wall-clock timer, wake lock (kept through a pause), audio cues that still
   play with an iPhone on silent (a setting, since it pauses other music),
-  two-tap reset
+  two-tap reset, and two taps on Menu once a workout is going. Tap the
+  timer to pause or resume; on a phone, Start, Skip and Reset stay on
+  screen however long the cards get
+- A finish screen with Done (home, or back to the program for a program
+  day), Start over, and Save and Share. Skipping to the end without ever
+  pressing Start doesn't count as a session done
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
   tablet, with no account and no server involved

@@ -25,7 +25,8 @@
   --core:       #f43f5e;
   --stretching: #a855f7;
 
-  --grad-primary:    linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  /* a shade deeper than --teal so white text on it reads at 4.5:1 or better */
+  --grad-primary:    linear-gradient(135deg, #0c8378 0%, #0f766e 100%);
   --glow-teal:       0 6px 22px rgba(20,184,166,0.25);
 
   /* User-adjustable exercise text size (the Text A A A control). */
@@ -199,7 +200,7 @@ button.secondary:active,
   background-color: var(--card-hi);
   box-shadow: none;
 }
-button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 6px 22px rgba(245,158,11,0.25); }
+button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shadow: 0 6px 22px rgba(245,158,11,0.25); }
 
 /* ============== Brand + headings ============== */
 .brand-bar {
@@ -564,6 +565,7 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
 .round-count { color: var(--text); font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .round-count .of { color: var(--muted); font-weight: 700; }
 .remaining-tag { color: var(--muted); font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
+.round-hint { color: var(--muted); font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
 .seg-row { display: flex; gap: 0.28rem; }
 .seg { flex: 1; height: 14px; border-radius: 4px; background: rgba(148,163,184,0.22); }
 .seg.done { background: var(--muted); }
@@ -572,7 +574,10 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   background: var(--card); border-radius: 1.5rem;
   padding: 1.25rem 1rem; text-align: center; border: 2px solid transparent;
   position: relative;
+  /* a tap on it starts, pauses or resumes, like the big button */
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
+#workoutView.finished .timer-card { cursor: default; }
 /* The bold phase ring, on its own layer so it can fade out on opacity
    alone rather than animating a large box-shadow. */
 .timer-card .ring {
@@ -625,10 +630,10 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   breakpoints and got the smallest size); and --ex-scale lets it be
   pushed larger still from the Text control.
 */
-/* EMOM: the reps to do this minute, above the name and big enough to read
-   across the room */
+/* EMOM: the reps to do this minute, above the name and as big as it (the
+   name's size rules below set both), to read across the room */
 .exercise-reps {
-  font-size: calc(clamp(1.3rem, 3vw, 2.2rem) * var(--ex-scale, 1)); font-weight: 800;
+  font-size: calc(clamp(1.7rem, 3.6vw, 3rem) * var(--ex-scale, 1)); font-weight: 800;
   color: var(--teal-bright); font-variant-numeric: tabular-nums; line-height: 1.1;
 }
 .exercise-reps:empty { display: none; }
@@ -640,6 +645,9 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   list-style: none; margin: 0.2rem 0 0.4rem; padding: 0;
   display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 0;
 }
+/* the display above and below beats the UA rule for [hidden], so a lap and
+   its counter would otherwise stay on screen after the block */
+.circuit[hidden], .round-counter[hidden] { display: none; }
 .circuit li {
   display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
   column-gap: 0.8rem; align-items: baseline; cursor: pointer;
@@ -668,7 +676,7 @@ button.running { background: linear-gradient(135deg, #f59e0b, #d97706); box-shad
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
-.exercise-grid.solo .exercise-name {
+.exercise-grid.solo .exercise-name, .exercise-grid.solo .exercise-reps {
   font-size: calc(clamp(2.1rem, 6vw, 4.6rem) * var(--ex-scale));
 }
 .exercise-cue {
@@ -768,11 +776,12 @@ body.show-alternatives .alternative.has-alt { display: block; }
 }
 #workoutView.resting .next-eyebrow { display: block; }
 #workoutView.resting .timer-card { padding: 0.55rem 1rem; }
-#workoutView.resting .time-display { font-size: calc(clamp(2.8rem, 7vw, 4.6rem)); margin: 0.05rem 0; }
+#workoutView.resting .time-display { font-size: clamp(4rem, 14vw, 6rem); margin: 0.05rem 0; }
 #workoutView.resting .phase-label { font-size: 0.9rem; letter-spacing: 0.2em; }
 #workoutView.resting .total-time { font-size: 0.85rem; }
-#workoutView.resting .exercise-name { font-size: calc(clamp(2rem, 4.4vw, 3.6rem) * var(--ex-scale)); }
-#workoutView.resting .exercise-grid.solo .exercise-name { font-size: calc(clamp(2.4rem, 7vw, 5.2rem) * var(--ex-scale)); }
+#workoutView.resting .exercise-name, #workoutView.resting .exercise-reps { font-size: calc(clamp(2rem, 4.4vw, 3.6rem) * var(--ex-scale)); }
+#workoutView.resting .exercise-grid.solo .exercise-name,
+#workoutView.resting .exercise-grid.solo .exercise-reps { font-size: calc(clamp(2.4rem, 7vw, 5.2rem) * var(--ex-scale)); }
 #workoutView.resting .upcoming { display: none; }
 #workoutView.resting .person { border-color: rgba(20,184,166,0.4); }
 
@@ -791,6 +800,10 @@ body.show-alternatives .alternative.has-alt { display: block; }
 }
 
 .controls { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.6rem; }
+/* Finished: Done and Start over, then Save and Share without the preview */
+#workoutView.finished .controls { grid-template-columns: 2fr 1fr; }
+#workoutView.finished #btnSkip, #workoutView.finished #btnReset,
+#workoutView.finished #btnShuffle, #workoutView.finished .preview-card { display: none; }
 .pre-start { display: flex; flex-direction: column; gap: 0.75rem; }
 .pre-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .pre-actions button { font-size: 1rem; padding: 0.85rem; flex: 1 1 10rem; }
@@ -821,14 +834,24 @@ body.show-alternatives .alternative.has-alt { display: block; }
 /* Phones: stack the two people so each name still gets full width. */
 @media (max-width: 700px) {
   .exercise-grid { grid-template-columns: 1fr; }
-  .exercise-grid:not(.solo) .exercise-name {
+  .exercise-grid:not(.solo) .exercise-name, .exercise-grid:not(.solo) .exercise-reps {
     font-size: calc(clamp(1.9rem, 7.5vw, 3rem) * var(--ex-scale));
   }
-  #workoutView.resting .exercise-grid:not(.solo) .exercise-name {
+  #workoutView.resting .exercise-grid:not(.solo) .exercise-name,
+  #workoutView.resting .exercise-grid:not(.solo) .exercise-reps {
     font-size: calc(clamp(2rem, 8vw, 3.2rem) * var(--ex-scale));
   }
-  .controls { grid-template-columns: 1fr 1fr; }
+  /* Start, Skip and Reset stay on screen however long the cards get, the
+     same way the Build button does */
+  .controls {
+    grid-template-columns: 1fr 1fr;
+    position: sticky; bottom: 0; z-index: 5;
+    padding: 0.6rem 0 calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+    background: linear-gradient(to top, var(--bg) 85%, rgba(5,10,10,0));
+  }
   .controls button:first-child { grid-column: 1 / -1; }
+  #workoutView.finished .controls { grid-template-columns: 3fr 2fr; }
+  #workoutView.finished .controls button:first-child { grid-column: auto; }
   .pre-actions button { flex-basis: 100%; }
 }
 

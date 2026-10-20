@@ -36,7 +36,7 @@
   content. See the note above #scroller in css/app.css.
 -->
 <div id="scroller">
-<div class="app">
+<main class="app">
 
   <!-- ============== WELCOME VIEW ============== -->
   <div class="view active" id="welcomeView">
@@ -261,13 +261,13 @@
     </div>
 
     <div class="block-info">
-      <div class="block-name" id="blockName"></div>
+      <div class="block-name" id="blockName" aria-live="polite"></div>
       <div class="round-dots" id="roundDots"></div>
     </div>
 
     <div class="timer-card warmup" id="timerCard">
       <div class="ring" id="phaseRing" aria-hidden="true"></div>
-      <div class="phase-label" id="phaseLabel">Press start</div>
+      <div class="phase-label" id="phaseLabel" aria-live="polite">Press start</div>
       <div class="time-display" id="timeDisplay">--:--</div>
       <div class="total-time" id="totalTime">Total 0:00</div>
     </div>
@@ -304,6 +304,7 @@
       <button id="btnStart">Start</button>
       <button class="secondary" id="btnSkip">Skip block</button>
       <button class="secondary" id="btnReset">Reset</button>
+      <button class="secondary" id="btnAgain" hidden>Start over</button>
     </div>
     <div class="build-note" id="workoutNote"></div>
 
@@ -338,15 +339,15 @@
       </label>
       <span class="toggle text-size">
         Text
-        <button class="mini-btn" data-scale="1">A</button>
-        <button class="mini-btn" data-scale="1.2">A</button>
-        <button class="mini-btn" data-scale="1.45">A</button>
+        <button class="mini-btn" data-scale="1" aria-label="Text size normal">A</button>
+        <button class="mini-btn" data-scale="1.2" aria-label="Text size large">A</button>
+        <button class="mini-btn" data-scale="1.45" aria-label="Text size largest">A</button>
       </span>
       <p class="toggle-hint" id="silentHint" hidden>"Beep even on silent" can pause Spotify or other music while you train. Turn it off to keep your music going; the beeps then need the ringer on.</p>
     </div>
   </div>
 
-</div>
+</main>
 </div>
 
 <!-- Every exercise in the coming block, as moving thumbnails, so a rest

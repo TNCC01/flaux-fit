@@ -64,6 +64,9 @@ const state = {
   remainingInPhase: 0,
   elapsedTotal: 0,
   running: false,
+  // Start was pressed on this workout (set in startTimer): only then does
+  // finishing count it as done, and leaving it take two taps
+  started: false,
   elapsedAtResume: 0,
   runStartWall: 0,
   lastBeep: null,
@@ -272,7 +275,7 @@ const els = {
   upcoming: $('upcoming'), preStart: $('preStart'),
   previewList: $('previewList'),
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'), btnShare: $('btnShare'),
-  btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'),
+  btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'), btnAgain: $('btnAgain'),
   workoutNote: $('workoutNote'),
   showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio'),
   beepOnSilent: $('beepOnSilent'), silentToggle: $('silentToggle'), silentHint: $('silentHint')
@@ -1197,7 +1200,8 @@ function styleLabel(rec) {
 }
 
 // An AMRAP session's rounds, block by block ("Rounds: 4 · 5 · 4"), or a
-// For Time one's finishing times ("Times: 3:12 · 2:58 · capped").
+// For Time one's finishing times ("Times: 3:12 · 2:58 · capped"). A block
+// skipped with no score shows as "–".
 function scoreLine(rec) {
   if (!rec.scores || !rec.scores.some(s => s.a || s.b)) return '';
   // each block knows its kind of score; older entries go by the style
@@ -1206,7 +1210,7 @@ function scoreLine(rec) {
   const mixed = new Set(scored.map(kind)).size > 1;
   const one = (s, w) => {
     const v = s[w];
-    const val = kind(s) === 'fortime' ? (v ? fmt(v) : 'capped') : (v || 0);
+    const val = s.skipped && !v ? '–' : kind(s) === 'fortime' ? (v ? fmt(v) : 'capped') : (v || 0);
     return mixed ? `${kind(s) === 'fortime' ? 'time' : 'rounds'} ${val}` : val;
   };
   const row = (w) => scored.map(s => one(s, w)).join(' · ');
@@ -1315,6 +1319,8 @@ function openWorkout(workout) {
   state.totalDuration = state.sequence.reduce((s, p) => s + p.duration, 0);
   seekTo(0);
   state.running = false;
+  state.started = false;
+  disarmBack();
 
   els.workoutTitle.textContent = workout.name;
   els.peopleBadge.textContent = state.people === 1
@@ -1512,6 +1518,7 @@ function onCounterTap(e) {
   if (step === 'done') s[w] = Math.max(1, Math.round(phaseElapsed(phase)));
   else if (step === 'undo') s[w] = 0;
   else s[w] = Math.max(0, s[w] + +step);
+  delete s.skipped;                        // done after a reset, so not skipped after all
   saveScores();
   render();
 }
@@ -1682,8 +1689,16 @@ function renderRoundDots(phase) {
     label.textContent = phase.forTime ? `Finish the rounds, ${fmtMin(phase.duration)} cap`
       : `As many rounds as you can in ${fmtMin(phase.duration)}`;
     els.roundDots.appendChild(label);
-  } else if (phase.totalRounds) renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
-  else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind);
+  } else if (phase.totalRounds) {
+    renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
+    // an EMOM's rest is the rest of the minute, which nothing else says
+    if (phase.emom) {
+      const how = document.createElement('div');
+      how.className = 'round-hint';
+      how.textContent = "Do the reps, then rest till the minute's up";
+      els.roundDots.appendChild(how);
+    }
+  } else if (phase.totalStretches) renderSegBar(phase.stretchIdx + 1, phase.totalStretches, phase.kind, 'Stretch');
   else if (phase.totalBlocks) {
     const label = document.createElement('div');
     label.className = 'round-count';
@@ -1759,23 +1774,33 @@ function clearBleed() {
 // =====================================================================
 // RENDER
 // =====================================================================
+// Text that's read out when it changes (aria-live) is only written then.
+const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+
 function render() {
   const phase = state.sequence[state.currentIdx];
   if (!phase) return;
 
+  // a phase on screen means the finish screen has gone (see finish)
+  els.workoutView.classList.remove('finished');
+  els.btnAgain.hidden = true;
   els.timerCard.className = 'timer-card ' + phase.kind;
-  els.phaseLabel.textContent = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
+  let label = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
     : phase.changeover ? 'Change over' : (PHASE_LABEL[phase.kind] || '');
   els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
   if (phase.forTime) {
     // the clock counts up while you race it; once everyone's done it counts
     // down the rest of the cap
     const done = allDone(phase);
-    els.phaseLabel.textContent = done ? 'Rest' : 'For time';
+    label = done ? 'Rest' : 'For time';
     if (!done) els.timeDisplay.textContent = fmt(Math.floor(phaseElapsed(phase)));
   }
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
-  els.blockName.textContent = phase.name;
+  // the phase and block are read out as they change (aria-live), so only
+  // write them when they do, not five times a second
+  setText(els.phaseLabel, label);
+  setText(els.blockName, phase.name);
+  setText(els.btnSkip, phase.kind === 'stretch' ? 'Skip' : 'Skip block');
   els.overallProgress.style.width =
     `${Math.min(100, (state.elapsedTotal / state.totalDuration) * 100)}%`;
 
@@ -1828,16 +1853,20 @@ function renderUpcoming() {
   if (!next) { els.upcoming.innerHTML = ''; return; }
   const short = (which, fallback) =>
     ((which === 'a' ? state.nameA : state.nameB) || '').trim() || fallback;
+  const work = (p) => state.people === 2
+    ? `${short('a', 'A')}: ${withReps(p.a)} · ` +
+      `${short('b', 'B')}: ${withReps(p.b)}`
+    : withReps(p.a);
+  // a rest says what it's resting for
+  const then = state.sequence[state.currentIdx + 2];
   let preview;
-  if (next.kind === 'rest') preview = `Rest ${next.duration}s`;
+  if (next.kind === 'rest') preview = then && then.kind === 'work'
+    ? `Rest ${next.duration}s, then ${work(then)}` : `Rest ${next.duration}s`;
   else if (next.amrap) preview = `AMRAP: ${next.a.circuit.map(x => x.name).join(', ')}`;
   else if (next.forTime) preview = `For time, ${next.a.lapRounds} rounds: ${next.a.circuit.map(x => x.name).join(', ')}`;
-  else if (next.kind === 'work') {
-    preview = state.people === 2
-      ? `${short('a', 'A')}: ${withReps(next.a)} · ` +
-        `${short('b', 'B')}: ${withReps(next.b)}`
-      : withReps(next.a);
-  } else preview = next.name;
+  else if (next.kind === 'work') preview = work(next);
+  else if (next.kind === 'stretch') preview = next.a.name;
+  else preview = next.name;
   const c = PHASE_COLOR[next.kind];
   const swatch = c ? `background:${c.hex};box-shadow:0 0 8px 1px rgba(${c.rgb},0.7)` : '';
   els.upcoming.innerHTML =
@@ -1898,8 +1927,11 @@ function tickClock() {
     // only announce the one we actually landed on.
     state.currentIdx = idx;
     state.lastBeep = null;
-    enterPhaseVisual(state.sequence[idx].kind, remaining);
-    chimeFor(state.sequence[idx].kind);
+    const kind = state.sequence[idx].kind;
+    enterPhaseVisual(kind, remaining);
+    chimeFor(kind);
+    // the how-to sheet covers the timer: get it out of the way to go again
+    if (kind === 'work' || kind === 'stretch') closeMove();
   }
   state.remainingInPhase = remaining;
 
@@ -1918,6 +1950,7 @@ function startTimer() {
   ensureAudio();
   requestWakeLock();
   state.running = true;
+  state.started = true;
   state.elapsedAtResume = state.elapsedTotal;
   state.runStartWall = Date.now();
   state.lastBeep = null;
@@ -1955,39 +1988,64 @@ function resetWorkout() {
   render();
 }
 
+// The finish screen: Done to go back, Start over, and Save and Share. The
+// position goes past the end, so render() leaves this screen alone and
+// Start over begins again from the top.
 function finish() {
   stopTimer();
-  markHistoryComplete();
-  completeProgramDay();
+  state.currentIdx = state.sequence.length;
+  // skipping through without ever pressing Start isn't a session done
+  if (state.started) {
+    markHistoryComplete();
+    completeProgramDay();
+  }
   bigBell();
   clearBleed();
+  disarmBack();
   els.workoutView.classList.remove('resting');
+  els.workoutView.classList.add('finished');
   els.timerCard.className = 'timer-card';
-  els.phaseLabel.textContent = 'Done';
+  setText(els.phaseLabel, 'Done');
   els.timeDisplay.textContent = '✓';
-  els.blockName.textContent = 'Workout complete. Nice work.';
+  setText(els.blockName, 'Workout complete. Nice work.');
   els.roundDots.innerHTML = '';
   els.exerciseA.textContent = 'Well done.';
-  els.cueA.textContent = '';
+  els.repsA.textContent = els.cueA.textContent = '';
   setAlt(els.alternativeA, '');
   updateAnim(els.animA, null);
   updateAnim(els.animB, null);
   if (state.people === 2) {
     els.exerciseB.textContent = 'Well done.';
-    els.cueB.textContent = '';
+    els.repsB.textContent = els.cueB.textContent = '';
     setAlt(els.alternativeB, '');
   }
+  // no laps or +1 round buttons left over from the last block
+  for (const w of ['A', 'B']) {
+    els['circuit' + w].hidden = els['counter' + w].hidden = true;
+    els['circuit' + w].closest('.person').classList.remove('amrap');
+  }
   els.upcoming.innerHTML = '';
-  els.btnStart.textContent = 'Start over';
+  document.getElementById('btnNextBlock').hidden = true;
+  closeNextSheet();
+  els.btnStart.textContent = 'Done';
   els.btnStart.classList.remove('running');
+  els.btnAgain.hidden = false;
   els.overallProgress.style.width = '100%';
-  els.preStart.style.display = 'none';
+  els.preStart.style.display = '';         // Save and Share; the preview and Shuffle hide (css)
 }
+const isFinished = () => state.currentIdx >= state.sequence.length;
 
 function skipBlock() {
   if (!state.sequence.length) return;
   const cur = state.sequence[state.currentIdx];
   if (!cur) return;
+  // a scored block skipped before anyone logged a score shows as skipped
+  // in history, not as 0 rounds or capped
+  const s = state.scores[cur.blockIdx];
+  if ((cur.amrap || cur.forTime) && !(s && (s.a || s.b))) {
+    state.scores[cur.blockIdx] = { a: 0, b: 0, skipped: true };
+    saveScores();
+  }
   let target = state.currentIdx + 1;
   if (cur.kind !== 'stretch') {
     // Walk to the first phase that isn't part of this block.
@@ -2479,7 +2537,25 @@ els.btnGearDone.addEventListener('click', finishGearQuestion);
 els.btnSetupBack.addEventListener('click', goWelcome);
 els.btnLibraryBack.addEventListener('click', goWelcome);
 // a program's session goes back to the program, anything else to the menu
-els.btnBack.addEventListener('click', () => (state.programRun ? openProgram() : goWelcome()));
+function leaveWorkout() {
+  disarmBack();
+  if (state.programRun) openProgram(); else goWelcome();
+}
+// Two-tap leave once a workout is going, like Reset, so a stray tap on
+// Menu can't throw the session away.
+let backArmed = false, backTimer = null;
+function disarmBack() {
+  clearTimeout(backTimer);
+  backArmed = false;
+  els.btnBack.textContent = '← Menu';
+}
+const inProgress = () => state.started && (state.running || state.elapsedTotal > 0) && !isFinished();
+els.btnBack.addEventListener('click', () => {
+  if (backArmed || !inProgress()) return leaveWorkout();
+  backArmed = true;
+  els.btnBack.textContent = 'Tap again to leave';
+  backTimer = setTimeout(disarmBack, 2000);
+});
 els.btnProgramBack.addEventListener('click', goWelcome);
 els.pathProgram.addEventListener('click', openProgram);
 
@@ -2558,9 +2634,12 @@ els.btnShare.addEventListener('click', async () => {
   }
 });
 
-els.btnStart.addEventListener('click', () => {
-  if (state.running) pauseTimer(); else startTimer();
-});
+// Start, pause and resume from the big button or a tap on the timer. On
+// the finish screen the button is Done.
+const toggleTimer = () => (state.running ? pauseTimer() : startTimer());
+els.btnStart.addEventListener('click', () => (isFinished() ? leaveWorkout() : toggleTimer()));
+els.timerCard.addEventListener('click', () => { if (!isFinished()) toggleTimer(); });
+els.btnAgain.addEventListener('click', () => { resetWorkout(); startTimer(); });
 els.btnSkip.addEventListener('click', () => { disarmReset(); skipBlock(); });
 
 // Two-tap reset, so a stray tap can't wipe a session mid-workout.

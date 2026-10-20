@@ -78,6 +78,18 @@ const pickInterval = async (label) => { await p.click('#pathBuild'); await p.cli
 // Exact name match: "Power Hour" also appears in Half Power's tagline.
 const card = (name) => `.workout-card:not(.history-card):has(.card-name:text-is("${name}"))`;
 const toggleAllGear = async () => { for (const g of GEAR) await p.click(`#equipmentPicker .chip:has-text("${g}")`); };
+// Once Start has been pressed, Menu takes two taps: the first one asks.
+const leaveStarted = async (pg = p) => {
+  await pg.click('#btnBack');
+  assert(await pg.$eval('#btnBack', e => e.textContent) === 'Tap again to leave', 'the first tap on Menu asks');
+  await pg.click('#btnBack');
+};
+// Contrast of white text on every colour stop of an element's background.
+const whiteContrast = (sel) => p.$eval(sel, (e) => {
+  const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const stops = [...getComputedStyle(e).backgroundImage.matchAll(/rgba?\((\d+), (\d+), (\d+)/g)];
+  return Math.min(...stops.map(([, r, g, b]) => 1.05 / (0.2126 * lin(+r) + 0.7152 * lin(+g) + 0.0722 * lin(+b) + 0.05)));
+});
 
 try {
   await p.goto(URL); await st(() => localStorage.clear()); await p.goto(URL);
@@ -165,10 +177,27 @@ try {
   await p.click('#btnStart'); await p.waitForTimeout(400);
   await p.click('#btnStart');
   assert(await st(() => state.recent.length) > 0, 'starting filled the recency list');
-  ok('first workout built, saved, started and paused');
+  await p.click('#timerCard');
+  assert(await st(() => state.running) && (await p.$eval('#btnStart', e => e.textContent)) === 'Pause', 'a tap on the timer resumes');
+  await p.click('#timerCard');
+  assert(await st(() => !state.running) && (await p.$eval('#btnStart', e => e.textContent)) === 'Resume', 'and another pauses');
+  ok('first workout built, saved, started and paused, from the button and from a tap on the timer');
+
+  step = 'Menu mid-workout takes two taps';
+  await p.click('#btnBack');
+  assert(await activeView() === 'workoutView' && await st(() => !!state.workout), 'one tap on Menu keeps the session');
+  assert((await p.$eval('#btnBack', e => e.textContent)) === 'Tap again to leave', 'and asks for a second tap');
+  await p.waitForTimeout(2100);
+  assert((await p.$eval('#btnBack', e => e.textContent)) === '← Menu', 'the ask goes away after two seconds');
+  await leaveStarted();
+  assert(await activeView() === 'welcomeView', 'two taps leave');
+  await p.click('#todayCard .today-go');
+  await p.click('#btnBack');
+  assert(await activeView() === 'welcomeView', 'before Start, one tap leaves');
+  ok('Menu: one tap asks once a workout is going, two leave; before Start one tap does');
 
   step = 'second build is weighted by recency, then saved';
-  await p.click('#btnBack'); await p.click('#pathBuild'); await p.click('#btnBuild');
+  await p.click('#pathBuild'); await p.click('#btnBuild');
   const recentUsed = await st(() => state.workout.request.recent.length);
   assert(recentUsed > 0, 'second build carried a recency list, got ' + recentUsed);
   const previewB = await previewText();
@@ -347,6 +376,9 @@ try {
     assert(await ev(() => !state.beepOnSilent && navigator.audioSession.type === 'auto'), 'turning the setting off goes back to auto');
 
     await s.click('#btnBack');
+    assert(await ev(() => __locks.held === 1 && document.querySelector('.view.active').id === 'workoutView'),
+           'the first tap on Menu only asks, so the wake lock stays');
+    await s.click('#btnBack');
     assert(await ev(() => __locks.held === 0 && !state.wakeLock), 'leaving the workout lets the wake lock go');
     await visible();
     assert(await ev(() => __locks.asked === 2), 'and nothing asks for it on the home screen');
@@ -386,13 +418,29 @@ try {
   await p.keyboard.press('Escape');
   assert(await p.$eval('#moveSheet', e => e.hidden), 'Escape closes it');
   assert(await p.$eval('#moveFrame', e => e.getAttribute('src')) === 'about:blank', 'and stops the 3D page');
+  // the clock running on into the next phase, as tickClock sees it; the
+  // interval is stopped so only these ticks move it
+  const runInto = (kind) => p.evaluate((k) => {
+    clearInterval(state.tickHandle);
+    const i = state.sequence.findIndex((x, j) => j > state.currentIdx && x.kind === k);
+    state.elapsedAtResume = state.sequence.slice(0, i).reduce((t, x) => t + x.duration, 0) + 0.5;
+    state.runStartWall = Date.now();
+    tickClock();
+    return state.sequence[state.currentIdx].kind;
+  }, kind);
+  await runInto('work');
+  await p.click('#animA');
+  assert(await runInto('rest') === 'rest' && await p.$eval('#moveSheet', e => !e.hidden), 'the 3D sheet stays open into a rest');
+  assert(await runInto('work') === 'work' && await p.$eval('#moveSheet', e => e.hidden), 'and gets out of the way when the work starts');
   await p.click('#btnStart');                                   // pause
-  ok(`${moveId} plays as a 3D figure; a drag turns it and a tap opens it over the running timer`);
+  ok(`${moveId} plays as a 3D figure; a drag turns it and a tap opens it over the running timer, closing itself for the next work`);
 
   step = 'a rest shows the coming block as thumbnails';
   assert(await p.$eval('#btnNextBlock', e => e.hidden), 'no preview button while working');
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'blockrest')); render(); });
   assert(!(await p.$eval('#btnNextBlock', e => e.hidden)), 'the button shows in the block rest');
+  const restClock = await p.$eval('#timeDisplay', e => parseFloat(getComputedStyle(e).fontSize));
+  assert(restClock >= 64, `the rest countdown is still big enough to read from the floor (${restClock}px)`);
   await p.click('#btnNextBlock');
   const cards = await p.$$eval('.next-card', els => els.map(e => e.dataset.move));
   const expect = await st(() => {
@@ -417,10 +465,14 @@ try {
   ok(`the block rest previews ${cards.length} upcoming exercises, each opening in 3D`);
 
   step = 'history entry of a classic reopens at the interval it was run';
-  await p.click('#btnBack'); await pickInterval('Short bursts');
+  await leaveStarted(); await pickInterval('Short bursts');
   await p.click('#btnSetupBack'); await p.click('#pathLibrary');
   await p.click(card('Power Hour'));
   assert(await rounds() === 8, 'fresh open of the classic uses today\'s short preference');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
+  const restNext = await p.$eval('#upcoming strong', e => e.textContent);
+  const afterRest = await st(() => withReps(state.sequence[state.currentIdx + 2].a));
+  assert(restNext.startsWith('Rest 10s, then ') && restNext.includes(afterRest), `Up next says what the rest is for: "${restNext}"`);
   await p.click('#btnBack'); await p.click('#pathLibrary');
   assert(await p.$('.section-title:has-text("Recent")'), 'Recent section present');
   await p.click('.history-card:has(.card-name:text-is("Power Hour"))');
@@ -474,7 +526,10 @@ try {
   assert(/^(\d+ reps|\d+s? each side|\d+s|.+)$/.test(shown) && shown.length > 0, `reps on the card, got "${shown}"`);
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'EMOM', 'the timer says EMOM');
   assert(/Minute/.test(await p.$eval('#roundDots', e => e.textContent)), 'counts minutes, not rounds');
+  assert((await p.$eval('#roundDots', e => e.textContent)).includes("Do the reps, then rest till the minute's up"), 'and says how an EMOM works');
   assert((await p.$eval('#upcoming', e => e.textContent)).includes(' · '), 'up next names the reps');
+  const [repsPx, namePx] = await st(() => ['repsA', 'exerciseA'].map(id => parseFloat(getComputedStyle(document.getElementById(id)).fontSize)));
+  assert(repsPx >= namePx, `the reps are as big as the name (${repsPx}px, name ${namePx}px)`);
   ok(`EMOM: ${emom.blocks.length} blocks of four 60s minutes, "${shown}" on the card`);
 
   step = 'AMRAP: one lap per block, a round counter, the score kept';
@@ -490,7 +545,8 @@ try {
   await p.click('#btnStart');
   const blk = await st(() => { const i = state.sequence.findIndex(x => x.amrap); seekTo(i); render(); return state.sequence[i].blockIdx; });
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'AMRAP', 'the timer says AMRAP');
-  assert(!(await p.$eval('#circuitA', e => e.hidden)) && !(await p.$eval('#counterA', e => e.hidden)), 'the lap and the counter show');
+  const shows = (id) => p.$eval(id, e => getComputedStyle(e).display !== 'none');
+  assert(await shows('#circuitA') && await shows('#counterA'), 'the lap and the counter show');
   await p.click('#counterA .count-more'); await p.click('#counterA .count-more'); await p.click('#counterA .count-less');
   assert((await p.$eval('#counterA .count-now b', e => e.textContent)) === '1', 'two up and one down leaves 1');
   assert(await p.evaluate((b) => state.history[0].scores && state.history[0].scores[b].a === 1, blk), 'the score is saved with the session');
@@ -500,11 +556,19 @@ try {
     await p.click('#circuitA li[data-i="1"]');
     assert(await p.$eval('#animA', e => e.dataset.move) !== before, 'tapping an exercise in the lap shows its figure');
   }
+  // skip the rest of the blocks with no score, on to the cool-down
+  while (await st(() => state.sequence[state.currentIdx].kind !== 'cooldown')) await p.click('#btnSkip');
+  assert(!(await shows('#circuitA')) && !(await shows('#counterA')) && !(await shows('#counterB')),
+         'the lap and +1 round are gone in the cool-down');
+  const amrapLine = await st(() => scoreLine(state.history[0]));
+  const dashes = (amrap.blocks - 1) * (await st(() => state.people));
+  assert(await p.evaluate((b) => state.history[0].scores.every((x, i) => i === b ? !x.skipped : x.skipped), blk), 'the blocks skipped with no score are marked skipped');
+  assert((amrapLine.match(/–/g) || []).length === dashes && amrapLine.includes('1 · –'), `and read "–", not 0: ${amrapLine}`);
   await p.click('#btnStart');                                   // pause
-  ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it`);
+  ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it; skipped blocks read "–" and the lap goes after`);
 
   step = 'For Time: rounds of a lap against a cap, Done logs the time';
-  await p.click('#btnBack'); await pickInterval('For Time');
+  await leaveStarted(); await pickInterval('For Time');
   await p.click('#btnBuild');
   const ft = await st(() => {
     const work = state.sequence.filter(x => x.kind === 'work');
@@ -524,12 +588,17 @@ try {
   if (await st(() => state.people === 1)) {
     assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Rest', 'once done, the rest of the cap is rest');
   }
+  await p.click('#btnSkip'); await p.click('#btnSkip'); await p.click('#btnSkip');   // block 1, its rest, then skip block 2
+  assert(await p.evaluate((b) => !state.history[0].scores[b].skipped && state.history[0].scores[b + 1].skipped, ftBlk),
+         'a block skipped before Done is marked skipped');
+  assert(/^Times: [^,]*1:10 · –/.test((await st(() => scoreLine(state.history[0]))).replace(/<[^>]+>/g, '')),
+         'and reads "–", not capped: ' + await st(() => scoreLine(state.history[0])));
   await p.click('#btnStart');                                   // pause
   await st(() => { state.intervalStyle = 'short'; savePrefs(); });
-  ok('For Time: the clock counts up, Done logs the time to history and the cap turns to rest');
+  ok('For Time: the clock counts up, Done logs the time to history and the cap turns to rest; a skipped block reads "–"');
 
   step = 'Mix: EMOM, short bursts and AMRAP in exactly 30 minutes';
-  await p.click('#btnBack'); await p.click('#pathBuild');
+  await leaveStarted(); await p.click('#pathBuild');
   await p.click('#timePicker .chip:text-is("30 min")');
   await p.click('.interval-card:has-text("Two or three styles")');
   // start from nothing, then tap the styles in order
@@ -629,9 +698,26 @@ try {
   assert(day1.goal === 'surf' && day1.focus === 'paddle' && day1.style === 'long' && day1.min === 15,
          'day 1 is a 15-minute surf paddle session: ' + JSON.stringify(day1));
   assert(day1.scale === 0.8, 'week 1 starts lighter: ' + day1.scale);
-  await st(() => { state.elapsedTotal = state.totalDuration; state.currentIdx = state.sequence.length; finish(); });
-  await p.click('#btnBack');
-  assert(await activeView() === 'programView', 'back goes to the program');
+  // skipping through without ever pressing Start doesn't count as the day done
+  const skipToEnd = async () => { while (await st(() => !isFinished())) await p.click('#btnSkip'); };
+  await skipToEnd();
+  assert(await st(() => state.programs['surf-fit'].done.length === 0 && !state.history.some(h => h.completed && h.key === historyKey(state.workout))),
+         'skipping to the end without Start ticks nothing off');
+  await p.click('#btnAgain');
+  assert(await st(() => state.running && state.currentIdx === 0 && state.started) && (await p.$eval('#btnSkip', e => e.offsetParent !== null)),
+         'Start over runs it again from the top');
+  await skipToEnd();
+  // the finish screen: Done and Start over, Save and Share, nothing left over from the workout
+  const fin = await st(() => {
+    const shown = (id) => getComputedStyle(document.getElementById(id)).display !== 'none' && document.getElementById(id).offsetParent !== null;
+    return { done: document.getElementById('btnStart').textContent, again: shown('btnAgain'), share: shown('btnShare'),
+             gone: ['btnSkip', 'btnReset', 'btnShuffle', 'previewCard', 'circuitA', 'counterA', 'circuitB', 'counterB', 'btnNextBlock'].filter(shown) };
+  });
+  assert(fin.done === 'Done' && fin.again && fin.share && !fin.gone.length, 'the finish screen offers Done, Start over and Share, and nothing else: ' + JSON.stringify(fin));
+  await p.click('#timerCard');
+  assert(await st(() => !state.running && isFinished()), 'a tap on the finished timer does nothing');
+  await p.click('#btnStart');
+  assert(await activeView() === 'programView', 'Done goes back to the program');
   const after = await p.$eval('#programBody', e => e.textContent);
   assert(after.includes("Today's done") && after.includes('Pop-ups & legs'), 'day 1 ticked, day 2 next');
   await p.click('#programBody button:has-text("Do the next one now anyway")');
@@ -644,7 +730,7 @@ try {
   assert(doneLine.includes("today's done") && doneLine.includes('Next up: Mobility'), 'home says today is done and what is next: ' + doneLine);
   assert(await p.$('#todayCard .today-go'), 'with a built workout still one tap away');
   await p.click('#pathBuild'); await p.click('#btnBuild');     // the next step starts from a workout
-  ok("Programs: today's session leads the home card; who and where change on the day card; Surf Fit day 1 builds lighter for week 1, finishing ticks it off, a surf counts as a day");
+  ok("Programs: today's session leads the home card; who and where change on the day card; Surf Fit day 1 builds lighter for week 1; skipping through without Start ticks nothing, a real finish does and Done goes back to the program; a surf counts as a day");
 
   step = 'stretch';
   await p.click('#btnBack'); await p.click('#pathLibrary');
@@ -652,7 +738,11 @@ try {
   await p.click('#focusFilter .chip:text-is("Stretching")');
   await p.click(card('Sunrise Stretch'));
   assert(await p.$eval('#exerciseA', e => e.textContent.length > 0), 'stretch shows a pose');
-  ok('stretch routine opens');
+  const stretchNext = await st(() => state.sequence[1].a.name);
+  assert((await p.$eval('#upcoming strong', e => e.textContent)) === stretchNext, `up next names the next stretch (${stretchNext})`);
+  assert(/^Stretch 1 of \d+/.test(await p.$eval('#roundDots', e => e.textContent)), 'counts stretches, not rounds');
+  assert((await p.$eval('#btnSkip', e => e.textContent)) === 'Skip', 'and the skip button skips one stretch');
+  ok('stretch routine opens, naming the next stretch');
 
   step = 'text size';
   const small = await p.$eval('#exerciseA', e => parseFloat(getComputedStyle(e).fontSize));
@@ -720,7 +810,51 @@ try {
     return s.scrollWidth > s.clientWidth + 1;
   });
   assert(!overflow, 'no horizontal overflow on a phone');
-  ok('no horizontal overflow on a phone');
+  // two people make the page long; Start, Skip and Reset stay on screen
+  await p.click('#btnBack'); await p.click('#pathBuild');
+  await p.click('#peoplePicker .chip[data-people="2"]');
+  await p.click('#btnBuild');
+  const controlsOnScreen = () => st(() => ['btnStart', 'btnSkip', 'btnReset']
+    .every(id => document.getElementById(id).getBoundingClientRect().bottom <= innerHeight));
+  assert(await controlsOnScreen(), 'with two people, Start is on the first screen');
+  await p.click('#btnStart');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
+  assert(await controlsOnScreen(), 'and Pause, Skip and Reset stay there while working');
+  await st(() => { document.getElementById('scroller').scrollTop = 400; });
+  assert(await controlsOnScreen(), 'scrolled down too');
+  await p.route('**/move.html*', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>3D</title>' }));
+  await p.click('#animB');
+  assert(await p.$eval('#moveSheet', e => !e.hidden), "the second person's How to still opens under the controls");
+  await p.click('#moveClose');
+  await p.unroute('**/move.html*');
+  await st(() => { document.getElementById('scroller').scrollTop = 0; });
+  await p.click('#timerCard');
+  assert(await st(() => !state.running), 'a tap on the timer pauses');
+  await leaveStarted();
+  ok('phone: no horizontal overflow; with two people the controls stay on screen and the timer pauses on a tap');
+
+  step = 'the timer screen reads out its changes, and white text has the contrast';
+  await p.click('#todayCard .today-go');
+  assert(await p.$('main.app #workoutView'), 'the views sit in <main>');
+  assert(await p.$eval('#phaseLabel', e => e.getAttribute('aria-live')) === 'polite'
+         && await p.$eval('#blockName', e => e.getAttribute('aria-live')) === 'polite', 'the phase and block are live regions');
+  assert(await st(() => { const n = document.getElementById('phaseLabel').firstChild; render(); return n === document.getElementById('phaseLabel').firstChild; }),
+         'render() leaves an unchanged phase alone, so it is not read out five times a second');
+  const sizes = await p.$$eval('.text-size .mini-btn', els => els.map(e => e.getAttribute('aria-label')));
+  assert(sizes.join('|') === 'Text size normal|Text size large|Text size largest', 'the text size buttons say which is which: ' + sizes);
+  const startContrast = await whiteContrast('#btnStart');
+  await p.click('#btnStart');
+  const pauseContrast = await whiteContrast('#btnStart');
+  assert(startContrast >= 4.5 && pauseContrast >= 4.5, `white on Start ${startContrast.toFixed(2)}:1, on Pause ${pauseContrast.toFixed(2)}:1`);
+  // and on to the end: on a phone the finish screen's buttons are on screen, and Done goes home
+  while (await st(() => !isFinished())) await p.click('#btnSkip');
+  assert(await st(() => ['btnStart', 'btnAgain', 'btnShare'].every(id => {
+    const r = document.getElementById(id).getBoundingClientRect();
+    return r.height > 0 && r.bottom <= innerHeight;
+  })), 'Done, Start over and Share are on the first screen');
+  await p.click('#btnStart');
+  assert(await activeView() === 'welcomeView', 'Done goes home after a session that is not a program day');
+  ok(`aria-live phase and block, labelled text sizes, Start ${startContrast.toFixed(1)}:1 and Pause ${pauseContrast.toFixed(1)}:1; Done goes home`);
 
   step = 'opens offline after the first visit';
   await p.goto(URL);
