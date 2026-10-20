@@ -131,10 +131,9 @@ body::before {
 body.can-scroll #scrollHint { opacity: 1; }
 /* Not over a sticky bottom button, which already marks the bottom: the fade
    sits outside #scroller, so it would paint on top and make the button look
-   switched off. That's Build and the first-visit Done, and on a phone the
-   workout's Start, Skip and Reset. */
-body.view-setup #scrollHint, body.view-gear #scrollHint { display: none; }
-@media (max-width: 700px) { body.view-workout #scrollHint { display: none; } }
+   switched off. That's Build, the first-visit Done and the workout's Start,
+   Skip and Reset (and on home, Start; see updateScrollHint). */
+body.view-setup #scrollHint, body.view-gear #scrollHint, body.view-workout #scrollHint { display: none; }
 
 .app { max-width: 1100px; margin: 0 auto; }
 .view { display: none; flex-direction: column; gap: 0.85rem; }
@@ -309,6 +308,12 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .today-style { color: var(--muted); font-size: 0.95rem; line-height: 1.4; margin-top: auto; padding-top: 0.5rem; }
 .today-style .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; }
 .today-go, .today-card .program-go { font-size: 1.3rem; padding: 1.1rem; margin-top: 0.2rem; }
+/* a small phone (375 x 667): a little closer, so Start stays on the first
+   screen with a program line, two places and things left out */
+@media (max-height: 700px) {
+  .today-card { gap: 0.3rem; }
+  .today-go, .today-card .program-go { padding: 0.9rem; }
+}
 
 /* ============== Pickers ============== */
 .picker-row { background: var(--card); border-radius: 1rem; padding: 0.95rem 1rem; }
@@ -457,7 +462,7 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .build-note:empty { display: none; }
 /* The workout note can hold a share link when the clipboard is refused, so
    it is the one piece of text outside the inputs that can be selected. */
-#workoutNote { -webkit-user-select: text; user-select: text; word-break: break-all; }
+#workoutNote { -webkit-user-select: text; user-select: text; overflow-wrap: anywhere; }
 
 /*
   Two columns once there is room, so the Custom screen fits on an iPad
@@ -509,6 +514,8 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
   font-size: 0.85rem; color: var(--muted); font-weight: 600; flex-wrap: wrap;
 }
 .card-meta .duration { color: var(--text); }
+/* the dot goes with what follows it, so a wrap never leaves one at a line end */
+.card-meta .sep { margin-right: 0.3rem; }
 .card-meta .focus-tag.whole { color: var(--whole); }
 .card-meta .focus-tag.upper { color: var(--upper); }
 .card-meta .focus-tag.lower { color: var(--lower); }
@@ -557,6 +564,13 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .workout-title {
   font-size: 1.15rem; font-weight: 800; flex: 1;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* on a phone the name gets two lines beside Menu, rather than "Paddle & sho…" */
+@media (max-width: 700px) {
+  .workout-title {
+    white-space: normal; line-height: 1.15; text-wrap: balance;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  }
 }
 .people-badge {
   color: var(--muted); font-size: 0.85rem; background: var(--card);
@@ -810,7 +824,15 @@ body.show-alternatives .alternative.has-alt { display: block; }
   color: var(--muted); font-weight: 800; display: block; margin-bottom: 0.1rem;
 }
 
-.controls { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.6rem; }
+/* Start, Skip and Reset stay on screen however long the cards get, the
+   same way the Build button does: on a phone, and on an iPad in landscape
+   with two people and the demos on */
+.controls {
+  display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.6rem;
+  position: sticky; bottom: 0; z-index: 5;
+  padding: 0.6rem 0 calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  background: linear-gradient(to top, var(--bg) 85%, rgba(5,10,10,0));
+}
 /* Finished: Done and Start over, then Save and Share without the preview */
 #workoutView.finished .controls { grid-template-columns: 2fr 1fr; }
 #workoutView.finished #btnSkip, #workoutView.finished #btnReset,
@@ -855,17 +877,12 @@ body.show-alternatives .alternative.has-alt { display: block; }
   #workoutView.resting .exercise-grid:not(.solo) .exercise-reps {
     font-size: calc(clamp(2rem, 8vw, 3.2rem) * var(--ex-scale));
   }
-  /* Start, Skip and Reset stay on screen however long the cards get, the
-     same way the Build button does */
-  .controls {
-    grid-template-columns: 1fr 1fr;
-    position: sticky; bottom: 0; z-index: 5;
-    padding: 0.6rem 0 calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
-    background: linear-gradient(to top, var(--bg) 85%, rgba(5,10,10,0));
-  }
-  .controls button:first-child { grid-column: 1 / -1; }
+  /* With two people, smaller demos and the controls on one row, so the
+     second person's card starts on the first screen */
+  .exercise-grid:not(.solo) .ex-anim { max-height: 120px; }
+  .controls { grid-template-columns: 1.3fr 1fr 1fr; gap: 0.5rem; }
+  .controls button { font-size: 1.05rem; padding: 0.9rem 0.3rem; }
   #workoutView.finished .controls { grid-template-columns: 3fr 2fr; }
-  #workoutView.finished .controls button:first-child { grid-column: auto; }
   .pre-actions button { flex-basis: 100%; }
 }
 

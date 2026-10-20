@@ -9,12 +9,15 @@
   timeout and the cache as the fallback, so online you always run the
   current version and a flaky connection falls back rather than hanging.
 
-  Because of that, forgetting to bump VERSION after a deploy costs nothing:
-  the next online load fetches the new files and refreshes the cache.
-  Bumping it only clears out old entries sooner. When a 3D file is added,
-  list it in MOVE_3D (scripts/selfcheck.mjs checks the list is complete).
+  Bump VERSION with every release that changes the app's files. The cache
+  is refreshed one file at a time, so without a bump a slow load can leave
+  it holding the new index.html beside the old app.js, and the two don't
+  work together, offline or on the next slow load. A new VERSION installs
+  the whole app into a fresh cache at once and deletes the old one. When
+  a 3D file is added, list it in MOVE_3D (scripts/selfcheck.mjs checks the
+  list is complete).
 */
-const VERSION = 'fit-v5';
+const VERSION = 'fit-v6';
 const NETWORK_TIMEOUT_MS = 4000;
 
 const SHELL = [
@@ -54,7 +57,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  event.respondWith(networkFirst(req));
+  event.respondWith(networkFirst(req, event));
 });
 
 function withTimeout(promise, ms) {
@@ -64,17 +67,18 @@ function withTimeout(promise, ms) {
   });
 }
 
-async function networkFirst(req) {
+async function networkFirst(req, event) {
   const cache = await caches.open(VERSION);
   // A navigation to the app is the one page, whatever the query string or
   // hash; other pages (the 3D viewer) are cached under their own path.
   const path = new URL(req.url).pathname;
   const key = req.mode === 'navigate' ? (path === '/' || path === '/index.html' ? '/' : path) : req;
   const net = fetch(req);
+  // Cached whenever it arrives, even after the timeout has handed over the
+  // cached copy, so the cache never keeps a file older than the rest.
+  event.waitUntil(net.then(fresh => (fresh && fresh.ok ? cache.put(key, fresh.clone()) : null)).catch(() => {}));
   try {
-    const fresh = await withTimeout(net, NETWORK_TIMEOUT_MS);
-    if (fresh && fresh.ok) cache.put(key, fresh.clone());
-    return fresh;
+    return await withTimeout(net, NETWORK_TIMEOUT_MS);
   } catch (e) {
     const cached = await cache.match(key, { ignoreSearch: true });
     if (cached) return cached;

@@ -386,6 +386,19 @@
   </div>
 </div>
 
+<!-- The first load after an update can pair this page with the last
+     release's scripts: a file slow to come in gets the offline copy instead
+     (sw.js), and the two releases don't run together. So if the scripts
+     fail while the page loads, it loads again as soon as this release's
+     offline copy takes over. js/app.js does the same for an older page. -->
+<script>
+  window.addEventListener('error', function retry() {
+    window.removeEventListener('error', retry);
+    if (document.readyState !== 'complete' && navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+    }
+  });
+</script>
 <script src="js/exercises.js"></script>
 <script src="js/workouts.js"></script>
 <script src="js/generator.js"></script>

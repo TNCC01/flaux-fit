@@ -99,6 +99,10 @@ function classicBookends(w) {
 // How many blocks fit in the time, and what the result actually runs to.
 // Whole blocks rarely land on the minutes exactly, so any time left short
 // of them goes on the cool-down, as a mix does, and 20 minutes runs 20.
+// Over the mark (15 and 40 minutes), the cool-down and then the warm-up
+// give it back, down to a minute each, so the blocks stay as they are and
+// a favourite saved at that length still rebuilds the same moves.
+const MIN_BOOKEND_SEC = 60;
 function planBlocks(minutes, iv) {
   const { warmupSec, cooldownSec } = bookends(minutes);
   const target = minutes * 60;
@@ -113,6 +117,10 @@ function planBlocks(minutes, iv) {
   if (best.total < target) {
     best.cooldownSec += target - best.total;
     best.total = target;
+  }
+  for (const k of ['cooldownSec', 'warmupSec']) {
+    const cut = Math.min(best.total - target, best[k] - MIN_BOOKEND_SEC);
+    if (cut > 0) { best[k] -= cut; best.total -= cut; }
   }
   return best;
 }
@@ -299,13 +307,14 @@ function generateWorkout(opts) {
     notes.push(`Not enough ${list} exercises fit your equipment and exclusions, so ${labels.length > 1 ? 'they were' : 'it was'} skipped.`);
   }
 
-  // Drop target regions that contribute nothing, and say so. (Not for surf:
-  // it uses every region and never shows them.)
+  // Drop target regions that contribute nothing, and say so. (Surf drops
+  // them too, so its top-up pool and saved seeds stay as they were, but
+  // says nothing: it uses every region and never shows them.)
   const covered = new Set(eligible.flatMap(k => poolFor(k)).flatMap(id => EXERCISES[id].regions));
   const dead = regions.filter(r => !covered.has(r));
-  if (!surf && dead.length && dead.length < regions.length) {
+  if (dead.length && dead.length < regions.length) {
     const labels = dead.map(r => (REGIONS.find(x => x.id === r) || {}).label || r);
-    notes.push(`Nothing available for ${labels.join(' or ')}, so it was skipped.`);
+    if (!surf) notes.push(`Nothing available for ${labels.join(' or ')}, so it was skipped.`);
     regions = regions.filter(r => covered.has(r));
     eligible = groupOrder.filter(k => poolFor(k).length >= 2);
     if (!eligible.length) eligible = groupOrder.filter(k => poolFor(k).length > 0);

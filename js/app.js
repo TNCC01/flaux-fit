@@ -4,6 +4,16 @@
   APP SHELL: views, setup flows, rendering and the timer.
 */
 
+// This script with the page from the release before it (see the same
+// check in index.html): if it fails while the page loads, load again once
+// this release's offline copy takes over.
+window.addEventListener('error', function retry() {
+  window.removeEventListener('error', retry);
+  if (document.readyState !== 'complete' && navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+  }
+});
+
 const TIME_OPTIONS = [10, 15, 20, 25, 30, 40, 45, 60];
 const RECENT_CAP = 60;          // exercise ids remembered for variety
 const HISTORY_CAP = 200;        // sessions kept in the history list (a 42-day program and then some)
@@ -127,9 +137,12 @@ function loadPrefs() {
     if (state.todayOther !== dayKey(Date.now())) state.todayOther = null;   // only lasts the day
   } catch (e) { /* corrupt store: fall back to defaults */ }
 }
+// Saved with the prefs, so another tab can tell a save from this version
+// (or a later one) from one made by a tab still running an older FIT.
+const PREFS_SCHEMA = 2;
 function savePrefs() {
   try {
-    const out = {};
+    const out = { schema: PREFS_SCHEMA };
     PERSISTED.forEach(k => { out[k] = state[k]; });
     localStorage.setItem(PREFS_KEY, JSON.stringify(out));
   } catch (e) { /* private mode / quota: preferences just won't stick */ }
@@ -140,22 +153,53 @@ function savePrefs() {
 // take them in. Otherwise this tab's next save would write its older copy
 // over them. Settings stay as they are here until a reload, so a workout
 // on screen isn't changed under you.
+//
+// A tab still on the version before this one hears nothing, so what it
+// writes is the copy it loaded when it opened. That gets added to this
+// tab's lists rather than taking their place, and saved straight back, so
+// a session or program day done here isn't lost to it.
 window.addEventListener('storage', (e) => {
   if (e.key !== PREFS_KEY || !e.newValue) return;
   let p;
   try { p = JSON.parse(e.newValue); } catch (err) { return; }
   if (!p || typeof p !== 'object') return;
-  if (Array.isArray(p.history)) state.history = p.history;
-  if (Array.isArray(p.saved)) state.saved = p.saved;
-  if (p.programs && typeof p.programs === 'object' && !Array.isArray(p.programs)) {
-    state.programs = Object.fromEntries(Object.entries(p.programs)
-      .filter(([id, x]) => PROGRAMS.some(q => q.id === id) && x && Array.isArray(x.done)));
+  const older = !(p.schema >= PREFS_SCHEMA);
+  const programs = p.programs && typeof p.programs === 'object' && !Array.isArray(p.programs)
+    ? Object.fromEntries(Object.entries(p.programs)
+        .filter(([id, x]) => PROGRAMS.some(q => q.id === id) && x && Array.isArray(x.done)))
+    : null;
+  if (older) {
+    mergeOlderSave(p, programs);
+    savePrefs();
+  } else {
+    if (Array.isArray(p.history)) state.history = p.history;
+    if (Array.isArray(p.saved)) state.saved = p.saved;
+    if (programs) state.programs = programs;
   }
   // redraw whatever lists them
   if (state.view === 'welcome') renderToday();
   else if (state.view === 'library') renderLibrary();
   else if (state.view === 'program') renderProgram();
 });
+// An older tab's lists added to this tab's: its sessions not already here
+// (the same session, reopened within the merge window, counts as here),
+// its favourites by seed, and its program days by day number.
+function mergeOlderSave(p, programs) {
+  if (Array.isArray(p.history)) {
+    const extra = p.history.filter(h => h && typeof h.at === 'number' && !state.history.some(x =>
+      x.key === h.key && Math.abs(x.at - h.at) < HISTORY_MERGE_MS));
+    state.history = [...state.history, ...extra].sort((a, b) => b.at - a.at).slice(0, HISTORY_CAP);
+  }
+  if (Array.isArray(p.saved)) {
+    state.saved = [...p.saved.filter(s => s && !state.saved.some(x => x.seed === s.seed)), ...state.saved];
+  }
+  Object.entries(programs || {}).forEach(([id, theirs]) => {
+    const ours = state.programs[id];
+    if (!ours) { state.programs[id] = theirs; return; }
+    const extra = theirs.done.filter(d => d && !ours.done.some(x => x.n === d.n));
+    if (extra.length) ours.done = [...ours.done, ...extra].sort((a, b) => a.at - b.at);
+  });
+}
 
 // What a session is for. Surf fitness builds around paddling, pop-ups,
 // stance and shoulder care instead of target areas.
@@ -243,8 +287,9 @@ function sectionsOf(w) {
   if (w.sections) return w.sections;
   return [{ intervalId: intervalFor(w).id, start: 0, count: w.blocks.length, minutes: 0, blockRestSec: w.blockRestSec }];
 }
-// A workout's style for history and comparisons: 'mix' or the interval's id.
-const styleIdOf = (w) => (w.sections ? 'mix' : intervalFor(w).id);
+// A workout's style for history and comparisons: 'stretch' for a stretch
+// routine, 'mix', or the interval's id.
+const styleIdOf = (w) => (w.format === 'stretch' ? 'stretch' : w.sections ? 'mix' : intervalFor(w).id);
 const buildCtx = (w, ivOverride) => {
   const iv = ivOverride || intervalFor(w);
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
@@ -267,7 +312,7 @@ const els = {
   gearView: $('gearView'), onboardGear: $('onboardGear'), btnGearDone: $('btnGearDone'),
   onboardPeople: $('onboardPeople'), onboardWeights: $('onboardWeights'), gearNote: $('gearNote'),
   btnMoreOptions: $('btnMoreOptions'), moreOptions: $('moreOptions'), moreSummary: $('moreSummary'),
-  scroller: $('scroller'),
+  scroller: $('scroller'), scrollHint: $('scrollHint'),
   welcomeNote: $('welcomeNote'), welcomeSub: $('welcomeSub'),
   btnFullscreen: $('btnFullscreen'), installHint: $('installHint'),
 
@@ -461,27 +506,50 @@ function rearmAudio() {
   applyAudioSession();
   try { Promise.resolve(ctx.suspend()).then(() => ctx.resume()).catch(() => {}); } catch (e) { /* see beep() */ }
 }
+// A new context only starts on a tap, and the touch that ends a scroll
+// isn't one. So the old context keeps the beeps going until the new one is
+// actually running, and only then is it swapped in and the old one closed;
+// until that happens audioStale stays set, so the next tap tries again.
+let audioNext = null;
 function freshAudio() {
-  audioStale = false;
-  if (audioCtx) {
-    const old = audioCtx;
-    audioCtx = null;
-    try { Promise.resolve(old.close()).catch(() => {}); } catch (e) { /* already gone */ }
-  }
   ensureAudio();
+  if (navigator.userActivation && !navigator.userActivation.isActive) return;
+  try {
+    if (audioNext && audioNext.state === 'closed') audioNext = null;
+    const next = audioNext || (audioNext = new (window.AudioContext || window.webkitAudioContext)());
+    const swap = () => {
+      if (audioNext !== next) return;           // let go of in the meantime
+      audioNext = null;
+      audioStale = false;
+      const old = audioCtx;
+      audioCtx = next;
+      if (old && old !== next) {
+        try { Promise.resolve(old.close()).catch(() => {}); } catch (e) { /* already gone */ }
+      }
+    };
+    if (next.state === 'running') swap();
+    else Promise.resolve(next.resume()).then(swap, () => {});
+  } catch (e) { /* no Web Audio: the timer runs silent */ }
 }
 // Out of the workout, FIT lets go: the session back to 'auto' so your
 // music can carry on, and the context suspended so nothing of FIT's keeps
 // running in the background. The next Start takes it again.
 function releaseAudio() {
+  if (audioNext) {
+    const next = audioNext;
+    audioNext = null;
+    try { Promise.resolve(next.close()).catch(() => {}); } catch (e) { /* already gone */ }
+  }
   if (!audioCtx) return;
   if (CAN_SILENT) {
     try { if (navigator.audioSession.type !== 'auto') navigator.audioSession.type = 'auto'; } catch (e) { /* see applyAudioSession() */ }
   }
   try { Promise.resolve(audioCtx.suspend()).catch(() => {}); } catch (e) { /* see beep() */ }
 }
+// Beeps belong to the workout screen: the second note of a chime still due
+// when you leave must not take the sound back from your music.
 function beep(freq, duration, volume = 0.4) {
-  if (state.muteAudio) return;
+  if (state.muteAudio || state.view !== 'workout') return;
   try {
     ensureAudio();
     const osc = audioCtx.createOscillator();
@@ -500,7 +568,7 @@ function workChime() {
   setTimeout(() => { beep(1320, 0.6, 0.5); beep(1980, 0.5, 0.12); }, 140);
 }
 function restChime() {
-  if (state.muteAudio) return;
+  if (state.muteAudio || state.view !== 'workout') return;
   try {
     ensureAudio();
     const duration = 0.45;
@@ -647,19 +715,20 @@ function renderToday() {
     return;
   }
 
-  if (waiting || (ps && ps.doneToday)) {
+  // With a program on, its line takes the place of "Today" above the
+  // name, so Start stays on the first screen of a small phone.
+  let tagline = '<div class="card-tagline">Today</div>';
+  if (waiting) {
     const top = document.createElement('div');
     top.className = 'today-top';
-    if (waiting) {
-      top.appendChild(linkButton(`Back to today's ${prog.name} session`, () => { state.todayOther = null; savePrefs(); renderToday(); }));
-    } else {
-      top.className += ' today-line';
-      top.textContent = `${prog.name}: today's done${ps.last.surfed ? ' (a surf counts)' : ''}. Next up: ${ps.day.name}.`;
-    }
+    top.appendChild(linkButton(`Back to today's ${prog.name} session`, () => { state.todayOther = null; savePrefs(); renderToday(); }));
     card.appendChild(top);
+    tagline = '';
+  } else if (ps && ps.doneToday) {
+    tagline = `<div class="card-tagline today-line">${esc(`${prog.name}: today's done${ps.last.surfed ? ' (a surf counts)' : ''}. Next up: ${ps.day.name}.`)}</div>`;
   }
   const head = document.createElement('div');
-  head.innerHTML = '<div class="card-tagline">Today</div><div class="card-name">Build a workout</div>';
+  head.innerHTML = `${tagline}<div class="card-name">Build a workout</div>`;
   const floor = mixFloor();
   card.append(head, pickerLabel('How long have you got?'),
     timeChips(TIME_OPTIONS, state.minutes, m => { state.minutes = m; savePrefs(); renderToday(); }, floor));
@@ -699,7 +768,7 @@ function todayStyleText() {
 function renderProgramPath(prog, ps) {
   els.pathProgramGo.textContent = !ps ? `Start ${prog.name} →`
     : ps.finished ? `${prog.name} · all ${prog.weeks} weeks done →`
-    : `${prog.name} · week ${ps.day.week} of ${prog.weeks} →`;
+    : `${prog.name} · Week ${ps.day.week} of ${prog.weeks} →`;
 }
 function linkButton(text, onClick) {
   const b = document.createElement('button');
@@ -710,6 +779,8 @@ function linkButton(text, onClick) {
 }
 
 function openSetup() {
+  // Back returns to the Programs screen when its Change opened setup
+  state.setupFrom = state.view === 'program' ? 'program' : 'welcome';
   setMoreOptions(false);
   els.btnBuild.textContent = 'Build my workout';
   els.buildNote.textContent = '';
@@ -1301,8 +1372,10 @@ function namedCard(w) {
 }
 
 // How a history entry's style reads, by the name it's picked by: "Short
-// bursts", "EMOM", or for a mix "Mix: EMOM, Short bursts, AMRAP".
+// bursts", "EMOM", or for a mix "Mix: EMOM, Short bursts, AMRAP". A stretch
+// routine is "Stretching" (older entries kept the style picked in setup).
 function styleLabel(rec) {
+  if (rec.intervalId === 'stretch' || STRETCH_ROUTINES.some(x => x.id === rec.workoutId)) return 'Stretching';
   if (rec.intervalId === 'mix') {
     const list = (rec.request && rec.request.mix) || [];
     return `Mix: ${list.map(id => (INTERVALS[id] || {}).label).filter(Boolean).join(', ')}`;
@@ -1355,10 +1428,8 @@ function historyCard(rec) {
     <div class="card-tagline">${esc(whenLabel(rec.at))}${prog ? ` · ${esc(prog.where)}` : ''}</div>
     <div class="card-meta">
       <span class="duration">${rec.minutes} min</span>
-      <span>·</span>
-      <span>${esc(whoLabel(rec))}</span>
-      <span>·</span>
-      <span>${esc(styleLabel(rec))}</span>
+      <span><span class="sep">·</span> ${esc(whoLabel(rec))}</span>
+      <span><span class="sep">·</span> ${esc(styleLabel(rec))}</span>
     </div>
     <div class="card-blurb">${esc(rec.blurb || '')}</div>
     ${scoreLine(rec)}
@@ -1448,7 +1519,10 @@ function openWorkout(workout) {
   state.started = false;
   disarmBack();
 
-  els.workoutTitle.textContent = workout.name;
+  // a program day goes by its own name ("Paddle & shoulders"), as on home
+  // and in history, not "Surf fitness · 20 min"
+  const run = programRunLabel();
+  els.workoutTitle.textContent = run ? run.day : workout.name;
   els.peopleBadge.textContent = state.people === 1
     ? '1 person'
     : ((state.nameA || '').trim() || (state.nameB || '').trim()
@@ -2155,6 +2229,8 @@ function finish() {
   els.timerCard.className = 'timer-card';
   setText(els.phaseLabel, 'Done');
   els.timeDisplay.textContent = '✓';
+  // the last tick can land a fraction short of the end ("19:59 / 20:00")
+  els.totalTime.textContent = `Total ${fmt(Math.min(state.elapsedTotal, state.totalDuration))} / ${fmt(state.totalDuration)}`;
   setText(els.blockName, 'Workout complete. Nice work.');
   els.roundDots.innerHTML = '';
   els.exerciseA.textContent = 'Well done.';
@@ -2363,7 +2439,7 @@ function sharePayload(w) {
 // "FIT: Lower body · 20 min · Short bursts · 2 people". A built workout's
 // name already ends in its minutes.
 function shareText(w) {
-  const style = w.format === 'stretch' ? 'Stretching' : styleLabel({ intervalId: styleIdOf(w), request: w.request });
+  const style = styleLabel({ intervalId: styleIdOf(w), request: w.request });
   return [`FIT: ${w.name}`, ...(w.generated ? [] : [`${durationParts(w).totalMin} min`]), style,
           state.people === 1 ? '1 person' : '2 people'].join(' · ');
 }
@@ -2512,7 +2588,7 @@ function renderProgram() {
       const rec = st.done.find(x => x.n === at);
       const cls = rec ? 'done' : at === n ? 'now' : '';
       return `<div class="program-dot ${cls}" title="Day ${at + 1}: ${esc(d.name)}" aria-label="Day ${at + 1}, ${esc(d.name)}${rec ? (rec.surfed ? ', surfed' : ', done') : ''}">
-        <b>${at + 1}</b><span>${esc(d.short || d.name)}</span><i>${rec ? (rec.surfed ? 'Surf' : '✓') : at === n ? 'Today' : ''}</i></div>`;
+        <b>${at + 1}</b><span>${esc(d.short || d.name)}</span><i>${rec ? (rec.surfed ? 'Surf' : '✓') : at === n ? (doneToday ? 'Next' : 'Today') : ''}</i></div>`;
     }).join('')}</div>`, 'program-status');
 
   if (doneToday && !state.programAhead) {
@@ -2550,7 +2626,7 @@ function renderProgramToday(prog, st, day) {
   const c = document.createElement('div');
   c.className = 'workout-card program-card program-today';
   fillProgramDay(c, prog, st, day, {
-    tagline: `Today · week ${day.week}`, rerender: renderProgram, note: els.programNote,
+    tagline: `Today · Week ${day.week}`, rerender: renderProgram, note: els.programNote,
     gearHint: 'To add a place or change its gear: '
   });
   els.programBody.insertBefore(c, els.programBody.querySelector('.program-foot'));
@@ -2784,7 +2860,7 @@ els.pathLibrary.addEventListener('click', () => {
 });
 els.btnMoreOptions.addEventListener('click', () => setMoreOptions(els.moreOptions.hidden));
 els.btnGearDone.addEventListener('click', finishGearQuestion);
-els.btnSetupBack.addEventListener('click', goWelcome);
+els.btnSetupBack.addEventListener('click', () => (state.setupFrom === 'program' ? openProgram() : goWelcome()));
 els.btnLibraryBack.addEventListener('click', goWelcome);
 // a program's session goes back to the program, anything else to the menu
 function leaveWorkout() {
@@ -2895,7 +2971,7 @@ els.btnShare.addEventListener('click', async () => {
 const toggleTimer = () => (state.running ? pauseTimer() : startTimer());
 els.btnStart.addEventListener('click', () => (isFinished() ? leaveWorkout() : toggleTimer()));
 els.timerCard.addEventListener('click', () => { if (!isFinished()) toggleTimer(); });
-els.btnAgain.addEventListener('click', () => { resetWorkout(); startTimer(); });
+els.btnAgain.addEventListener('click', () => { els.workoutNote.textContent = ''; resetWorkout(); startTimer(); });
 els.btnSkip.addEventListener('click', () => { disarmReset(); skipBlock(); });
 
 // Two-tap reset, so a stray tap can't wipe a session mid-workout.
@@ -2936,7 +3012,8 @@ els.beepOnSilent.addEventListener('change', (e) => {
 });
 // A tap is the one moment Safari always lets audio restart, so a context
 // still stuck after a call comes back on the next touch of the screen, and
-// after time in the background the first touch starts a fresh one (see
+// after time in the background the first tap starts a fresh one (a scroll
+// doesn't count as a tap, so the old one plays on until then; see
 // freshAudio).
 document.addEventListener('touchend', () => {
   if (!state.running || !audioCtx) return;
@@ -2966,7 +3043,14 @@ function applyTextScale() {
 // =====================================================================
 function updateScrollHint() {
   const el = els.scroller;
-  const more = el.scrollHeight - el.clientHeight - el.scrollTop > 8;
+  let more = el.scrollHeight - el.clientHeight - el.scrollTop > 8;
+  // Not over the home Start, which on a short screen sits at the bottom
+  // edge: under the fade it looks switched off.
+  if (more && state.view === 'welcome') {
+    const go = els.todayCard.querySelector('.today-go, .program-go');
+    const r = go && go.getBoundingClientRect();
+    if (r && r.top < innerHeight && r.bottom > innerHeight - els.scrollHint.offsetHeight) more = false;
+  }
   document.body.classList.toggle('can-scroll', more);
 }
 let scrollHintQueued = false;

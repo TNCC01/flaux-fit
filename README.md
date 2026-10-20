@@ -160,8 +160,9 @@ rather than hardcoded.
   overhead / running) plus a searchable list of every movement
 - Warm-up and cool-down that scale with the session instead of wrapping a
   10-minute workout in 10 minutes of walking. Blocks come in four-minute
-  lumps, so the cool-down takes up any time they leave short and 20
-  minutes runs 20:00
+  lumps, so the cool-down takes up any time they leave short, and when
+  they run over (15 and 40 minutes) the bookends give it back, so every
+  length runs to the minute: 20 minutes runs 20:00
 - Injury alternative for every movement
 - Adjustable exercise text size, for reading across a room
 - Workout history, so a generated session you liked but forgot to save is
@@ -175,16 +176,18 @@ rather than hardcoded.
   clears it too. Once there's a finished session, a favourite or a program,
   FIT asks the browser to keep its storage (`navigator.storage.persist`).
   Two tabs open at once take each other's history, favourites and program
-  progress as they save, so neither writes over the other. On an iPhone or
-  iPad the home-screen app keeps its own storage, separate from Safari's,
-  and the Add to Home Screen hint says so
+  progress as they save, so neither writes over the other; a tab still on
+  an older version has its stale copy merged in rather than taken. On an
+  iPhone or iPad the home-screen app keeps its own storage, separate from
+  Safari's, and the Add to Home Screen hint says so
 - Wall-clock timer, wake lock (kept through a pause), audio cues that still
   play with an iPhone on silent (a setting, since it pauses other music;
   FIT gives the sound back when you leave the workout, and after time in
-  the background the first tap brings the beeps back for sure),
+  the background the first tap brings the beeps back for sure, while a
+  scroll leaves the sound that's playing alone),
   two-tap reset, and two taps on Menu once a workout is going. Tap the
-  timer to pause or resume; on a phone, Start, Skip and Reset stay on
-  screen however long the cards get
+  timer to pause or resume; Start, Skip and Reset stay on screen however
+  long the cards get, in one row on a phone
 - A finish screen with Done (home, or back to the program for a program
   day), Start over, and Save and Share. Skipping to the end without ever
   pressing Start doesn't count as a session done
@@ -229,8 +232,14 @@ scripts/export-sequence.mjs   expand a workout to timed steps as JSON
 and every movement's data, about 300 KB over the wire) when it installs,
 on the first visit. Everything is served network-first with a four-second
 timeout, so online you always get the current version and a flaky
-connection falls back to the cache rather than hanging. Bump `VERSION` in
-`sw.js` to force old caches out, though nothing depends on remembering to.
+connection falls back to the cache rather than hanging. A file that comes
+in after the timeout is still cached. Bump `VERSION` in `sw.js` with every
+release that changes the app's files: the cache is otherwise refreshed one
+file at a time, and a slow load could leave the new `index.html` cached
+beside the old `app.js`. A new `VERSION` installs the whole app into a
+fresh cache and deletes the old one. The one load that brings the update
+in can still pair the two; if the scripts fail on that load, the page
+loads again as soon as the new cache takes over.
 
 ## 3D movements
 

@@ -30,7 +30,7 @@ const {
   EXERCISES, EQUIPMENT, REGIONS, EXCLUSION_TAGS, SINGLE_INSTANCE, STRETCHES,
   INTERVALS, CLASSICS, STRETCH_ROUTINES, DEFAULT_EQUIPMENT,
   describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits,
-  planMix, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes
+  planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL
 } = A;
 
 const failures = [];
@@ -321,13 +321,14 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
         const real = Math.round(realSeconds(w, ivId) / 60);
         if (claimed !== real) fail(`${label} card says ${claimed} min but runs ${real} min`);
 
-        // And it runs to the minutes picked. Whole blocks can overshoot (15
-        // min runs 17), and then the bookends stay as they were; anything
-        // short of the mark goes on the cool-down, unless blocks went unfilled.
+        // And it runs to the minutes picked. Anything short of the mark goes
+        // on the cool-down, unless blocks went unfilled; whole blocks that
+        // overshoot (15 and 40 min) take it off the bookends instead.
         const off = realSeconds(w, ivId) - minutes * 60;
         const unfilled = w.notes.some(n => n.startsWith('Only '));
         if (off < 0 && !unfilled) fail(`${label} runs ${-off}s short of the ${minutes} min picked`);
-        if (off > 0 && w.cooldownSec !== bookends(minutes).cooldownSec) fail(`${label} runs ${off}s over with the cool-down stretched`);
+        if (off > 0) fail(`${label} runs ${off}s over the ${minutes} min picked`);
+        if (w.warmupSec < 60 || w.cooldownSec < 60) fail(`${label}: bookends squeezed to nothing`);
         if (off === 0) exact++;
 
         // A sentence, not a capital in the middle of one.
@@ -346,10 +347,10 @@ for (const [equipLabel, equipment] of EQUIP_CASES) {
     }
   }
 }
-// Every length whole blocks can reach runs to the second in every style:
-// pick 20 minutes and the timer says 20:00. (15 and 40 can't be reached
-// without cutting the warm-up, so they run 17 and 41.)
-for (const minutes of [10, 20, 25, 30, 45, 60]) {
+// Every length runs to the second in every style: pick 20 minutes and the
+// timer says 20:00. 15 and 40 get there by trimming the bookends, keeping
+// the blocks a favourite saved at that length was built with.
+for (const minutes of minutesList) {
   for (const ivId of Object.keys(INTERVALS)) {
     const w = generateWorkout({ minutes, people: 1, intervalId: ivId, regions: REGION_IDS,
       equipment: ALL_EQUIP, seed: 4000 + minutes, recent: [] });
@@ -357,6 +358,12 @@ for (const minutes of [10, 20, 25, 30, 45, 60]) {
     if (realSeconds(w, ivId) !== minutes * 60) fail(`${ivId} at ${minutes} min runs ${realSeconds(w, ivId)}s, not ${minutes * 60}s`);
     if (w.name !== `Full Body · ${minutes} min`) fail(`${ivId} at ${minutes} min is called "${w.name}"`);
   }
+}
+// and 15 and 40 keep the blocks they always had, so a favourite saved at
+// either length rebuilds the same moves
+for (const [minutes, n] of [[15, 3], [40, 7]]) {
+  const plan = planBlocks(minutes, INTERVALS[DEFAULT_INTERVAL]);
+  if (plan.blocks !== n) fail(`${minutes} min plans ${plan.blocks} blocks, not the ${n} it was built with before`);
 }
 
 // --------------------------------------------- 8b. mixed sessions
