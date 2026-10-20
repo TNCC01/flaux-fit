@@ -954,6 +954,31 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .toggle input { width: 1.25rem; height: 1.25rem; cursor: pointer; accent-color: var(--accent); }
 .toggle[hidden] { display: none; }
 .toggle-hint { flex-basis: 100%; color: var(--muted); font-size: 0.85rem; line-height: 1.4; text-align: center; }
+.toggle-hint[hidden] { display: none; }
+/* The sound: its own row across the top of the settings, the choice, the
+   voice switch, and what the choice means */
+.sound-box {
+  flex-basis: 100%; display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+  padding-bottom: 0.8rem; border-bottom: 1px solid var(--border);
+}
+.sound-box:focus:not(:focus-visible) { outline: none; }
+.sound-title {
+  font-size: 0.8rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.12em; font-weight: 700;
+}
+.sound-picker { justify-content: center; }
+.sound-chip { font-size: 0.95rem; padding: 0.55rem 0.9rem; text-align: center; }
+/* a phone upright: one under another, the same width, so they read as a list */
+@media (max-width: 520px) {
+  .sound-picker { flex-direction: column; align-self: stretch; margin: 0 auto; width: min(100%, 20rem); }
+}
+.sound-box .toggle-hint { max-width: 32rem; }
+.toggle.off { opacity: 0.45; cursor: default; }
+.toggle input:disabled { cursor: default; }
+/* before Start only */
+.sound-line { color: var(--muted); font-size: 0.92rem; line-height: 1.4; text-align: center; }
+.sound-line .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; font-size: inherit; }
+.pre-start.underway .sound-line, #workoutView.finished .sound-line { display: none; }
 .text-size { gap: 0.35rem; color: var(--muted); font-weight: 600; }
 .text-size .mini-btn { padding: 0.3rem 0.6rem; line-height: 1; }
 .text-size .mini-btn:nth-of-type(1) { font-size: 0.85rem; }

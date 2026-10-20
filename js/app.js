@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v14';
+const RELEASE = 'fit-v15';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -86,8 +86,15 @@ const state = {
   regions: REGIONS.map(r => r.id),
   blockedTags: [],
   excluded: [],
+  // the sound (see SOUNDS): beeps over your music, beeps even with the
+  // silent switch on (the iPhone's pick, see applyAudioSession), or none;
+  // and the voice coach on top of the beeps (see VOICE COACH)
+  sound: 'silent',
+  voice: true,
+  // the two tick boxes the sound took over from, Mute audio and Beep even
+  // on silent, still saved beside it for a tab on an older release, which
+  // knows only them (see cleanPrefs)
   muteAudio: false,
-  // on an iPhone, beep with the silent switch on (see applyAudioSession)
   beepOnSilent: true,
   showAlts: false,
   showPhotos: true,
@@ -131,13 +138,15 @@ const state = {
 };
 
 const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'levels', 'gearSets', 'gearSetId',
-  'regions', 'blockedTags', 'excluded', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
+  'regions', 'blockedTags', 'excluded', 'sound', 'voice', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked', 'todayOther'];
 
 // What a new visitor starts with: the fallback for anything a store or a
 // backup leaves out or has the wrong shape.
 const PREF_DEFAULTS = JSON.parse(JSON.stringify(Object.fromEntries(PERSISTED.map(k => [k, state[k]]))));
 const TEXT_SCALES = [1, 1.2, 1.45];
+// Beeps over my music, Beeps even on silent, No sound (see AUDIO)
+const SOUNDS = ['music', 'silent', 'off'];
 
 // Nothing is saved until the store has been read, so a page that broke
 // while it loaded (a page from one release with another's scripts, see the
@@ -149,8 +158,10 @@ function loadPrefs() {
     if (!raw) return;
     const p = JSON.parse(raw);
     const s = cleanPrefs(p);
-    // a save from an older release leaves the levels out (see LEVELS_KEY)
+    // a save from an older release leaves the levels out (see LEVELS_KEY),
+    // and the voice switch (see VOICE_KEY)
     if (!hasLevels(p)) s.levels = storedLevels() || s.levels;
+    if (!hasVoice(p)) s.voice = storedVoice() ?? s.voice;
     Object.assign(state, s);
   } catch (e) { /* corrupt store: fall back to defaults */ } finally { prefsLoaded = true; }
 }
@@ -209,8 +220,16 @@ function cleanPrefs(p) {
   if (!TEXT_SCALES.includes(s.textScale)) s.textScale = 1;
   if (typeof s.nameA !== 'string') s.nameA = '';
   if (typeof s.nameB !== 'string') s.nameB = '';
-  s.muteAudio = s.muteAudio === true;
-  s.beepOnSilent = s.beepOnSilent !== false;
+  // A save from before the sound choice, or from a tab on an older release
+  // (which leaves it out), has the two tick boxes it replaced: Mute audio
+  // is No sound, and Beep even on silent (on unless it was unticked) is
+  // Beeps even on silent, off is Beeps over my music. They're kept in step
+  // with it for such a tab, the second as it was under No sound.
+  s.sound = SOUNDS.includes(p.sound) ? p.sound
+    : p.muteAudio === true ? 'off' : p.beepOnSilent === false ? 'music' : 'silent';
+  s.muteAudio = s.sound === 'off';
+  s.beepOnSilent = s.sound === 'off' ? p.beepOnSilent !== false : s.sound === 'silent';
+  s.voice = s.voice !== false;
   s.showAlts = s.showAlts === true;
   s.showPhotos = s.showPhotos !== false;
   if (s.filterFocus !== 'all' && !focusLabelMap[s.filterFocus]) s.filterFocus = 'all';
@@ -235,8 +254,9 @@ function cleanLevels(x) {
 // Saved with the prefs, so another tab can tell a save from this version
 // (or a later one) from one made by a tab still running an older FIT. Up
 // it whenever PERSISTED gains a key: an older tab's save leaves the key
-// out, and taken as current it would wipe it (3: each person's levels).
-const PREFS_SCHEMA = 3;
+// out, and taken as current it would wipe it (3: each person's levels; 4:
+// the sound choice and the voice).
+const PREFS_SCHEMA = 4;
 // From 2 on, a tab hears the others' saves (see below), so its lists are
 // as new as anyone's.
 const HEARS_SCHEMA = 2;
@@ -259,10 +279,24 @@ function storedLevels() {
     return x && typeof x === 'object' && !Array.isArray(x) ? cleanLevels(x) : null;
   } catch (e) { return null; }
 }
+// The voice switch (4) is kept the same way, so a tab on an older release
+// saving can't turn it back to the default. The sound choice needs no key
+// of its own: such a tab saves the two tick boxes it came from, and a
+// save without it is read from them (see cleanPrefs).
+const VOICE_KEY = 'fit-voice-1';
+const VOICE_SCHEMA = 4;
+const hasVoice = (p) => p.schema >= VOICE_SCHEMA && typeof p.voice === 'boolean';
+function storedVoice() {
+  try {
+    const v = JSON.parse(localStorage.getItem(VOICE_KEY));
+    return typeof v === 'boolean' ? v : null;
+  } catch (e) { return null; }
+}
 function savePrefs() {
   if (!prefsLoaded) return;
   try {
     localStorage.setItem(LEVELS_KEY, JSON.stringify(state.levels));
+    localStorage.setItem(VOICE_KEY, JSON.stringify(state.voice));
   } catch (e) { /* as below */ }
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(currentPrefs()));
@@ -280,12 +314,14 @@ function savePrefs() {
 // taking their place, and saved straight back, so a session or program
 // day done here isn't lost to it.
 //
-// A tab on the last release (schema 2) hears, so its lists are taken as
-// they are, sessions it finished and favourites it took out with them.
+// A tab on a release since (schema 2 or 3) hears, so its lists are taken
+// as they are, sessions it finished and favourites it took out with them.
 //
-// Neither knows the levels, and both leave them out: they're taken from
-// their own key (LEVELS_KEY), or stay as they are here, and are saved
-// straight back.
+// The first two don't know the levels, and leave them out: they're taken
+// from their own key (LEVELS_KEY), or stay as they are here, and are
+// saved straight back. None of them know the voice switch, a setting, so
+// it stays as it is here, and the next load finds it under its own key
+// (VOICE_KEY).
 window.addEventListener('storage', (e) => {
   if (e.key !== PREFS_KEY || !e.newValue) return;
   let p, theirs;
@@ -508,8 +544,9 @@ const els = {
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'), btnShare: $('btnShare'),
   btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'), btnAgain: $('btnAgain'),
   workoutNote: $('workoutNote'), goingNote: $('goingNote'),
-  showPhotos: $('showPhotos'), showAlts: $('showAlts'), muteAudio: $('muteAudio'),
-  beepOnSilent: $('beepOnSilent'), silentToggle: $('silentToggle'), silentHint: $('silentHint')
+  showPhotos: $('showPhotos'), showAlts: $('showAlts'),
+  soundBox: $('soundBox'), soundPicker: $('soundPicker'), soundHint: $('soundHint'),
+  voiceToggle: $('voiceToggle'), voiceOn: $('voiceOn'), soundSaid: $('soundSaid'), btnSoundJump: $('btnSoundJump')
 };
 
 const PHASE_COLOR = {
@@ -648,18 +685,74 @@ function buildSequence(workout, people) {
 // 'playback' (the AudioSession API, iOS 16.4 and later) moves it onto the
 // media channel with videos and music, which the switch leaves alone. The
 // catch: playback takes over from other apps, so Spotify pauses while FIT
-// has sound, hence the setting, and FIT gives the sound back when you
-// leave the workout. Safari on a Mac has navigator.audioSession too but no
-// silent switch, so it's left to touch screens (an iPad asking for the
-// desktop site still has touch points); desktop and Android are untouched.
-// The older trick of looping a silent <audio> element is left out: it puts
-// a player on the lock screen and later Safaris broke it.
+// has sound, and FIT gives the sound back when you leave the workout.
+// Hence the choice of three: Beeps over my music (the ringer channel, so
+// the music plays on and the ringer has to be on), Beeps even on silent
+// (playback), and No sound. Safari on a Mac has navigator.audioSession too
+// but no silent switch, so it's left to touch screens (an iPad asking for
+// the desktop site still has touch points); desktop and Android get Beeps
+// or No sound, and are untouched. The older trick of looping a silent
+// <audio> element is left out: it puts a player on the lock screen and
+// later Safaris broke it.
 // =====================================================================
 let audioCtx = null;
 const CAN_SILENT = 'audioSession' in navigator && navigator.maxTouchPoints > 0;
+// The choices as they're offered, and what each one means for you. With
+// no silent switch to play through, Beeps even on silent plays as Beeps.
+const SOUND_CHOICES = [
+  { id: 'music', label: 'Beeps over my music', plain: 'Beeps',
+    hint: 'Keeps your music playing. Needs the ringer on: with the silent switch on, you won\'t hear FIT.' },
+  { id: 'silent', label: 'Beeps even on silent',
+    hint: 'Plays with the silent switch on too, but pauses Spotify or other music while you train.' },
+  { id: 'off', label: 'No sound', hint: 'No beeps and no voice. Keep an eye on the screen.' }
+];
+const soundShown = () => (!CAN_SILENT && state.sound === 'silent' ? 'music' : state.sound);
+function setSound(id) {
+  if (!SOUNDS.includes(id)) return;
+  state.sound = id;
+  // and the two tick boxes it took over from, for a tab on an older release
+  state.muteAudio = id === 'off';
+  if (id !== 'off') state.beepOnSilent = id === 'silent';
+  // takes effect from the next sound, never before FIT has made one, so
+  // just opening the app leaves someone's music alone; No sound has no
+  // reason to keep your music paused
+  if (audioCtx) applyAudioSession();
+  if (id === 'off') hush();
+  else if (state.running) primeVoice();      // a tap, which the voice needs
+  savePrefs();
+  renderSound();
+}
+// The choice (only what this device can do), the voice switch beside it,
+// what the choice means, and the line before Start that says what you'll
+// hear.
+function renderSound() {
+  const shown = soundShown();
+  els.soundPicker.innerHTML = '';
+  SOUND_CHOICES.filter(c => c.id !== 'silent' || CAN_SILENT).forEach(c => {
+    const on = c.id === shown;
+    const chip = tappable('chip sound-chip' + (on ? ' active' : ''), () => setSound(c.id));
+    chip.textContent = !CAN_SILENT && c.plain ? c.plain : c.label;
+    chip.dataset.sound = c.id;
+    chip.setAttribute('aria-pressed', String(on));
+    els.soundPicker.appendChild(chip);
+  });
+  const choice = SOUND_CHOICES.find(c => c.id === shown);
+  // beeps on a desktop need no explaining
+  els.soundHint.textContent = !CAN_SILENT && shown === 'music' ? '' : choice.hint;
+  els.soundHint.hidden = !els.soundHint.textContent;
+  els.voiceToggle.hidden = !CAN_SPEAK;
+  els.voiceOn.checked = state.voice;
+  els.voiceOn.disabled = shown === 'off';
+  els.voiceToggle.classList.toggle('off', shown === 'off');
+  const voice = CAN_SPEAK && state.voice && shown !== 'off' ? ' and the voice coach' : '';
+  els.soundSaid.textContent = shown === 'off' ? 'Sound: none.'
+    : !CAN_SILENT ? `Sound: beeps${voice}.`
+    : shown === 'silent' ? `Sound: beeps even on silent${voice}. Your music will pause.`
+    : `Sound: beeps over your music${voice}. Needs the ringer on.`;
+}
 function applyAudioSession() {
   if (!CAN_SILENT) return;
-  const want = state.beepOnSilent && !state.muteAudio ? 'playback' : 'auto';
+  const want = state.sound === 'silent' ? 'playback' : 'auto';
   try {
     if (navigator.audioSession.type !== want) navigator.audioSession.type = want;
   } catch (e) { /* a Safari that only half has it */ }
@@ -731,7 +824,7 @@ function releaseAudio() {
 // Beeps belong to the workout screen: the second note of a chime still due
 // when you leave must not take the sound back from your music.
 function beep(freq, duration, volume = 0.4) {
-  if (state.muteAudio || state.view !== 'workout') return;
+  if (state.sound === 'off' || state.view !== 'workout') return;
   try {
     ensureAudio();
     const osc = audioCtx.createOscillator();
@@ -750,7 +843,7 @@ function workChime() {
   setTimeout(() => { beep(1320, 0.6, 0.5); beep(1980, 0.5, 0.12); }, 140);
 }
 function restChime() {
-  if (state.muteAudio || state.view !== 'workout') return;
+  if (state.sound === 'off' || state.view !== 'workout') return;
   try {
     ensureAudio();
     const duration = 0.45;
@@ -785,6 +878,276 @@ function chimeFor(phase) {
   else if (kind === 'rest') restChime();
   else if (kind === 'blockrest' || (kind === 'cooldown' && !phase.coolIdx)) bigBell();
   else if (kind === 'stretch' || kind === 'warmup' || kind === 'cooldown') stretchChime();
+}
+
+// =====================================================================
+// VOICE COACH
+// The phone's own voice (speechSynthesis) says what's coming, so a move
+// done face down, or with the phone across the room, doesn't need the
+// screen. In each rest, the next move for each person ("Next: Wayne,
+// push-ups. Dave, squats."), with the reps in an EMOM or an AMRAP when they
+// fit, and "Last round" before the last; "Halfway" through the session;
+// "One minute left" in a long AMRAP or For Time. A move that comes with no
+// rest before it (the first block after the warm-up, an EMOM's next
+// minute) is called just before it starts, and each warm-up move and
+// stretch is named as it starts. The beeps keep the 3-2-1, which has to be
+// on the second.
+//
+// What Safari does with it isn't written down anywhere, so this goes by
+// what others have found, and Wayne's phone has the last word:
+// - it says nothing until a tap has had it say something, so the first
+//   tap that sets it going (Start, Resume, turning it on) says a silent
+//   line;
+// - the silent switch mutes it like the beeps unless the page has the
+//   sound (Beeps even on silent, see AUDIO), so it goes by the same choice,
+//   and No sound says nothing;
+// - other apps' music is turned down while it talks, not paused (WebKit
+//   bug 278598), so Beeps over my music keeps Spotify going;
+// - a line cut off and another started at the same moment can come out as
+//   silence, so the new one waits a moment;
+// - it stops while the app is out of view.
+// A line only starts if it can finish clear of the 3-2-1, is cut off there
+// if it runs over, and goes when the phase changes, the workout pauses or
+// skips, or you leave, so the voice is never behind the clock or over
+// itself. Nothing else reads its lines out (aria-live): the phase and
+// block already are as they change (see render), and with VoiceOver on, a
+// copy would be said over the voice.
+// =====================================================================
+const CAN_SPEAK = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function';
+const VOICE_RATE = 1.05;
+// about how fast it talks, to tell whether a line fits: characters a
+// second, and a moment to get going
+const VOICE_CPS = 13, VOICE_START = 0.4;
+const VOICE_CLEAR = 3.5;        // seconds kept clear at the end of a phase, for the 3-2-1
+const VOICE_MOST = 12;          // seconds: a longer line is chatter
+const VOICE_GAP_MS = 120;       // after a line is cut off, before the next
+const VOICE_AFTER_CHIME_MS = 600;   // a new phase's line waits for its chime
+// Apple's novelty voices (Bells, Zarvox...) and the Eloquence set (Eddy,
+// Grandma...) are no coaches.
+const NOVELTY_VOICE = /^(albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley|junior|ralph|fred|kathy)\b/i;
+
+// An Australian voice, then a British one, then any English: the phone's
+// own choice among them first, then one that works without the internet.
+let coachVoice = null;
+function pickVoice() {
+  try {
+    const all = speechSynthesis.getVoices().filter(v => !NOVELTY_VOICE.test(v.name || ''));
+    const lang = (v) => String(v.lang || '').replace('_', '-').toLowerCase();
+    const best = (pre) => {
+      const list = all.filter(v => lang(v).startsWith(pre));
+      return list.find(v => v.default) || list.find(v => v.localService) || list[0];
+    };
+    coachVoice = best('en-au') || best('en-gb') || best('en') || null;
+  } catch (e) { coachVoice = null; }
+}
+if (CAN_SPEAK) {
+  pickVoice();
+  // the list comes in late, and can change
+  try { speechSynthesis.addEventListener('voiceschanged', pickVoice); } catch (e) { /* picked again at the first line */ }
+}
+
+// What the voice has done this go: the phase it last saw, the work whose
+// moves it has called, Halfway, the phase it said One minute left in, and
+// the line for work straight after this phase (said `at` seconds before
+// the phase ends). And the line being said (until about when it should
+// be done, in case Safari never says it's finished), one waiting to
+// start, and when the next may.
+const coach = { at: -1, called: -1, half: false, minute: -1, ahead: null,
+                line: null, lineUntil: 0, timer: null, quietUntil: 0, primed: false };
+const coachFresh = () => Object.assign(coach, { at: -1, called: -1, half: false, minute: -1, ahead: null });
+const voiceOn = () => CAN_SPEAK && state.voice && state.sound !== 'off' && state.view === 'workout';
+const talking = () => !!coach.timer || (!!coach.line && Date.now() < coach.lineUntil);
+
+// Stop whatever is being said, and anything about to be: it's out of date.
+function hush() {
+  clearTimeout(coach.timer);
+  coach.timer = null;
+  if (!CAN_SPEAK) return;
+  const busy = !!coach.line || speechSynthesis.speaking || speechSynthesis.pending;
+  coach.line = null;
+  if (!busy) return;
+  coach.quietUntil = Date.now() + VOICE_GAP_MS;
+  try { speechSynthesis.cancel(); } catch (e) { /* nothing to stop */ }
+}
+// One line, in place of anything still being said, after `delayMs`; not
+// at all if it can't start by `latest` (a busy phone can hold a timer up,
+// and a line said late is a line over the 3-2-1).
+function say(text, delayMs = 0, latest = Infinity) {
+  if (!voiceOn() || !text) return;
+  hush();
+  const go = () => {
+    coach.timer = null;
+    if (!voiceOn() || Date.now() > latest) return;
+    try {
+      if (!coachVoice) pickVoice();
+      const u = new SpeechSynthesisUtterance(text);
+      if (coachVoice) u.voice = coachVoice;
+      u.lang = coachVoice ? coachVoice.lang : 'en-AU';
+      u.rate = VOICE_RATE;
+      u.onend = u.onerror = () => { if (coach.line === u) coach.line = null; };
+      // held on to, too: an older Safari let go of a line nobody held, mid-sentence
+      coach.line = u;
+      coach.lineUntil = Date.now() + (sayTime(text) / VOICE_RATE + 2) * 1000;
+      speechSynthesis.speak(u);
+    } catch (e) { coach.line = null; }
+  };
+  const wait = Math.max(delayMs, coach.quietUntil - Date.now());
+  if (wait > 0) coach.timer = setTimeout(go, wait); else go();
+}
+// Safari only lets a page talk once a tap has had it say something, so
+// the taps that set the voice going say a silent line first, once.
+function primeVoice() {
+  if (coach.primed || !voiceOn()) return;
+  if (navigator.userActivation && !navigator.userActivation.isActive) return;
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    speechSynthesis.speak(u);
+    coach.primed = true;
+  } catch (e) { /* see say() */ }
+}
+
+// Words as they're said rather than read: "KB swings · 16kg" is
+// "kettlebell swings, 16 kilo", "40s each side" is "40 seconds each side".
+function spoken(text) {
+  return String(text || '')
+    .replace(/\bKB\b/g, 'kettlebell')
+    .replace(/(\d+(?:\.\d+)?)\s?kg\b/gi, '$1 kilo')
+    .replace(/\b(\d+)s\b/g, (m, n) => `${n} second${n === '1' ? '' : 's'}`)
+    .replace(/\b(\d+) min\b/g, (m, n) => `${n} minute${n === '1' ? '' : 's'}`)
+    .replace(/\/side\b/g, ' each side')
+    .replace(/(\d+)\/(\d+)/g, '$1 $2')
+    .replace(/\s*&\s*/g, ' and ')
+    .replace(/\s+\/\s+|\s*·\s*/g, ', ')
+    .replace(/\s+/g, ' ').trim();
+}
+const sayTime = (text) => VOICE_START + text.length / VOICE_CPS;
+const minutesSaid = (sec) => { const m = Math.round(sec / 60); return `${m} minute${m === 1 ? '' : 's'}`; };
+
+// One person's move as it's said: the name, with the reps and the weight,
+// as far as `detail` goes (2 both, 1 the reps, 0 the name alone). The
+// count comes first, so a list of them still reads: "10 push-ups", "40s of
+// plank", "8 lunges each side", "1 lap of bear crawls".
+function moveSaid(ex, detail) {
+  if (!ex) return '';
+  const reps = detail >= 1 ? ex.reps || '' : '';
+  const m = /^(\d+)( reps?|s| laps?)?( each (?:side|way))?$/.exec(reps);
+  const said = !reps ? ex.name
+    : !m ? `${ex.name}, ${reps}`
+    : m[2] === 's' || /lap/.test(m[2] || '') ? `${m[1]}${m[2]} of ${ex.name}${m[3] || ''}`
+    : `${m[1]} ${ex.name}${m[3] || ''}`;
+  return detail >= 2 && ex.load ? `${said}, ${ex.load}` : said;
+}
+// What a work phase has each person doing, each way it can be said, most
+// first: "Wayne, 10 push-ups. Dave, 8 squats.", or an AMRAP's or For
+// Time's list. One person, or two on the same, need no names.
+function workSaid(p) {
+  const duo = state.people === 2 && !!p.b;
+  const both = (a, b, join) => (!duo || a === b ? `${a}.` : `${personName('a')}${join}${a}. ${personName('b')}${join}${b}.`);
+  const lines = [];
+  if (p.amrap || p.forTime) {
+    const head = p.amrap ? `AMRAP, ${minutesSaid(p.duration)}` : `For time, ${p.a.lapRounds} rounds`;
+    const list = (ex, d) => (ex ? ex.circuit : []).map(x => moveSaid(x, d)).join(', ');
+    // two people on the same moves, one starting further round: the list
+    // once and where the second one starts (with the reps when they're the
+    // same for both)
+    const sorted = (ex, d) => (ex ? ex.circuit : []).map(x => moveSaid(x, d)).sort().join();
+    const round = duo && sorted(p.a, 0) === sorted(p.b, 0) && p.b.circuit.length > 1 && p.b.circuit[0].name !== p.a.circuit[0].name;
+    for (const d of [1, 0]) {
+      lines.push(`${head}. ${both(list(p.a, d), duo ? list(p.b, d) : '', ': ')}`);
+      if (round && sorted(p.a, d) === sorted(p.b, d)) lines.push(`${head}. ${list(p.a, d)}. ${personName('b')} starts on ${p.b.circuit[0].name}.`);
+    }
+    lines.push(`${head}.`);
+  } else {
+    for (const d of [2, 1, 0]) lines.push(both(moveSaid(p.a, d), duo ? moveSaid(p.b, d) : '', ', '));
+  }
+  return [...new Set(lines)];
+}
+// The work at `w` called from the phase before it: "Next: ...", "Last
+// round: ...", or at the change to another style of a mix, "Next: EMOM,
+// 5 min. ..." (an AMRAP or For Time says its own).
+function callSaid(w, from) {
+  const p = state.sequence[w], f = state.sequence[from];
+  const lap = p.amrap || p.forTime;
+  const lead = f && f.changeover && !lap ? `${f.name.split('. ')[0]}. `
+    : !lap && p.totalRounds > 2 && p.round === p.totalRounds ? 'Last round: ' : 'Next: ';
+  return workSaid(p).map(t => lead + t);
+}
+// What to say as a phase starts, and the work it calls, if it does: a
+// rest calls the work after it, work that nothing called says itself,
+// and a warm-up move or stretch says its name.
+function entrySaid(idx) {
+  const seq = state.sequence, p = seq[idx], next = seq[idx + 1];
+  if (p.kind === 'rest' || p.kind === 'blockrest') {
+    return next && next.kind === 'work' ? { w: idx + 1, lines: callSaid(idx + 1, idx) } : null;
+  }
+  if (p.kind === 'work') return coach.called === idx ? null : { w: idx, lines: workSaid(p) };
+  const first = p.kind === 'warmup' ? !p.warmIdx && 'Warm-up. ' : p.kind === 'cooldown' ? !p.coolIdx && 'Cool-down. ' : '';
+  return p.a ? { lines: [`${first || ''}${p.a.name}.`] } : null;
+}
+// Work straight after a phase with no rest between, called as late as it
+// can be and still be said clear of its 3-2-1, as much of it as fits in
+// the time left once the phase has started.
+function aheadSaid(idx, left) {
+  const seq = state.sequence, p = seq[idx], next = seq[idx + 1];
+  if (!next || next.kind !== 'work' || p.kind === 'rest' || p.kind === 'blockrest') return null;
+  for (const line of callSaid(idx + 1, idx)) {
+    const t = sayTime(spoken(line));
+    const at = VOICE_CLEAR + t + 0.5;
+    if (t <= VOICE_MOST && at <= left - 2) return { w: idx + 1, lines: [line], at };
+  }
+  return null;
+}
+const halfDue = () => !coach.half && state.totalDuration > 120 && state.elapsedTotal >= state.totalDuration / 2;
+// The most of `lines` that fits in `room` seconds, with Halfway in front
+// when it's due and there's room for it (on its own if there are no
+// lines), said after `delayMs`. True if anything was.
+function speak(lines, room, delayMs = 0) {
+  const half = halfDue();
+  if (!lines.length && !half) return false;
+  const options = [...(half ? (lines.length ? lines.map(l => `Halfway. ${l}`) : ['Halfway.']) : []), ...lines].map(spoken);
+  const fit = options.find(t => sayTime(t) <= Math.min(room - delayMs / 1000, VOICE_MOST));
+  if (!fit) return false;
+  if (fit.startsWith('Halfway')) coach.half = true;
+  say(fit, delayMs, Date.now() + (room - sayTime(fit)) * 1000);
+  return true;
+}
+
+// Each tick of a running workout (see tickClock), and Start.
+function coachTick() {
+  if (!state.running || !voiceOn()) return;
+  const idx = state.currentIdx, p = state.sequence[idx];
+  if (!p) return;
+  const left = state.remainingInPhase, room = left - VOICE_CLEAR;
+  if (coach.at !== idx) {
+    // a new phase: whatever was being said belongs to the one before
+    coach.at = idx;
+    hush();
+    coach.ahead = aheadSaid(idx, left);
+    const entry = entrySaid(idx);
+    const fresh = left > p.duration - 1;            // not landed on part-way
+    if (entry && speak(entry.lines, room, fresh ? VOICE_AFTER_CHIME_MS : 0)) {
+      if (entry.w !== undefined) coach.called = entry.w;
+      return;
+    }
+  }
+  // clear for the 3-2-1: a line that ran over is cut off
+  if (left <= 3) { hush(); return; }
+  const a = coach.ahead;
+  if (a && left <= a.at) {
+    coach.ahead = null;
+    if (coach.called !== a.w && speak(a.lines, room)) coach.called = a.w;
+    return;
+  }
+  if (talking()) return;
+  // a long AMRAP, or a For Time someone is still racing
+  if ((p.amrap || p.forTime) && p.duration >= 180 && coach.minute !== idx && left <= 60 && left > 55
+      && !(p.forTime && allDone(p))) {
+    coach.minute = idx;
+    if (speak(['One minute left.'], room)) return;
+  }
+  // Halfway on its own, when nothing else is said, and not just before a call
+  if (halfDue() && !(a && left - a.at < 2)) speak([], room);
 }
 
 // =====================================================================
@@ -1757,6 +2120,7 @@ function openWorkout(workout) {
   state.pick = {};
   state.skipped = [];
   state.skippedSec = 0;
+  coachFresh();
   const before = state.history.find(h => h.key === historyKey(workout) && h.scores
     && h.intervalId === styleIdOf(workout));       // a classic can be run in any style
   state.lastScores = before ? lastScoresFrom(before) : null;
@@ -2443,6 +2807,7 @@ function tickClock() {
   } else if (whole > 3) {
     state.lastBeep = null;
   }
+  coachTick();
   render();
   // kept every few seconds, so a reload picks up about where it was
   if (Date.now() - runSavedAt >= RUN_SAVE_MS) saveRun();
@@ -2459,6 +2824,12 @@ function startTimer() {
   state.runStartWall = Date.now();
   state.lastBeep = null;
   workChime();
+  // from the top the voice starts afresh; on a resume it says the phase's
+  // line again, if there's still time (a pause cut it off)
+  if (state.elapsedTotal === 0) coachFresh();
+  coach.at = -1;
+  primeVoice();
+  coachTick();
   state.tickHandle = setInterval(tickClock, 200);
   hideAway();                              // going again answers it (see askAway)
   clearGoingNote();
@@ -2475,6 +2846,7 @@ function pauseTimer() {
   freezeBleed();
   state.running = false;
   clearTick();
+  hush();
   render();                                // the wake lock stays on through a pause
   saveRun();
 }
@@ -2486,6 +2858,7 @@ function clearTick() {
 function stopTimer() {
   state.running = false;
   clearTick();
+  hush();
   releaseWakeLock();
 }
 
@@ -2500,6 +2873,7 @@ function resetWorkout() {
   state.skipped = [];
   state.skippedSec = 0;
   state.started = false;
+  coachFresh();
   seekTo(0);
   if (state.sequence[0]) enterPhaseVisual(state.sequence[0].kind, state.remainingInPhase);
   render();
@@ -2721,6 +3095,7 @@ function skipBlock() {
   if (!state.sequence.length) return;
   const cur = state.sequence[state.currentIdx];
   if (!cur) return;
+  hush();                                  // the next part says its own
   const from = Math.min(elapsedNow(), state.totalDuration);
   let target = state.currentIdx + 1;
   if (cur.kind === 'warmup' || cur.kind === 'cooldown') {
@@ -3881,6 +4256,7 @@ els.btnLibraryBack.addEventListener('click', goWelcome);
 // a program's session goes back to the program, anything else to the menu
 function leaveWorkout() {
   disarmBack();
+  hush();
   releaseAudio();
   // a session left on purpose (two taps on Menu, or Done) isn't offered again
   if (state.started) clearRun();
@@ -4020,17 +4396,18 @@ els.showAlts.addEventListener('change', (e) => {
   document.body.classList.toggle('show-alternatives', state.showAlts);
   savePrefs();
 });
-els.muteAudio.addEventListener('change', (e) => {
-  state.muteAudio = e.target.checked;
-  if (audioCtx) applyAudioSession();      // muted, FIT has no reason to pause your music
+// The voice on top of the beeps (see setSound for the beeps themselves).
+els.voiceOn.addEventListener('change', (e) => {
+  state.voice = e.target.checked;
+  if (!state.voice) hush();
+  else if (state.running) primeVoice();       // this tap is what lets it talk
   savePrefs();
+  renderSound();
 });
-// Takes effect from the next sound, never before FIT has made one, so just
-// opening the app leaves someone's music alone.
-els.beepOnSilent.addEventListener('change', (e) => {
-  state.beepOnSilent = e.target.checked;
-  if (audioCtx) applyAudioSession();
-  savePrefs();
+// before Start: down to the choice, which is at the foot of the screen
+els.btnSoundJump.addEventListener('click', () => {
+  els.soundBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  els.soundBox.focus({ preventScroll: true });
 });
 // A tap is the one moment Safari always lets audio restart, so a context
 // still stuck after a call comes back on the next touch of the screen, and
@@ -4202,6 +4579,7 @@ els.btnAwayKept.addEventListener('click', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     if (audioCtx) audioStale = true;
+    hush();                                // out of date by the time it's back
     awayFrom = state.running ? { at: Date.now(), elapsed: elapsedNow() } : null;
     saveRun();
     return;
@@ -4226,9 +4604,8 @@ function showSettings() {
   els.nameA.value = state.nameA || '';
   els.nameB.value = state.nameB || '';
   els.showAlts.checked = state.showAlts;
-  els.muteAudio.checked = state.muteAudio;
-  els.beepOnSilent.checked = state.beepOnSilent;
   els.showPhotos.checked = state.showPhotos !== false;
+  renderSound();
   document.body.classList.toggle('show-alternatives', state.showAlts);
   document.body.classList.toggle('hide-photos', state.showPhotos === false);
   applyTextScale();
@@ -4236,8 +4613,6 @@ function showSettings() {
 }
 loadPrefs();
 showSettings();
-// only an iPhone or iPad can play through the silent switch, so only they ask
-els.silentToggle.hidden = els.silentHint.hidden = !CAN_SILENT;
 setupFullscreen();
 renderToday();
 updateScrollHint();

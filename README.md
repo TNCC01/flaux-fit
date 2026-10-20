@@ -253,12 +253,32 @@ rather than hardcoded.
   what was here before** undoes it until the next restore. The first-visit
   question links straight to Restore, for the home-screen app (which
   starts empty) or a new iPad
-- Wall-clock timer, wake lock (kept through a pause), audio cues that still
-  play with an iPhone on silent (a setting, since it pauses other music;
-  FIT gives the sound back when you leave the workout, and after time in
-  the background the first tap brings the beeps back for sure, while a
-  scroll leaves the sound that's playing alone),
-  two-tap reset, and two taps on Menu once a workout is going. Tap the
+- Wall-clock timer, wake lock (kept through a pause), and one plain sound
+  choice under the workout (and a line by Start that says what you'll
+  hear, with a Change link down to it): **Beeps over my music** (Spotify
+  keeps playing; needs the ringer on), **Beeps even on silent** (plays with
+  the silent switch on, but pauses other music; FIT gives the sound back
+  when you leave the workout) or **No sound**. Beeps even on silent is
+  only offered on an iPhone or iPad, and is where a new one starts; a Mac
+  or a PC has Beeps or No sound. The old Mute audio and Beep even on
+  silent tick boxes become the choice, and are still saved beside it for
+  a tab on an older release. After time in the background the first tap
+  brings the beeps back for sure, while a scroll leaves the sound that's
+  playing alone
+- A voice coach on top of the beeps (on unless you switch it off; never
+  with No sound), in the phone's own voice: an Australian one where the
+  phone has it, then British, then any English. In each rest it calls the
+  next move by person ("Next: Wayne, push-ups. Dave, squats.", "Last
+  round: ..." before the last), with an EMOM's reps and an AMRAP's list
+  when they fit; it calls work that has no rest before it (the first
+  block, an EMOM's next minute) just before it starts, names each warm-up
+  move and stretch, says "Halfway" once and "One minute left" in a long
+  AMRAP or For Time. The 3-2-1 stays as beeps: a line only starts if it
+  can finish clear of it, is cut off there if it runs over, and stops
+  when the phase changes, on a pause, a skip or leaving, so it is never
+  behind the clock or over itself. The Start tap is what lets Safari
+  talk, and it follows the same sound choice as the beeps
+- Two-tap reset, and two taps on Menu once a workout is going. Tap the
   timer to pause or resume; Start, Skip and Reset stay on screen however
   long the cards get, in one row on a phone
 - A finish screen with Done (home, or back to the program for a program

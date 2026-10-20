@@ -345,6 +345,9 @@
     <div class="build-note" id="workoutNote"></div>
 
     <div class="pre-start" id="preStart">
+      <!-- what you'll hear, said before Start, with a way to the choice -->
+      <p class="sound-line" id="soundLine"><span id="soundSaid"></span>
+        <button class="link-btn" id="btnSoundJump">Change</button></p>
       <div class="pre-actions">
         <button class="secondary" id="btnShuffle">↻ Shuffle this workout</button>
         <button class="secondary" id="btnSave">☆ Save as favourite</button>
@@ -357,6 +360,18 @@
     </div>
 
     <div class="toggle-row">
+      <!-- The sound: Beeps over my music, Beeps even on silent (an iPhone
+           or iPad only) or No sound, and the voice coach on top. See AUDIO
+           and VOICE COACH in js/app.js. -->
+      <div class="sound-box" id="soundBox" role="group" aria-labelledby="soundTitle" tabindex="-1">
+        <div class="sound-title" id="soundTitle">Sound</div>
+        <div class="chip-row sound-picker" id="soundPicker"></div>
+        <label class="toggle" id="voiceToggle">
+          <input type="checkbox" id="voiceOn" checked>
+          Voice coach (says what's next)
+        </label>
+        <p class="toggle-hint" id="soundHint"></p>
+      </div>
       <label class="toggle">
         <input type="checkbox" id="showPhotos" checked>
         Exercise demos
@@ -365,21 +380,12 @@
         <input type="checkbox" id="showAlts">
         Injury alternatives
       </label>
-      <label class="toggle">
-        <input type="checkbox" id="muteAudio">
-        Mute audio
-      </label>
-      <label class="toggle" id="silentToggle" hidden>
-        <input type="checkbox" id="beepOnSilent" checked>
-        Beep even on silent
-      </label>
       <span class="toggle text-size">
         Text
         <button class="mini-btn" data-scale="1" aria-label="Text size normal">A</button>
         <button class="mini-btn" data-scale="1.2" aria-label="Text size large">A</button>
         <button class="mini-btn" data-scale="1.45" aria-label="Text size largest">A</button>
       </span>
-      <p class="toggle-hint" id="silentHint" hidden>"Beep even on silent" can pause Spotify or other music while you train. Turn it off to keep your music going; the beeps then need the ringer on.</p>
     </div>
   </div>
 

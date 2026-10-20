@@ -968,8 +968,8 @@ try {
   }
 
   step = 'iPhone sound: beeps on silent, back after a call; the wake lock outlasts a pause';
-  assert(await p.$eval('#silentToggle', e => e.hidden) && await p.$eval('#silentHint', e => e.hidden),
-         'Chromium has no audioSession, so no silent-switch setting');
+  assert(await p.$$eval('#soundPicker .chip', cs => cs.map(c => `${c.dataset.sound}:${c.textContent}`).join()) === 'music:Beeps,off:No sound',
+         'Chromium has no audioSession, so the choice is Beeps or No sound, with nothing about the silent switch');
   {
     const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
     // What the page sees of an iPhone: a touch screen, a session type to set,
@@ -1057,9 +1057,13 @@ try {
     await s.goto(URL);
     await s.click('#btnGearDone');
     await s.click('#todayCard .today-go');
-    assert(await s.$eval('#silentToggle', e => !e.hidden && e.offsetParent !== null), 'the setting shows where audioSession exists');
-    assert(await s.$eval('#silentHint', e => !e.hidden && /Spotify/.test(e.textContent)), 'with a hint that other music can pause');
-    assert(await s.$eval('#beepOnSilent', e => e.checked) && await ev(() => state.beepOnSilent), 'and it starts on');
+    const choices = await s.$$eval('#soundPicker .chip', cs => cs.map(c => `${c.dataset.sound}:${c.textContent}`).join());
+    assert(choices === 'music:Beeps over my music,silent:Beeps even on silent,off:No sound', 'all three choices where audioSession exists: ' + choices);
+    assert(await s.$eval('#soundPicker [data-sound="silent"]', e => e.offsetParent !== null && e.getAttribute('aria-pressed') === 'true')
+           && await ev(() => state.sound === 'silent'), 'a new visitor on an iPhone starts on Beeps even on silent');
+    assert(await s.$eval('#soundHint', e => !e.hidden && /Spotify/.test(e.textContent)), 'with a hint that other music pauses');
+    assert(await s.$eval('#soundSaid', e => /even on silent/.test(e.textContent) && /music will pause/.test(e.textContent)),
+           'and the line by Start says so: ' + await s.$eval('#soundSaid', e => e.textContent));
     assert(await ev(() => __audio.contexts.length === 0 && navigator.audioSession.type === 'auto'),
            'opening a workout makes no sound and leaves the session alone');
 
@@ -1113,14 +1117,15 @@ try {
     assert(await ev((h) => __audio.heard === h[0] + 1 && __audio.unheard === h[1], heardNow), 'its beeps are heard');
 
     // sound settings changed mid-session take effect straight away
-    await s.click('#muteAudio');
-    assert(await ev(() => state.running && navigator.audioSession.type === 'auto'), 'muted while running, FIT gives the session back');
-    await s.click('#muteAudio');
-    assert(await ev(() => navigator.audioSession.type === 'playback'), 'unmuted, playback again');
-    await s.click('#beepOnSilent');
-    assert(await ev(() => navigator.audioSession.type === 'auto'), '"Beep even on silent" off while running goes back to auto');
-    await s.click('#beepOnSilent');
-    assert(await ev(() => navigator.audioSession.type === 'playback'), 'and on again, playback');
+    const sound = (id) => s.click(`#soundPicker [data-sound="${id}"]`);
+    await sound('off');
+    assert(await ev(() => state.running && navigator.audioSession.type === 'auto'), 'No sound while running, FIT gives the session back');
+    await sound('silent');
+    assert(await ev(() => navigator.audioSession.type === 'playback'), 'Beeps even on silent again, playback again');
+    await sound('music');
+    assert(await ev(() => navigator.audioSession.type === 'auto'), 'Beeps over my music while running goes back to auto');
+    await sound('silent');
+    assert(await ev(() => navigator.audioSession.type === 'playback'), 'and on silent again, playback');
 
     await s.click('#btnStart');                                 // pause for a drink
     assert(await ev(() => !state.running && __locks.held === 1 && !!state.wakeLock), 'a pause keeps the wake lock');
@@ -1131,12 +1136,13 @@ try {
     assert(await ev(() => __locks.asked === 2 && __locks.held === 1 && !!state.wakeLock), 'coming back to a paused workout asks again');
     assert(await ev(() => __audio.resumes) === resumesBefore, 'but a paused workout leaves the audio (and your music) alone');
 
-    await s.click('#muteAudio');
-    assert(await ev(() => navigator.audioSession.type === 'auto'), 'muted, FIT gives the session back');
-    await s.click('#muteAudio');
-    assert(await ev(() => navigator.audioSession.type === 'playback'), 'unmuted, playback again');
-    await s.click('#beepOnSilent');
-    assert(await ev(() => !state.beepOnSilent && navigator.audioSession.type === 'auto'), 'turning the setting off goes back to auto');
+    await sound('off');
+    assert(await ev(() => navigator.audioSession.type === 'auto'), 'No sound, FIT gives the session back');
+    await sound('silent');
+    assert(await ev(() => navigator.audioSession.type === 'playback'), 'on silent again, playback again');
+    await sound('music');
+    assert(await ev(() => state.sound === 'music' && !state.beepOnSilent && !state.muteAudio && navigator.audioSession.type === 'auto'),
+           'Beeps over my music goes back to auto, and the old tick boxes follow it for a tab on an older release');
 
     await s.click('#btnBack');
     assert(await ev(() => __locks.held === 1 && document.querySelector('.view.active').id === 'workoutView'),
@@ -1149,14 +1155,30 @@ try {
 
     await s.reload();
     await s.click('#todayCard .today-go');
-    assert(await ev(() => state.beepOnSilent === false) && !(await s.$eval('#beepOnSilent', e => e.checked)), 'off survives a reload');
-    await ev(() => {
+    assert(await ev(() => state.sound === 'music') && await s.$eval('#soundPicker [data-sound="music"]', e => e.getAttribute('aria-pressed') === 'true')
+           && /over your music/.test(await s.$eval('#soundSaid', e => e.textContent)), 'Beeps over my music survives a reload');
+    // Saves from before the choice: the two tick boxes it took over from
+    const fromOld = (boxes) => ev((b) => {
       const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
-      delete prefs.beepOnSilent;
-      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
-    });
+      delete prefs.sound; delete prefs.muteAudio; delete prefs.beepOnSilent; prefs.schema = 3;
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ ...prefs, ...b }));
+    }, boxes);
+    for (const [boxes, want] of [[{ muteAudio: true, beepOnSilent: true }, 'off'], [{ muteAudio: true, beepOnSilent: false }, 'off'],
+                                 [{ muteAudio: false, beepOnSilent: false }, 'music'], [{ muteAudio: false, beepOnSilent: true }, 'silent'], [{}, 'silent']]) {
+      await fromOld(boxes);
+      await s.reload();
+      const got = await ev(() => [state.sound, state.muteAudio, state.beepOnSilent]);
+      assert(got[0] === want && got[1] === (want === 'off') && got[2] === (boxes.beepOnSilent !== false),
+             `a save from before the choice with ${JSON.stringify(boxes)} is ${want}, and keeps its tick boxes: ` + JSON.stringify(got));
+    }
+    await fromOld({ muteAudio: true });
     await s.reload();
-    assert(await ev(() => state.beepOnSilent === true), 'prefs saved before the setting existed start it on');
+    await s.click('#todayCard .today-go');
+    assert(await s.$eval('#soundPicker [data-sound="off"]', e => e.getAttribute('aria-pressed') === 'true') && await s.$eval('#voiceOn', e => e.disabled)
+           && await s.$eval('#soundSaid', e => e.textContent) === 'Sound: none.', 'Mute audio ticked comes back as No sound, the voice switch greyed out with it');
+    await sound('silent');
+    assert(await ev(() => !state.muteAudio && state.beepOnSilent) && !(await s.$eval('#voiceOn', e => e.disabled)), 'and Beeps even on silent from there');
+    await s.click('#btnBack');
     // leaving gives the session back, and a wake lock that lands after you've left is let go
     await s.click('#todayCard .today-go');
     await ev(() => { __locks.delay = 300; });
@@ -1206,12 +1228,294 @@ try {
     await m.goto(URL);
     await m.click('#btnGearDone');
     await m.click('#todayCard .today-go');
-    assert(await m.$eval('#silentToggle', e => e.hidden), 'no silent-switch setting without a touch screen');
+    assert(await m.$$eval('#soundPicker .chip', cs => cs.map(c => c.dataset.sound).join()) === 'music,off'
+           && await m.$eval('#soundPicker [data-sound="music"]', e => e.getAttribute('aria-pressed') === 'true')
+           && await m.$eval('#soundHint', e => e.hidden), 'no silent option without a touch screen: Beeps (on) or No sound');
     await m.click('#btnStart');
     assert(await m.evaluate(() => navigator.audioSession.type === 'auto'), 'and the session is left alone');
     await mac.close();
   }
-  ok('iPhone, by WebKit\'s tap rules: playback from the first beep, resumes after a call or a return, re-armed after the background even when it says running or interrupted, a scroll keeps the sound and the next tap swaps in a fresh context, a refusal is caught; mute and silent changes apply mid-session; wake lock kept through a pause, asked again on return, let go on leaving even mid-request; the sound given back on leaving, after the finish bell and after a late chime, and taken again by Start over; the setting persists and stays off a Mac');
+  ok('iPhone, by WebKit\'s tap rules: playback from the first beep, resumes after a call or a return, re-armed after the background even when it says running or interrupted, a scroll keeps the sound and the next tap swaps in a fresh context, a refusal is caught; a change of sound applies mid-session; wake lock kept through a pause, asked again on return, let go on leaving even mid-request; the sound given back on leaving, after the finish bell and after a late chime, and taken again by Start over; the choice persists, comes from the old tick boxes, and has no silent option on a Mac');
+
+  step = 'voice coach: the next move for each person at the rest, never over itself or the 3-2-1, and quiet when it should be';
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    // speechSynthesis as Safari has it: one line at a time (another while one
+    // plays is counted as an overlap), a line takes about as long as it
+    // would to say unless __speech.ms says otherwise, and cancel cuts it off.
+    // Safari's own list of voices has novelty ones in it.
+    await phone.addInitScript(() => {
+      Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 5 });
+      Object.defineProperty(navigator, 'audioSession', { configurable: true, value: { type: 'auto' } });
+      window.__speech = { said: [], cancels: 0, overlaps: 0, current: null, ms: null, voices: [
+        { name: 'Samantha', lang: 'en-US', localService: true, default: true }, { name: 'Bells', lang: 'en-AU', localService: true },
+        { name: 'Daniel', lang: 'en-GB', localService: true }, { name: 'Karen', lang: 'en-AU', localService: true }] };
+      const synth = {
+        get speaking() { return !!__speech.current; }, get pending() { return false; }, paused: false,
+        getVoices: () => __speech.voices,
+        speak(u) {
+          if (__speech.current) __speech.overlaps++;
+          const phase = state.sequence[state.currentIdx] || {};
+          // the time left in the phase as it starts, to the moment
+          const left = phase.duration - (elapsedNow() - startOf(state.currentIdx));
+          __speech.said.push({ text: u.text, voice: u.voice ? u.voice.name : null, lang: u.lang, volume: u.volume,
+                               tapped: navigator.userActivation.isActive, idx: state.currentIdx, kind: phase.kind, left });
+          __speech.current = u;
+          const ms = __speech.ms != null ? __speech.ms : 400 + u.text.length / 13 * 1000;
+          setTimeout(() => { if (__speech.current === u) { __speech.current = null; if (u.onend) u.onend({}); } }, ms);
+        },
+        cancel() {
+          __speech.cancels++;
+          const u = __speech.current;
+          __speech.current = null;
+          if (u && u.onerror) u.onerror({ error: 'interrupted' });
+        },
+        pause() {}, resume() {}, addEventListener() {}, removeEventListener() {}
+      };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: synth });
+      window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; this.volume = 1; } };
+    });
+    const v = await phone.newPage();
+    v.on('pageerror', e => errors.push('voice: ' + e));
+    v.on('console', m => { if (m.type() === 'error') errors.push('voice: ' + m.text()); });
+    const ev = (fn, arg) => v.evaluate(fn, arg);
+    const said = () => ev(() => __speech.said.filter(x => x.text.trim()).map(x => x.text));
+    const lines = () => ev(() => __speech.said.filter(x => x.text.trim()).length);
+    // Arriving at phase i, `left` seconds before its end (at its start if
+    // left is left out), and one tick there; later, the same phase further on.
+    const at = (i, left) => ev(([i, left]) => {
+      seekTo(i);
+      coach.at = -1;
+      if (left != null) state.runStartWall -= (state.sequence[i].duration - left) * 1000;
+      tickClock();
+    }, [i, left]);
+    const later = (left) => ev((left) => {
+      const i = state.currentIdx;
+      state.runStartWall = Date.now() - (startOf(i) + state.sequence[i].duration - left - state.elapsedAtResume) * 1000;
+      tickClock();
+    }, left);
+    const waitSaid = (n, why) => v.waitForFunction((n) => __speech.said.filter(x => x.text.trim()).length > n, n, { timeout: 5000 })
+      .catch(() => { throw new Error(`FAILED at "${step}": nothing said ${why}`); });
+    await v.goto(URL);
+    await v.click('#btnGearDone');
+    // a seeded two-person surf session in short bursts, without the 3D
+    // figures, whose software drawing here can hold the page's timers up
+    const built = await ev(() => {
+      state.people = 2; state.nameA = 'Wayne'; state.nameB = 'Dave'; state.showPhotos = false; savePrefs(); showSettings();
+      return buildAndOpen({ ...requestFromState(), people: 2, goal: 'surf', intervalId: 'short', mix: undefined, minutes: 20 }, 4242);
+    });
+    assert(built === null, 'a seeded surf session opens: ' + built);
+    assert(await ev(() => state.voice === true && CAN_SPEAK) && await v.$eval('#voiceOn', e => e.checked && !e.disabled && e.offsetParent !== null),
+           'the voice coach is on for a new visitor, beside the sound choice');
+    assert(/and the voice coach/.test(await v.$eval('#soundSaid', e => e.textContent)), 'and the line by Start says so');
+    assert(await ev(() => coachVoice && coachVoice.name) === 'Karen', 'it talks with the Australian voice, not the novelty one');
+    assert(await ev(() => { __speech.voices = __speech.voices.filter(x => x.lang !== 'en-AU'); pickVoice(); const n = coachVoice.name; __speech.voices.push({ name: 'Karen', lang: 'en-AU', localService: true }); pickVoice(); return n; }) === 'Daniel',
+           'with no Australian voice, the British one');
+    assert(await lines() === 0 && await ev(() => __speech.said.length === 0), 'opening a workout says nothing');
+
+    await v.click('#btnStart');
+    const first = await ev(() => __speech.said[0]);
+    assert(first && !first.text.trim() && first.volume === 0 && first.tapped, 'the Start tap has it say a silent line, which lets it talk from then on: ' + JSON.stringify(first));
+    await waitSaid(0, 'as the warm-up starts');
+    const warm = await ev(() => [__speech.said.filter(x => x.text.trim())[0], state.sequence[0].a.name]);
+    assert(warm[0].text === `Warm-up. ${warm[1]}.` && warm[0].voice === 'Karen' && warm[0].lang === 'en-AU', 'the warm-up names its first move: ' + JSON.stringify(warm));
+
+    // the rest before a round where the two of them are on different moves
+    const r = await ev(() => {
+      const i = state.sequence.findIndex((x, j) => x.kind === 'rest' && j > 0 && (state.sequence[j + 1] || {}).kind === 'work'
+        && state.sequence[j + 1].a.name !== state.sequence[j + 1].b.name && state.sequence[j + 1].round < state.sequence[j + 1].totalRounds);
+      const next = state.sequence[i + 1];
+      return { i, a: spoken(next.a.name), b: spoken(next.b.name) };
+    });
+    assert(r.i > 0, 'a rest before the two of them do different moves');
+    let n = await lines();
+    await at(r.i);
+    await waitSaid(n, 'at the rest');
+    const rest = await ev(() => __speech.said[__speech.said.length - 1]);
+    assert(rest.text.startsWith('Next: ') && rest.text.includes(`Wayne, ${r.a}`) && rest.text.includes(`Dave, ${r.b}`) && rest.kind === 'rest',
+           `the rest says the next move and both names: "${rest.text}" (${r.a} / ${r.b})`);
+    assert(rest.left - (0.4 + rest.text.length / 13) >= 3.5, 'and it starts in time to finish clear of the 3-2-1: ' + rest.left);
+    // before the last round
+    const last = await ev(() => state.sequence.findIndex((x, j) => x.kind === 'rest' && (state.sequence[j + 1] || {}).round === state.sequence[j + 1].totalRounds && state.sequence[j + 1].totalRounds > 2));
+    n = await lines();
+    await at(last);
+    await waitSaid(n, 'before the last round');
+    assert((await said()).pop().startsWith('Last round: '), 'the rest before the last round says so: ' + (await said()).pop());
+    // the block rest calls the next block
+    const br = await ev(() => state.sequence.findIndex(x => x.kind === 'blockrest'));
+    n = await lines();
+    await at(br);
+    await waitSaid(n, 'at the block rest');
+    assert((await said()).pop().startsWith('Next: '), 'the block rest says what the next block starts with');
+    // halfway through the session, said once
+    const half = await ev(() => state.sequence.findIndex((x, j) => x.kind === 'rest' && startOf(j) >= state.totalDuration / 2 && (state.sequence[j + 1] || {}).kind === 'work'));
+    n = await lines();
+    await at(half);
+    await waitSaid(n, 'at halfway');
+    assert((await said()).pop().startsWith('Halfway. Next: '), 'past halfway, the next line starts with it: ' + (await said()).pop());
+    n = await lines();
+    await at(half + 2);
+    await waitSaid(n, 'at the rest after halfway');
+    assert(!(await said()).pop().includes('Halfway'), 'and only once');
+    // a rest landed on with too little time left says nothing
+    n = await lines();
+    await at(r.i, 3.2);
+    assert(await lines() === n && await ev(() => !coach.timer), 'nothing starts with under 3.5 seconds of a phase left');
+    // a phone too busy to start a line on time drops it rather than say it late
+    await ev((i) => { seekTo(i); coach.at = -1; tickClock(); const t = Date.now(); while (Date.now() - t < 5000); }, r.i);
+    await v.waitForFunction(() => !coach.timer);
+    assert(await lines() === n, 'a line held up past when it could finish clear of the 3-2-1 is dropped, not said late');
+    // nothing said over the 3-2-1: a line still going at 3 seconds is cut off
+    await ev(() => { __speech.ms = 60000; });
+    n = await lines();
+    await at(r.i);
+    await waitSaid(n, 'with a long line');
+    let cancels = await ev(() => __speech.cancels);
+    await later(2.9);
+    assert(await ev((c) => __speech.cancels === c + 1 && !speechSynthesis.speaking, cancels), 'a line still going at the 3-2-1 is cut off');
+    // a pause, a skip and leaving each cut off what's being said
+    n = await lines();
+    await at(r.i);
+    await waitSaid(n, 'before the pause');
+    cancels = await ev(() => __speech.cancels);
+    await v.click('#btnStart');
+    assert(await ev((c) => !state.running && __speech.cancels === c + 1 && !speechSynthesis.speaking, cancels), 'Pause cuts the voice off');
+    n = await lines();
+    await v.click('#btnStart');
+    await waitSaid(n, 'on Resume');
+    assert((await said()).pop().startsWith('Next: '), 'Resume in a rest says its line again, since the pause cut it off');
+    cancels = await ev(() => __speech.cancels);
+    n = await lines();
+    await v.click('#btnSkip');
+    assert(await ev((c) => __speech.cancels >= c + 1, cancels), 'Skip cuts it off');
+    await waitSaid(n, 'after the skip');
+    const landed = await ev(() => state.sequence[state.currentIdx].kind);
+    assert(landed === 'blockrest' ? (await said()).pop().startsWith('Next: ') : (await said()).pop().startsWith('Cool-down. '),
+           `and the ${landed} it lands on says its own line: ` + (await said()).pop());
+    assert(await ev(() => __speech.overlaps) === 0, 'no line ever started over another');
+    cancels = await ev(() => __speech.cancels);
+    await leaveStarted(v);
+    assert(await ev((c) => state.view === 'welcome' && __speech.cancels === c + 1 && !speechSynthesis.speaking && !coach.timer, cancels), 'leaving the workout cuts it off');
+    await ev(() => { __speech.ms = null; });
+
+    // No sound says nothing, and neither does the voice switched off
+    await ev(() => buildAndOpen({ ...requestFromState(), people: 2, goal: 'surf', intervalId: 'short', mix: undefined, minutes: 20 }, 4242));
+    await v.click('#btnStart');
+    await v.click('#soundPicker [data-sound="off"]');
+    assert(await v.$eval('#voiceOn', e => e.disabled), 'No sound greys the voice switch out');
+    n = await lines();
+    await at(r.i);
+    await at(r.i + 2, 8);
+    assert(await lines() === n && await ev(() => !coach.timer), 'No sound: nothing is said at a rest');
+    await v.click('#soundPicker [data-sound="silent"]');
+    await v.click('#voiceOn');
+    assert(await ev(() => state.voice === false && !talking()), 'the voice switched off, which stops it');
+    assert(!/voice coach/.test(await v.$eval('#soundSaid', e => e.textContent)), 'and the line by Start leaves it out');
+    n = await lines();
+    await at(r.i);
+    await at(r.i + 2, 8);
+    assert(await lines() === n && await ev(() => !coach.timer), 'Voice off: nothing is said at a rest either');
+    await v.click('#voiceOn');
+    n = await lines();
+    await at(r.i);
+    await waitSaid(n, 'with the voice back on');
+    await leaveStarted(v);
+
+    // EMOM: the next minute's reps, called before it starts
+    await ev(() => buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'emom', mix: undefined, minutes: 20 }, 777));
+    await v.click('#btnStart');
+    const em = await ev(() => {
+      const i = state.sequence.findIndex((x, j) => x.emom && (state.sequence[j + 1] || {}).emom && state.sequence[j + 1].blockIdx === x.blockIdx);
+      const next = state.sequence[i + 1];
+      return { i, a: [spoken(next.a.name), next.a.reps.split(' ')[0].replace(/s$/, '')], b: [spoken(next.b.name), next.b.reps.split(' ')[0].replace(/s$/, '')], reps: next.a.reps };
+    });
+    assert(em.i >= 0 && /\d/.test(em.reps), 'an EMOM minute with another after it: ' + JSON.stringify(em));
+    await at(em.i, 30);
+    const aheadAt = await ev(() => coach.ahead && coach.ahead.at);
+    assert(aheadAt > 3.5 && aheadAt < 20, 'the next minute is called a few seconds before it starts: ' + aheadAt);
+    n = await lines();
+    await later(aheadAt - 0.1);
+    await waitSaid(n, 'before the next EMOM minute');
+    const emLine = (await said()).pop();
+    assert(emLine.startsWith('Next: ') || emLine.startsWith('Last round: '), 'the call before an EMOM minute: ' + emLine);
+    assert([em.a, em.b].every(([name, count]) => emLine.includes(name) && emLine.includes(count)),
+           `with each person's move and count: "${emLine}" (${em.a} / ${em.b})`);
+    await leaveStarted(v);
+
+    // AMRAP: the block rest reads out the list, and one minute left
+    await ev(() => { state.people = 1; return buildAndOpen({ ...requestFromState(), people: 1, goal: undefined, intervalId: 'amrap', mix: undefined, minutes: 20 }, 99); });
+    await v.click('#btnStart');
+    const am = await ev(() => {
+      const i = state.sequence.findIndex((x, j) => x.kind === 'blockrest' && (state.sequence[j + 1] || {}).amrap);
+      return { i, w: i + 1, first: spoken(state.sequence[i + 1].a.circuit[0].name), min: Math.round(state.sequence[i + 1].duration / 60) };
+    });
+    n = await lines();
+    await at(am.i);
+    await waitSaid(n, 'before an AMRAP');
+    const amLine = (await said()).pop();
+    assert(amLine.startsWith(`Next: AMRAP, ${am.min} minutes. `) && amLine.includes(am.first), 'the block rest reads out the AMRAP: ' + amLine);
+    await at(am.w, 100);
+    n = await lines();
+    await later(59.5);
+    await waitSaid(n, 'with a minute to go');
+    assert(/^(Halfway\. )?One minute left\.$/.test((await said()).pop()), 'one minute left in the AMRAP: ' + (await said()).pop());
+    await leaveStarted(v);
+
+    // what it says, said well: weights, seconds, sides, and no symbols, for every exercise
+    const words = await ev(() => [spoken('KB swings · 16kg'), spoken('Plank, 40s each side'), spoken('Next: EMOM, 1 min. Wayne, 12.5kg'),
+                                 spoken('90/90 hip, left'), spoken('Neck & shoulder rolls'), spoken('Cobra / upward dog')]);
+    assert(words.join('|') === 'kettlebell swings, 16 kilo|Plank, 40 seconds each side|Next: EMOM, 1 minute. Wayne, 12.5 kilo|90 90 hip, left|Neck and shoulder rolls|Cobra, upward dog',
+           'said as you would say it: ' + words.join(' | '));
+    const counts = await ev(() => [['10 reps', ''], ['1 rep', ''], ['40s', ''], ['20s each side', ''], ['8 each side', '16kg'], ['5 each way', ''], ['1 lap', ''], ['', '12kg']]
+      .map(([reps, load]) => spoken(moveSaid({ name: 'KB swings', reps, load }, 2))));
+    assert(counts.join('|') === '10 kettlebell swings|1 kettlebell swings|40 seconds of kettlebell swings|20 seconds of kettlebell swings each side|8 kettlebell swings each side, 16 kilo|5 kettlebell swings each way|1 lap of kettlebell swings|kettlebell swings, 12 kilo',
+           'the count first, so a list of them still reads: ' + counts.join(' | '));
+    const odd = await ev(() => Object.keys(EXERCISES).flatMap(id => [{ reps: true }, { reps: true, lap: true }, {}].map(ctx => {
+      const ex = describeEx(id, { ...ctx, loads: { kb15: '16kg', kb10: '12kg', bar: '20kg bar', dbHeavy: '12.5kg', dbLight: '7.5kg' } });
+      return spoken(moveSaid(ex, 2));
+    })).filter(t => /[\/·&]|\dkg|\d+s\b|\bKB\b|undefined/.test(t)));
+    assert(!odd.length, 'every exercise, its reps and its weight said without symbols: ' + odd.slice(0, 5).join(' | '));
+
+    // the choice and the voice switch persist, through a backup, and past a tab on an older release
+    await v.click('#todayCard .today-go');
+    await v.click('#soundPicker [data-sound="music"]');
+    await v.click('#voiceOn');
+    await v.reload();
+    assert(await ev(() => state.sound === 'music' && state.voice === false && !state.muteAudio && !state.beepOnSilent), 'Beeps over my music and the voice off survive a reload');
+    const backup = await ev(() => JSON.parse(backupText()).prefs);
+    assert(backup.sound === 'music' && backup.voice === false && backup.muteAudio === false && backup.beepOnSilent === false, 'a backup has both, and the old tick boxes for an older release');
+    const back = await ev(() => {
+      const text = backupText();
+      setSound('off'); state.voice = true; savePrefs();
+      replaceData(readBackup(text).prefs, true);
+      return [state.sound, state.voice, document.querySelector('#soundPicker [aria-pressed="true"]').dataset.sound, document.getElementById('voiceOn').checked];
+    });
+    assert(back.join() === 'music,false,music,false', 'and a restore brings them back, on screen too: ' + back);
+    const oldBackup = await ev(() => {
+      const o = JSON.parse(backupText());
+      delete o.prefs.sound; delete o.prefs.voice; o.prefs.schema = 3; o.prefs.muteAudio = true;
+      const b = readBackup(JSON.stringify(o));
+      return [b.prefs.sound, b.prefs.voice];
+    });
+    assert(oldBackup.join() === 'off,true', "a backup from before the choice: Mute audio is No sound, and the voice its default: " + oldBackup);
+    // a tab on the last release knows neither, and saves without them
+    await ev(() => {
+      const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      delete prefs.sound; delete prefs.voice; prefs.schema = 3; prefs.muteAudio = false; prefs.beepOnSilent = false;
+      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+    });
+    await v.reload();
+    assert(await ev(() => state.sound === 'music' && state.voice === false), "after a save from a tab on the last release, the choice comes from its tick boxes and the voice from its own key");
+    await ev(() => {
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ ...JSON.parse(localStorage.getItem('fit-prefs-2')), schema: 4, voice: 'loud', sound: 'blaring' }));
+      localStorage.setItem('fit-voice-1', '"loud"');
+    });
+    await v.reload();
+    assert(await ev(() => state.voice === true && state.sound === 'music'), 'a voice or sound that is not one of its own goes back to the default, and the tick boxes');
+    note(`at a rest: "${rest.text}"; before an EMOM minute: "${emLine}"; before an AMRAP: "${amLine}"`);
+    await phone.close();
+  }
+  ok('voice coach: on for a new visitor in an Australian voice, primed by the Start tap, names the warm-up, calls both people\'s next move at each rest, Last round, the next block, Halfway once, an EMOM\'s reps ahead of the minute and an AMRAP\'s list and one minute left; never under 3.5 seconds, cut off at the 3-2-1, on pause, skip and leave, never over itself; silent with No sound or the voice off; spoken words for every exercise; the choice and the switch persist, back up and survive a tab on the last release');
 
   step = 'the card shows the exercise as a 3D figure; drag turns it, a tap opens the full view';
   // the full viewer is checked by move-check; here it's the app's side of the tap
@@ -2122,7 +2426,7 @@ try {
   await listenFor(p, null);
   await tab2.evaluate(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
-    delete prefs.schema; delete prefs.beepOnSilent; delete prefs.todayOther;
+    delete prefs.schema; delete prefs.beepOnSilent; delete prefs.todayOther; delete prefs.sound; delete prefs.voice;
     prefs.history = prefs.history.slice(1);           // opened before the newest session
     prefs.saved = prefs.saved.slice(1);
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
@@ -2131,7 +2435,7 @@ try {
   const merged = await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     return { first: prefs.history[0].key, n: prefs.history.length, mem: state.history.length, saved: prefs.saved.length === state.saved.length,
-             beep: 'beepOnSilent' in prefs, dupes: new Set(prefs.history.map(h => h.key + h.at)).size !== prefs.history.length };
+             beep: 'beepOnSilent' in prefs && 'sound' in prefs && 'voice' in prefs, dupes: new Set(prefs.history.map(h => h.key + h.at)).size !== prefs.history.length };
   });
   assert(merged.first === newest && merged.n === merged.mem && merged.saved && merged.beep && !merged.dupes,
          "an older tab's stale save is merged in and written back with this tab's sessions and settings: " + JSON.stringify(merged));
@@ -2326,7 +2630,7 @@ try {
   await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     prefs.people = 7; prefs.minutes = 13; prefs.textScale = 'big'; prefs.blockedTags = 'nope';
-    prefs.history.push(null, 'junk'); prefs.saved.push({ name: 'no seed' }); prefs.filterFocus = 'nowhere'; prefs.muteAudio = 'yes';
+    prefs.history.push(null, 'junk'); prefs.saved.push({ name: 'no seed' }); prefs.filterFocus = 'nowhere'; prefs.muteAudio = 'yes'; prefs.sound = 'loud'; prefs.voice = 'maybe';
     prefs.levels = { ...prefs.levels, huge: { k: 5 }, odd: 'x', '': { k: 1.1 }, kept: { k: 1.2, easy: 1 } };
     prefs.history[0].feel = { a: 'meh', b: 'cooked' };
     if (prefs.history[1]) prefs.history[1].feel = 'nope';
@@ -2340,7 +2644,8 @@ try {
   assert(await st(() => state.people === 1 && state.minutes === 20 && state.textScale === 1 && Array.isArray(state.blockedTags)),
          'junk preference values fell back to defaults (one person)');
   assert(await st(() => state.saved.length === 2), 'saved favourites survived the reload');
-  assert(await st(() => state.history.every(h => h && typeof h.key === 'string') && state.filterFocus === 'all' && state.muteAudio === false),
+  assert(await st(() => state.history.every(h => h && typeof h.key === 'string') && state.filterFocus === 'all' && state.muteAudio === false
+                        && SOUNDS.includes(state.sound) && state.sound !== 'off' && state.voice === true),
          'sessions and favourites that cannot be used are dropped, and an unknown focus or a switch that is not on or off goes back to its default');
   ok('corrupt preference values fall back to defaults, favourites persist');
 
