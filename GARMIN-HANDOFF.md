@@ -46,10 +46,10 @@ Output shape:
   "name": "KB Blitz",
   "interval": { "id": "long", "rounds": 4, "workSec": 40, "restSec": 20 },
   "totalSeconds": 870,
-  "stepCount": 19,
+  "stepCount": 25,
   "steps": [
-    { "kind": "warmup", "intensity": "warmup", "seconds": 180,
-      "name": "Warm-up", "note": "Easy movement" },
+    { "kind": "warmup", "intensity": "warmup", "seconds": 45,
+      "name": "Squat to reach", "note": "Easy pace, reach long and get the blood moving" },
     { "kind": "work", "intensity": "active", "seconds": 40,
       "name": "Goblet squats · 15kg", "note": "Bell at the chest" }
   ]
@@ -104,10 +104,14 @@ Worth knowing before you start, because it affects step counts and names:
   and the coaching detail moved to `note`. Garmin truncates step names at
   ~15 characters on some models, so prefer `name` and consider trimming the
   load suffix if the model is tight on space.
-- **Warm-up and cool-down scale with session length** (2 to 6 minutes each),
+- **Warm-up and cool-down scale with session length** (1 to 6 minutes each),
   they are no longer always 5 + 5. Blocks come in four-minute lumps, so the
   cool-down also takes up any time they leave short of the minutes asked for:
   a 20-minute session is 20:00 exactly.
+- **The warm-up is several steps, one per move** (about 30 to 45 seconds
+  each, intensity `warmup`), and the cool-down one step per stretch
+  (intensity `cooldown`), the two sides of a stretch as two steps. Together
+  they still add up to the warm-up and cool-down time.
 - **Single-person export is still the sensible default** for a watch. Passing
   `--people 2` puts person B's movement in `note`.
 

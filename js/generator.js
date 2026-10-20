@@ -220,7 +220,10 @@ function titleFor(regions) {
     excluded,                array of exercise ids to never use
     blockedTags,             array of EXCLUSION_TAGS ids
     seed,                    integer; same seed => same workout
-    recent                   array of exercise ids used in recent sessions
+    recent,                  array of exercise ids used in recent sessions
+    repScale,                a program's build-up of the rep targets
+    workRest,                a program week's split of the timed styles
+    repScales                each person's level (see PERSONAL LEVELS)
   }
 
   Returns a workout in the same shape the timer consumes, plus `notes`
@@ -229,7 +232,12 @@ function titleFor(regions) {
   an empty screen.
 */
 function generateWorkout(opts) {
-  const iv = INTERVALS[opts.intervalId] || INTERVALS[DEFAULT_INTERVAL];
+  // a program week's split of the timed styles (see withWorkRest), and each
+  // person's level (see PERSONAL LEVELS), kept on the workout for the timer
+  // and the cards; neither changes which moves are picked
+  const workRest = cleanWorkRest(opts.workRest);
+  const repScales = cleanRepScales(opts.repScales);
+  const iv = withWorkRest(INTERVALS[opts.intervalId] || INTERVALS[DEFAULT_INTERVAL], workRest);
   // a mix: two or three different styles, in the order given
   const mix = Array.isArray(opts.mix)
     ? [...new Set(opts.mix.filter(id => INTERVALS[id]))].slice(0, 3) : [];
@@ -473,7 +481,7 @@ function generateWorkout(opts) {
     format: 'tabata',
     intervalId: 'mix',
     mix: mix.slice(),
-    repScale,
+    repScale, workRest, repScales,
     sections: plan.sections.map(x => ({ ...x })),
     changeoverSec: plan.changeoverSec,
     warmupSec: plan.warmupSec,
@@ -484,7 +492,7 @@ function generateWorkout(opts) {
     seed: opts.seed,
     request: {
       minutes: opts.minutes, people: opts.people, intervalId: 'mix', mix: mix.slice(), goal: surf ? 'surf' : undefined,
-      surfFocus: surf ? opts.surfFocus : undefined, repScale,
+      surfFocus: surf ? opts.surfFocus : undefined, repScale, workRest, repScales,
       regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice(),
       recent: [...recent]
     },
@@ -501,7 +509,7 @@ function generateWorkout(opts) {
     blurb: `${blocks.length} block${blocks.length === 1 ? '' : 's'} built for ${title.toLowerCase()}, ${iv.sub.charAt(0).toLowerCase() + iv.sub.slice(1)}.`,
     format: 'tabata',
     intervalId: iv.id,
-    repScale,
+    repScale, workRest, repScales,
     warmupSec: plan.warmupSec,
     cooldownSec: plan.cooldownSec,
     blockRestSec: plan.blockRestSec,
@@ -514,7 +522,7 @@ function generateWorkout(opts) {
     // rebuild a different workout from the one that was saved.
     request: {
       minutes: opts.minutes, people: opts.people, intervalId: iv.id, goal: surf ? 'surf' : undefined,
-      surfFocus: surf ? opts.surfFocus : undefined, repScale,
+      surfFocus: surf ? opts.surfFocus : undefined, repScale, workRest, repScales,
       regions: regions.slice(), blockedTags: (opts.blockedTags || []).slice(),
       recent: [...recent]
     },
