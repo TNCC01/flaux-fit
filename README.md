@@ -358,24 +358,27 @@ reloads once you leave the workout. Untapped, the new release takes over
 the next time FIT is closed and opened.
 
 So every release that changes a file the worker lists has to bump
-`VERSION` in `sw.js`, say the same at the top of `js/exercises.js`,
-`js/workouts.js`, `js/generator.js` and `js/app.js`, and set `FILES_HASH`
-to the fingerprint of those files. `scripts/selfcheck.mjs` computes it
-and fails until they all match, printing the new value ("app files
-changed: bump VERSION in sw.js and update the hash to …"), and fails
-where git can see `origin/main` with the files changed under the same
-`VERSION`. The hash is part of the cache's name, so even a forgotten
-bump can't install new files over the copy that's running.
+`VERSION` in `sw.js`, say the same at the top of `js/workouts.js` and
+`js/app.js`, and set `FILES_HASH` to the fingerprint of those files.
+`scripts/selfcheck.mjs` computes it and fails until they all match,
+printing the new value ("app files changed: bump VERSION in sw.js and
+update the hash to …"), and fails where git can see `origin/main` with
+the files changed under the same `VERSION`. The hash is part of the
+cache's name, so even a forgotten bump can't install new files over the
+copy that's running.
 
 A page whose scripts fail while it loads, or come from more than one
 release (only possible without the worker: the very first visit, or a
 phone still on the network-first worker from before this, which hands
-over its old copy of a file that's slow to come; `js/app.js` fails when
-a script before it says another release), has the waiting release, or
-the first one still installing, take over at once, since a broken page
-has nothing to lose, and loads again from it. With nothing new waiting
-yet, it asks the browser to look for one first, and with none at all it
-loads again once.
+over its old copy of a file that's slow to come or doesn't come;
+`js/app.js` fails when `js/workouts.js` says another release, while an
+older `exercises.js` or `generator.js` works beside it), has the waiting
+release, or the first one still installing, take over at once, since a
+broken page has nothing to lose, and loads again from it. With nothing
+new waiting yet, it asks the browser to look for one first, and with
+none at all it loads again once. A new release that can't install (a
+file that doesn't come) is looked for again every ten seconds, for two
+minutes.
 A genuine bug fails once and stays put rather than reloading forever.
 Nothing is saved until the stored settings have been read, so a page
 that broke on its way up can never write a new visitor's defaults over
@@ -459,8 +462,9 @@ network, a new release waiting for its tap and never running beside the
 old one, a page whose scripts fail handing over to the release
 waiting, and the first open of a release through the last one's worker
 losing nothing, on a slow page or with the last release's `workouts.js`
-beside this one's `app.js` (loading again once, whole).
-It fails on any console error.
+beside this one's `app.js` (loading again once, whole, also when that
+file doesn't come for a while and the new release can't install at
+first). It fails on any console error.
 
 Both run on every pull request through GitHub Actions, along with the 3D
 movement check.

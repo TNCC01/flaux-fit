@@ -28,11 +28,12 @@ const TYPES = {
   '.json': 'application/json', '.png': 'image/png'
 };
 // It can be slowed down (one bar of signal, just the page, or any one
-// file), made to serve the next release of the app or the one before (to
-// a browser context with the e2e=previous cookie, so the others' workers
-// can never pick it up), or hand out a script from another release once
-// (see the update steps at the end).
-const serve = { delayMs: 0, pageDelayMs: 0, slow: {}, next: null, previous: false, breakOnce: null };
+// file), drop any one file's requests until a given time, made to serve
+// the next release of the app or the one before (to a browser context
+// with the e2e=previous cookie, so the others' workers can never pick it
+// up), or hand out a script from another release once (see the update
+// steps at the end).
+const serve = { delayMs: 0, pageDelayMs: 0, slow: {}, drop: {}, next: null, previous: false, breakOnce: null };
 const isPage = (url) => url === '/' || url === '/index.html';
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
@@ -40,6 +41,7 @@ const server = http.createServer((req, res) => {
   if (url === '/e2e-blank.html') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>blank</title><link rel="icon" href="data:,">'); return; }
   const file = path.normalize(path.join(ROOT, url === '/' ? 'index.html' : url));
   if (!file.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
+  if (serve.drop[url] > Date.now()) { req.socket.destroy(); return; }
   fs.readFile(file, (err, data) => {
     setTimeout(() => {
       if (err) { res.writeHead(404); res.end('not found'); return; }
@@ -2646,6 +2648,40 @@ try {
     await up.close();
     note(`with ${LAST_WORKOUTS.real ? "origin/main's workouts.js" : 'this workouts.js saying it is from another release (no origin/main here)'}`);
     ok("an old workouts.js beside this release's app.js fails as the page loads, the new release takes over, and the page loads again once, whole, with Start and the favourites working");
+  }
+
+  step = "the first open of this release where workouts.js doesn't come for a while: the new release looks again, and the page loads whole";
+  {
+    const up = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const u = await up.newPage();
+    const seen = [];
+    u.on('pageerror', e => seen.push(String(e)));
+    u.on('console', m => { if (m.type() === 'error') seen.push(m.text()); });
+    let loads = 0;
+    u.on('load', () => { loads++; });
+    await onLastRelease(u);
+    loads = 0;
+    // this release goes up, and workouts.js doesn't come for eight seconds:
+    // the old worker hands over its old copy, and the new release's install
+    // fails on it, so it has to be looked for again once the file comes
+    serve.drop['/js/workouts.js'] = Date.now() + 8000;
+    await u.goto(URL, { waitUntil: 'domcontentloaded' });
+    const mixed = await u.evaluate(() => [typeof WORKOUTS_RELEASE === 'string' ? WORKOUTS_RELEASE : 'none', RELEASE]);
+    assert(mixed[0] !== mixed[1], "the first load has the last release's workouts.js beside this release's app.js: " + mixed);
+    const whole = await u.waitForFunction(() => { try { return state.view === 'welcome' && WORKOUTS_RELEASE === RELEASE; } catch (e) { return false; } },
+                                          null, { timeout: 60000 }).then(() => true, () => false);
+    serve.drop = {};
+    assert(whole, 'the page loads again on this release, whole, by itself: ' + await u.evaluate(() => typeof WORKOUTS_RELEASE === 'string' ? WORKOUTS_RELEASE : 'none'));
+    const failed = seen.length;
+    const after = await wayneKept(u);
+    assert(allKept(after), 'everything is still there, and home has his program day: ' + JSON.stringify(after));
+    assert(!after.caches.includes('fit-previous'), 'running from this release now: ' + after.caches);
+    await u.click('#todayCard .program-go');
+    assert(await u.evaluate(() => state.view === 'workout' && state.sequence.length > 0), 'Start opens the session');
+    await u.waitForTimeout(1000);
+    assert(loads === 2 && seen.length === failed, `once: ${loads} loads, ${seen.length - failed} more errors: ` + seen.slice(failed).join(' | '));
+    await up.close();
+    ok("with workouts.js not coming for a while the new release can't install at first; it's looked for again, and the page loads again once, whole");
   }
 
   if (errors.length) {

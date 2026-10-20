@@ -48,10 +48,6 @@
   round. Bodyweight fallbacks never add equipment, so adapting is safe.
 */
 
-// Which release this file is from, sw.js's VERSION: js/app.js won't run
-// beside a file from another one (see the check at its top).
-const EXERCISES_RELEASE = 'fit-v13';
-
 const EQUIPMENT = {
   kb15:      '15kg kettlebell',
   kb10:      '10kg kettlebell',

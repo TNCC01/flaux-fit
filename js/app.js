@@ -6,8 +6,8 @@
 
 // The same check as in index.html, for this script with the page from an
 // older release: if the scripts fail while the page loads, a release
-// waiting in the service worker (or one it looks for then) takes over and
-// the page loads again.
+// waiting in the service worker (or one it looks for then, and again for a
+// while if it can't install) takes over and the page loads again.
 window.addEventListener('error', function retry() {
   window.removeEventListener('error', retry);
   const sw = navigator.serviceWorker;
@@ -15,7 +15,7 @@ window.addEventListener('error', function retry() {
   sw.addEventListener('controllerchange', () => location.reload());
   // once the page has stopped loading, so the release it came from isn't
   // still handing it files
-  window.addEventListener('load', () => sw.register('sw.js').then(async reg => {
+  window.addEventListener('load', () => sw.register('sw.js').then(async function look(reg, tries = 12) {
     // the browser may not have looked for the new release yet: look now
     if (!reg.waiting && !reg.installing) await reg.update().catch(() => {});
     const next = reg.waiting || reg.installing;
@@ -25,19 +25,23 @@ window.addEventListener('error', function retry() {
       if (!sessionStorage.getItem('fit-retried')) { sessionStorage.setItem('fit-retried', '1'); location.reload(); }
       return;
     }
-    const take = () => { if (next.state === 'installed') next.postMessage('update'); };
+    const take = () => {
+      if (next.state === 'installed') next.postMessage('update');
+      // it couldn't install (a file that didn't come): look again, every ten seconds for two minutes
+      else if (next.state === 'redundant' && tries > 0) setTimeout(() => look(reg, tries - 1), 10000);
+    };
     take();
     next.addEventListener('statechange', take);
   }).catch(() => { /* no offline copy to fall back on */ }));
 });
-// And the scripts before this one have to be from its release. One from
-// another (the worker from before sw.js hands over its old copy of a file
-// that's slow to come) can load without an error and only break the first
-// tap on Start, so each says which release it's from, and one that doesn't
-// match fails here, while the page loads, for the check above.
-const RELEASE = 'fit-v13';
-if ([typeof EXERCISES_RELEASE, typeof WORKOUTS_RELEASE, typeof GENERATOR_RELEASE].some(t => t !== 'string')
-    || [EXERCISES_RELEASE, WORKOUTS_RELEASE, GENERATOR_RELEASE].some(r => r !== RELEASE)) {
+// And workouts.js has to be from this release. One from another (the
+// worker from before sw.js hands over its old copy of a file that's slow
+// to come, or doesn't come) can load without an error and only break the
+// first tap on Start, so it says which release it's from, and one that
+// doesn't match fails here, while the page loads, for the check above.
+// An older exercises.js or generator.js works beside this one.
+const RELEASE = 'fit-v14';
+if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
 

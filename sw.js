@@ -20,16 +20,16 @@
 
   So a release that changes any file below has to change this file too,
   or it never arrives: bump VERSION, set the same at the top of
-  js/exercises.js, js/workouts.js, js/generator.js and js/app.js (so the
-  app can tell a script from another release, see js/app.js), and set
-  FILES_HASH to what scripts/selfcheck.mjs asks for (it fails until they
-  all match, and prints the new values). The hash is part of the cache's
-  name, so changed files can never be installed over the copy that's
-  running. When a file is added, list it below (the self-check fails on a
-  file the pages load, or a 3D file, that isn't listed).
+  js/workouts.js and js/app.js (so the app can tell a workouts.js from
+  another release, see js/app.js), and set FILES_HASH to what
+  scripts/selfcheck.mjs asks for (it fails until they all match, and
+  prints the new values). The hash is part of the cache's name, so
+  changed files can never be installed over the copy that's running.
+  When a file is added, list it below (the self-check fails on a file
+  the pages load, or a 3D file, that isn't listed).
 */
-const VERSION = 'fit-v13';
-const FILES_HASH = 'ead12af4497a';
+const VERSION = 'fit-v14';
+const FILES_HASH = '7ff4890da385';
 const CACHE = `${VERSION}-${FILES_HASH}`;
 
 const SHELL = [

@@ -24,7 +24,7 @@
 
 // Which release this file is from, sw.js's VERSION: js/app.js won't run
 // beside a file from another one (see the check at its top).
-const WORKOUTS_RELEASE = 'fit-v13';
+const WORKOUTS_RELEASE = 'fit-v14';
 
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',

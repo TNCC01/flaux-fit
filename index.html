@@ -415,9 +415,10 @@
      worker from before that) can pair this page with another release's
      scripts, and the two don't run together. So if the scripts fail while
      the page loads, a release waiting in the service worker (or the first
-     one, still installing, or one it looks for then) takes over at once,
-     since there's nothing on a broken page to lose, and the page loads
-     again from it. js/app.js does the same for an older page. -->
+     one, still installing, or one it looks for then, and again for a while
+     if it can't install) takes over at once, since there's nothing on a
+     broken page to lose, and the page loads again from it. js/app.js does
+     the same for an older page. -->
 <script>
   window.addEventListener('error', function retry() {
     window.removeEventListener('error', retry);
@@ -426,7 +427,7 @@
     sw.addEventListener('controllerchange', () => location.reload());
     // once the page has stopped loading, so the release it came from isn't
     // still handing it files
-    window.addEventListener('load', () => sw.register('sw.js').then(async reg => {
+    window.addEventListener('load', () => sw.register('sw.js').then(async function look(reg, tries = 12) {
       // the browser may not have looked for the new release yet: look now
       if (!reg.waiting && !reg.installing) await reg.update().catch(() => {});
       const next = reg.waiting || reg.installing;
@@ -436,7 +437,11 @@
         if (!sessionStorage.getItem('fit-retried')) { sessionStorage.setItem('fit-retried', '1'); location.reload(); }
         return;
       }
-      const take = () => { if (next.state === 'installed') next.postMessage('update'); };
+      const take = () => {
+        if (next.state === 'installed') next.postMessage('update');
+        // it couldn't install (a file that didn't come): look again, every ten seconds for two minutes
+        else if (next.state === 'redundant' && tries > 0) setTimeout(() => look(reg, tries - 1), 10000);
+      };
       take();
       next.addEventListener('statechange', take);
     }).catch(() => { /* no offline copy to fall back on */ }));

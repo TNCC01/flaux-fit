@@ -16,10 +16,6 @@
   consecutive sessions don't rhyme.
 */
 
-// Which release this file is from, sw.js's VERSION: js/app.js won't run
-// beside a file from another one (see the check at its top).
-const GENERATOR_RELEASE = 'fit-v13';
-
 // Deterministic RNG so a given seed always rebuilds the same workout:
 // that's what lets "regenerate" be a real choice rather than a lottery,
 // and lets a saved favourite come back identical.
