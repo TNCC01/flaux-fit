@@ -919,6 +919,9 @@ body.show-alternatives .alternative.has-alt { display: block; }
   padding: 0.6rem 0 calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
   background: linear-gradient(to top, var(--bg) 85%, rgba(5,10,10,0));
 }
+/* Asked after time away: Go back or I kept going, with no Resume beside them */
+#workoutView.asking-away #btnStart { display: none; }
+#workoutView.asking-away .controls { grid-template-columns: 1fr 1fr; }
 /* Finished: Done and Start over, then Save and Share without the preview */
 #workoutView.finished .controls { grid-template-columns: 2fr 1fr; }
 #workoutView.finished #btnSkip, #workoutView.finished #btnReset,
@@ -1046,6 +1049,9 @@ body.show-alternatives .alternative.has-alt { display: block; }
   .ex-anim, .exercise-grid:not(.solo) .ex-anim {
     flex: 1 1 0; aspect-ratio: auto; max-height: none; min-height: 4.5rem; margin-top: 0.5rem;
   }
+  /* the question after time away is taller than the top bar it covers,
+     so an EMOM's hint makes way for it */
+  #workoutView.asking-away .round-hint { display: none; }
 }
 /* a small phone on its side (375 tall): a little closer again, so an
    EMOM's two-line hint still leaves the buttons under the timer */
@@ -1114,7 +1120,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
 
 /* ============== First visit: gear ============== */
 #gearView { gap: 1rem; padding-top: 1.25rem; }
-#gearView .gear-restore { align-self: flex-start; padding-top: 0; }
+/* under the welcome, in line with it */
+#gearView .gear-restore { align-self: flex-start; padding: 0.3rem 0.25rem; margin-top: -0.7rem; }
 #gearView .menu-sub { margin: 0 0 0.6rem; }
 .gear-ask { display: flex; flex-direction: column; gap: 0.6rem; }
 .gear-ask .picker-label { margin-bottom: 0; }

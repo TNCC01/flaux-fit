@@ -226,7 +226,9 @@ rather than hardcoded.
   history and a session saved part-way, so an update to the library or
   the generator can't quietly swap them; the gear still adapts on the
   cards, as for a classic. A favourite saved before this is built from
-  its seed the next time it's opened and keeps that from then on; one
+  its seed the next time it's opened at the first place (Home, where
+  favourites were saved) and keeps that from then on; opened at another
+  place first, it adapts to the gear there, as it always did; one
   naming a move that has since left the library is built from its seed
   and says so. Share links are still the seed and the request
 - Your data, at the bottom of Saved & ready-made. **Save a backup** saves
@@ -258,20 +260,26 @@ rather than hardcoded.
   on a program day where that leaves it ("Day 9 of 42 done. Next: Pop-ups
   & legs"). Then How was that? on each person's card (see Levels), kept
   with the session in history. Skipping to the end without ever pressing
-  Start doesn't count as a session done, and the screen says so
+  Start doesn't count as a session done, and the screen says so; skipped
+  through inside a minute, it says the session ended early and doesn't
+  ask how it was. A block counts as skipped when a round of it (or most
+  of its time) is left out, not when the skip comes in its last rest or
+  last few seconds. Shuffle builds at each person's level today, whatever
+  the favourite or link it came from was built at
 - Never loses your place. A session under way is saved as it goes (every
   five seconds, and on a pause, a skip, a score and whenever the app goes
   out of view), under its own key rather than with the settings. After a
   reload, or a phone that closed the tab, the Today card offers "Resume
   Paddle power, block 2, 8:20 in" with Resume and Discard for twelve
   hours: Resume builds the same workout again, for the same people, and
-  picks up at the start of that block, paused, with its scores, lap picks
-  and program day. It isn't offered when FIT opens on a shared link, and
+  picks up at the start of the round, move or stretch it was in, paused,
+  and says so ("Picked up at 9:30, the start of round 5 of block 2"),
+  with its scores, lap picks and program day. It isn't offered when FIT opens on a shared link, and
   it's cleared by finishing, Reset, Start over and two taps on Menu. Back
   after more than 20 seconds away with the clock running, FIT stops where
   the clock has got to and asks "You were away 3:12. Go back to 8:20?":
-  Go back puts it where you left, paused; I kept going carries on. A
-  shorter spell just carries on
+  Go back puts it where you left, paused; I kept going carries on (Resume
+  stays hidden until one is tapped). A shorter spell just carries on
 - A phone on its side gets its own layout: the timer and its buttons on
   the left, the two people side by side on the right, all on one screen
 - Share a workout as a link. The seed and the request that built it are
@@ -349,8 +357,14 @@ A page whose scripts fail while it loads (only possible without the
 worker: the very first visit, or a phone still on the network-first
 worker from before this) has the waiting release, or the first one still
 installing, take over at once, since a broken page has nothing to lose,
-and loads again from it. A genuine bug fails once and stays put rather
-than reloading forever.
+and loads again from it. With nothing new waiting yet, it asks the
+browser to look for one first, and with none at all it loads again once.
+A genuine bug fails once and stays put rather than reloading forever.
+Nothing is saved until the stored settings have been read, so a page
+that broke on its way up can never write a new visitor's defaults over
+everything kept. When `PERSISTED` gains a key, bump `PREFS_SCHEMA`, so a
+save from a tab still on the last release (which leaves the key out) is
+merged rather than taken whole.
 
 ## 3D movements
 
@@ -421,8 +435,9 @@ person's EMOM reps above the other's, kept through a favourite, a swap of
 spots and a link), Surf Fit's timed days building week by week, the app
 opening with the network switched off and at once with a six-second
 network, a new release waiting for its tap and never running beside the
-old one, and a page whose scripts fail handing over to the release
-waiting.
+old one, a page whose scripts fail handing over to the release
+waiting, and the first open of a release through the last one's worker
+on a slow page losing nothing.
 It fails on any console error.
 
 Both run on every pull request through GitHub Actions, along with the 3D

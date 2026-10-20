@@ -106,6 +106,9 @@
       <p class="menu-sub">Welcome to FIT. It builds a timed workout for the time and gear you've got, for one or two people.</p>
       <h1 class="menu-title">First up, two quick questions</h1>
     </div>
+    <!-- the home-screen app starts empty, so moving over starts here (YOUR DATA
+         in js/app.js), on the first screen of even a small phone -->
+    <button class="link-btn gear-restore" id="btnGearRestore">Used FIT before? Restore your data</button>
     <div class="build-note" id="gearNote"></div>
     <div class="gear-ask">
       <div class="picker-label">Who's training?</div>
@@ -119,8 +122,6 @@
     </div>
     <p class="picker-hint">You can change any of this later: tap Change on the home screen.</p>
     <p class="health-note" id="healthNote">Check with your doctor before starting if you have an injury or health condition, and stop if anything hurts.</p>
-    <!-- the home-screen app starts empty, so moving over starts here (YOUR DATA in js/app.js) -->
-    <button class="link-btn gear-restore" id="btnGearRestore">Used FIT in Safari or on another device? Restore your data</button>
     <button class="build-btn" id="btnGearDone">Just bodyweight for now</button>
   </div>
 
@@ -412,9 +413,9 @@
      worker from before that) can pair this page with another release's
      scripts, and the two don't run together. So if the scripts fail while
      the page loads, a release waiting in the service worker (or the first
-     one, still installing) takes over at once, since there's nothing on a
-     broken page to lose, and the page loads again from it. js/app.js does
-     the same for an older page. -->
+     one, still installing, or one it looks for then) takes over at once,
+     since there's nothing on a broken page to lose, and the page loads
+     again from it. js/app.js does the same for an older page. -->
 <script>
   window.addEventListener('error', function retry() {
     window.removeEventListener('error', retry);
@@ -423,9 +424,16 @@
     sw.addEventListener('controllerchange', () => location.reload());
     // once the page has stopped loading, so the release it came from isn't
     // still handing it files
-    window.addEventListener('load', () => sw.register('sw.js').then(reg => {
+    window.addEventListener('load', () => sw.register('sw.js').then(async reg => {
+      // the browser may not have looked for the new release yet: look now
+      if (!reg.waiting && !reg.installing) await reg.update().catch(() => {});
       const next = reg.waiting || reg.installing;
-      if (!next) return;
+      if (!next) {
+        // none: load again, once, which fetches the page afresh past a
+        // worker from before this one that handed over its old copy
+        if (!sessionStorage.getItem('fit-retried')) { sessionStorage.setItem('fit-retried', '1'); location.reload(); }
+        return;
+      }
       const take = () => { if (next.state === 'installed') next.postMessage('update'); };
       take();
       next.addEventListener('statechange', take);

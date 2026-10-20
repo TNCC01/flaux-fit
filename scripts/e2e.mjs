@@ -26,12 +26,15 @@ const TYPES = {
   '.mjs': 'application/javascript', '.svg': 'image/svg+xml',
   '.json': 'application/json', '.png': 'image/png'
 };
-// It can be slowed down (one bar of signal), made to serve the next
-// release of the app, or hand out a script from another release once (see
-// the update steps at the end).
-const serve = { delayMs: 0, next: null, breakOnce: null };
+// It can be slowed down (one bar of signal, or just the page), made to
+// serve the next release of the app or the one before, or hand out a
+// script from another release once (see the update steps at the end).
+const serve = { delayMs: 0, pageDelayMs: 0, next: null, previous: false, breakOnce: null };
+const isPage = (url) => url === '/' || url === '/index.html';
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
+  // an empty page on the same origin, to set up a device before the app is on it
+  if (url === '/e2e-blank.html') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>blank</title>'); return; }
   const file = path.normalize(path.join(ROOT, url === '/' ? 'index.html' : url));
   if (!file.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, data) => {
@@ -39,8 +42,9 @@ const server = http.createServer((req, res) => {
       if (err) { res.writeHead(404); res.end('not found'); return; }
       res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
       if (serve.breakOnce === url) { serve.breakOnce = null; res.end(`throw new Error("${url} from another release")`); return; }
+      if (serve.previous) { res.end(previousRelease(url, data)); return; }
       res.end(serve.next ? nextRelease(url, data) : data);
-    }, serve.delayMs);
+    }, serve.delayMs + (isPage(url) ? serve.pageDelayMs : 0));
   });
 });
 // The same files as a release called serve.next: sw.js with that VERSION,
@@ -53,6 +57,47 @@ function nextRelease(url, data) {
   if (url === '/js/app.js') return `${data}\nwindow.FIT_RELEASE = '${tag}';\n`;
   return data;
 }
+// The release before this one, as far as an upgrade sees it: its service
+// worker fetched every file from the network first and fell back to its
+// copy after four seconds, and its page had no Restore link (so this
+// release's app.js fails on it) and only waited for a new worker to take
+// over if its scripts failed.
+function previousRelease(url, data) {
+  if (url === '/sw.js') return PREVIOUS_SW;
+  if (!isPage(url)) return data;
+  return String(data).replace(/<button[^>]*id="btnGearRestore"[^>]*>[^<]*<\/button>/, '')
+    .replace(/<script>\s*window\.addEventListener\('error'[\s\S]*?<\/script>/, `<script>
+  window.addEventListener('error', function retry() {
+    window.removeEventListener('error', retry);
+    if (document.readyState !== 'complete' && navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+    }
+  });
+</script>`);
+}
+const PREVIOUS_SW = `
+const VERSION = 'fit-previous';
+const SHELL = ['/', '/index.html', '/css/app.css', '/js/exercises.js', '/js/workouts.js', '/js/generator.js', '/js/app.js'];
+self.addEventListener('install', (e) => e.waitUntil(caches.open(VERSION)
+  .then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => {})))).then(() => self.skipWaiting())));
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys()
+  .then(ns => Promise.all(ns.filter(n => n !== VERSION).map(n => caches.delete(n)))).then(() => self.clients.claim())));
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  e.respondWith((async () => {
+    const cache = await caches.open(VERSION);
+    const path = new URL(req.url).pathname;
+    const key = req.mode === 'navigate' ? (path === '/' || path === '/index.html' ? '/' : path) : req;
+    const net = fetch(req);
+    e.waitUntil(net.then(r => (r.ok ? cache.put(key, r.clone()) : null)).catch(() => {}));
+    try {
+      return await new Promise((ok, no) => { setTimeout(() => no(new Error('timeout')), 4000); net.then(ok, no); });
+    } catch (err) {
+      return (await cache.match(key, { ignoreSearch: true })) || net;
+    }
+  })());
+});`;
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const URL = `http://127.0.0.1:${server.address().port}/`;
 
@@ -146,6 +191,12 @@ try {
     f.on('console', m => { if (m.type() === 'error') errors.push('newcomer: ' + m.text()); });
     await f.goto(URL);
     assert((await f.$eval('#gearView', e => e.textContent)).includes('tap Change on the home screen'), 'it says where to change it later');
+    // the home-screen app always opens here, empty: Restore is on the first screen of the smallest iPhone
+    await f.setViewportSize({ width: 375, height: 667 });
+    const restore = await f.$eval('#btnGearRestore', e => { const b = e.getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight && e.textContent; });
+    assert(restore === 'Used FIT before? Restore your data', 'Restore is on the first screen at 375 x 667: ' + restore);
+    assert(await f.$eval('#healthNote', e => e.nextElementSibling.id === 'btnGearDone'), 'and the line on health sits just above the button');
+    await f.setViewportSize({ width: 390, height: 844 });
     await f.click('#onboardGear .chip:has-text("Kettlebells")');
     assert((await f.$eval('#onboardWeights', e => e.textContent)).includes('Tick at least one'), 'ticking kettlebells asks which bells');
     // Done with no bell picked would mean no kettlebell work at all, so it asks
@@ -378,7 +429,19 @@ try {
   assert(await st(() => state.running) && (await p.$eval('#btnStart', e => e.textContent)) === 'Pause', 'a tap on the timer resumes');
   await p.click('#timerCard');
   assert(await st(() => !state.running) && (await p.$eval('#btnStart', e => e.textContent)) === 'Resume', 'and another pauses');
-  ok('first workout built, saved, started and paused, from the button and from a tap on the timer');
+  // what the finish screen counts as skipped: not a block skipped from its
+  // last rest or the last seconds of its last round, but one with a round to come
+  const skips = await st(() => {
+    const last = (kind, b) => state.sequence.reduce((k, x, i) => (x.kind === kind && x.blockIdx === b ? i : k), -1);
+    const out = {};
+    placeAt(startOf(last('rest', 0) + 1) - 3); skipBlock(); out.lastRest = JSON.stringify(state.skipped);
+    placeAt(startOf(last('work', 1) + 1) - 3); skipBlock(); out.lastSeconds = JSON.stringify(state.skipped);
+    placeAt(startOf(state.sequence.findIndex(x => x.kind === 'work' && x.blockIdx === 0)) + 5); skipBlock(); out.early = JSON.stringify(state.skipped);
+    return out;
+  });
+  assert(skips.lastRest === '[]' && skips.lastSeconds === '[]' && skips.early === '[0]',
+         'a skip from a block\'s last rest or its last few seconds is not a block skipped; one with rounds to come is: ' + JSON.stringify(skips));
+  ok('first workout built, saved, started and paused, from the button and from a tap on the timer; a block skipped only counts with rounds to come');
 
   step = 'Menu mid-workout takes two taps';
   await p.click('#btnBack');
@@ -513,9 +576,29 @@ try {
   assert(await st(() => effectiveEquip().kb15 && state.gearSetId === 'home'), 'back home, the bells are back');
   await p.click(`.gear-set:has-text("Mate's place")`);
   assert(await st(() => !effectiveEquip().kb15), "and the mate's place remembered");
+  // a favourite from before they kept their moves, opened first at the
+  // mate's place, adapts there and still opens at Home as it was built
+  await p.click('.gear-set:has-text("Home")');
+  const homeIds = await st((seed) => {
+    const fav = state.saved.find(s => s.seed === seed);
+    state.saved.push({ name: 'Saved at Home', blurb: '', focus: fav.focus, seed: 777002, request: fav.request, savedOn: '1/1/2026' });
+    savePrefs();
+    return buildWorkout(fav.request, 777002, { recent: fav.request.recent || [] }).exerciseIds.join(',');
+  }, seedA);
+  const oldFav = '.workout-card:has(.card-name:text-is("☆ Saved at Home"))';
+  await p.click(`.gear-set:has-text("Mate's place")`);
+  await p.click('#btnSetupBack'); await p.click('#pathLibrary'); await p.click(oldFav);
+  const atMates = await st(() => ({ kb: state.workout.exerciseIds.some(id => /^kb/.test(id)), frozen: !!state.saved.find(s => s.seed === 777002).frozen }));
+  assert(!atMates.kb && !atMates.frozen, "at the mate's place it adapts to the gear there, and isn't kept that way: " + JSON.stringify(atMates));
+  await p.click('#btnBack'); await p.click('#pathBuild'); await p.click('.gear-set:has-text("Home")');
+  await p.click('#btnSetupBack'); await p.click('#pathLibrary'); await p.click(oldFav);
+  const atHome = await st(() => ({ ids: state.workout.exerciseIds.join(','), frozen: !!state.saved.find(s => s.seed === 777002).frozen }));
+  assert(atHome.ids === homeIds && atHome.frozen, 'back at Home it opens as it was built there, and keeps that: ' + JSON.stringify(atHome));
+  await st(() => { state.saved = state.saved.filter(s => s.seed !== 777002); savePrefs(); });
+  await p.click('#btnBack'); await p.click('#pathBuild'); await p.click(`.gear-set:has-text("Mate's place")`);
   await p.click('.gear-sets .card-remove');
   assert(await st(() => state.gearSets.length === 1 && effectiveEquip().kb15), 'removing it falls back to Home');
-  ok("gear sets: a mate's place without kettlebells, Home with them, one tap apart");
+  ok("gear sets: a mate's place without kettlebells, Home with them, one tap apart; an old favourite opened at the mate's place still opens at Home as built");
 
   step = 'the weights you own fill the heavier and lighter bell';
   const kbChip = (kg) => `.weight-row:has-text("Kettlebells you have") .chip:text-is("${kg}kg")`;
@@ -602,6 +685,14 @@ try {
     assert(snap && snap.idx === at.i && Math.abs(snap.elapsed - was.elapsed) < 1, 'leaving the page saves where it was: ' + JSON.stringify(snap && [snap.idx, snap.elapsed]));
     await r.reload();
     assert(await view() === 'welcomeView', 'a reload lands on home');
+    // picked up four hours on: Start still goes on with its history entry
+    await ev((seed) => {
+      const s = JSON.parse(localStorage.getItem('fit-run-1'));
+      s.savedAt -= 4 * 3600e3;
+      localStorage.setItem('fit-run-1', JSON.stringify(s));
+      state.history.find(h => h.key === `gen:${seed}`).at -= 4 * 3600e3;
+      savePrefs(); renderToday();
+    }, was.seed);
     const line = await r.$eval('#todayCard .today-resume .resume-text', e => e.textContent);
     const mmss = `${Math.floor(snap.elapsed / 60)}:${String(Math.floor(snap.elapsed % 60)).padStart(2, '0')}`;
     assert(line === `Resume ${was.name}, block 2, ${mmss} in`, 'the Today card offers it by name, block and time: ' + line);
@@ -617,7 +708,21 @@ try {
     assert(back.idx === at.i && back.elapsed === at.start, `at the start of the block it was in (${back.elapsed}s, block began ${at.start}s)`);
     assert(back.ids === was.ids && back.seed === was.seed, 'the same exercises');
     assert(back.scores === was.scores && back.pick === was.pick && back.a === '2' && back.b === '1', 'with the scores and the lap pick: ' + back.scores);
-    assert(back.badge === 'Wayne & Dave' && back.note.includes('block 2'), 'for the same two people, saying where it picked up: ' + back.note);
+    const startAt = `${Math.floor(at.start / 60)}:${String(Math.floor(at.start % 60)).padStart(2, '0')}`;
+    assert(back.badge === 'Wayne & Dave' && back.note === `Picked up at ${startAt}, the start of block 2. Tap Resume when you're ready.`,
+           'for the same two people, saying where it picked up: ' + back.note);
+    // where a phase starts, as the note says it: the round, move or stretch, or the block at its first
+    const places = await ev(() => [{ kind: 'work', blockIdx: 1, round: 5 }, { kind: 'work', blockIdx: 1, round: 1 }, { kind: 'work', amrap: true, blockIdx: 2 },
+      { kind: 'rest', blockIdx: 0, round: 8 }, { kind: 'warmup', warmIdx: 0 }, { kind: 'warmup', warmIdx: 2 }, { kind: 'cooldown', coolIdx: 2 },
+      { kind: 'stretch', stretchIdx: 2 }, { kind: 'blockrest', blockIdx: 0 }].map(phaseStart).join('|'));
+    assert(places === 'round 5 of block 2|block 2|block 3|the rest after round 8 of block 1|the warm-up|warm-up move 3|cool-down stretch 3|stretch 3|the rest before block 2',
+           'the note names the round, move or stretch it went back to: ' + places);
+    await r.click('#btnStart');
+    const going = await ev((seed) => ({ note: document.getElementById('workoutNote').textContent, running: state.running,
+      rows: state.history.filter(h => h.key === `gen:${seed}`).length, fresh: Date.now() - state.history.find(h => h.key === `gen:${seed}`).at < 60000 }), was.seed);
+    assert(going.running && going.note === '', 'once it is going again, the note asking for Resume goes: ' + JSON.stringify(going));
+    assert(going.rows === 1 && going.fresh, 'and it carries on as the same session in history, four hours on: ' + JSON.stringify(going));
+    await r.click('#btnStart');                                 // pause
     await r.click('#btnBack');
     assert(await view() === 'workoutView', 'a picked-up session takes two taps on Menu too');
     await ev(() => disarmBack());
@@ -686,6 +791,15 @@ try {
     step = 'a program day picks up as that day, and finishing it ticks the day off';
     await leaveStarted(r);
     await ev(() => { state.programs['surf-fit'] = { startedAt: Date.now(), done: [] }; savePrefs(); renderToday(); });
+    // left on purpose, it goes back to the program and is not offered again,
+    // even after the page goes (the phone locks, or the app is swiped away)
+    await r.click('#todayCard .program-go'); await r.click('#btnStart');
+    await ev(() => { state.elapsedAtResume = 3; state.runStartWall = Date.now(); tickClock(); });
+    await leaveStarted(r);
+    assert(await view() === 'programView' && !(await kept()), 'two taps on Menu go back to the program, and clear it');
+    await ev(() => window.dispatchEvent(new Event('pagehide')));
+    await r.reload();
+    assert(!(await kept()) && !(await offered()), 'and it stays cleared when the page goes: ' + JSON.stringify(await kept()));
     await r.click('#todayCard .program-go'); await r.click('#btnStart');
     await r.reload();
     const dayLine = await r.$eval('#todayCard .today-resume .resume-text', e => e.textContent);
@@ -725,6 +839,8 @@ try {
     await away(30000);
     const asked = await clock();
     assert(!asked.running && asked.bar && asked.button === 'Resume', 'away 30s, it stops and asks: ' + JSON.stringify(asked));
+    const answers = await ev(() => ['btnAwayBack', 'btnAwayKept', 'btnStart', 'btnSkip', 'btnReset'].filter(id => document.getElementById(id).offsetParent !== null).join());
+    assert(answers === 'btnAwayBack,btnAwayKept,btnSkip,btnReset', 'Go back and I kept going are the answer, with no Resume beside them: ' + answers);
     assert(asked.elapsed - short.elapsed >= 29.9 && asked.elapsed - short.elapsed < 31, `stopped where the clock had got to (+${(asked.elapsed - short.elapsed).toFixed(1)}s)`);
     const backAt = await ev(() => awayBack);
     assert(Math.abs(backAt - short.elapsed) < 0.5, `it remembers where you left (${backAt.toFixed(1)}s)`);
@@ -735,7 +851,9 @@ try {
     const gone = await clock();
     assert(!gone.running && !gone.bar && gone.elapsed === backAt, `Go back: paused where you left (${gone.elapsed.toFixed(1)}s)`);
     assert((await r.$eval('#workoutNote', e => e.textContent)) === `Back to ${leftAt}. Tap Resume when you're ready.`, 'and says so');
+    assert(await r.$eval('#btnStart', e => e.offsetParent !== null && e.textContent === 'Resume'), 'with Resume back to tap');
     await r.click('#btnStart');
+    assert((await r.$eval('#workoutNote', e => e.textContent)) === '', 'and once it is going again, the note goes');
     const e2 = (await clock()).elapsed;
     await away(30000);
     assert((await clock()).bar, 'away 30s again, it asks again');
@@ -778,10 +896,29 @@ try {
       return !(b.height > 0 && b.top >= 0 && b.bottom <= innerHeight && b.right <= innerWidth);
     }));
     assert(!amrapOff.length, 'AMRAP on its side, off screen: ' + amrapOff);
+    // an EMOM with the question after time away up: the buttons stay clear of the timer
+    await leaveStarted(r);
+    await ev(() => { state.intervalStyle = 'emom'; savePrefs(); renderToday(); });
+    await r.click('#todayCard .today-go'); await r.click('#btnStart');
+    await ev(() => { seekTo(state.sequence.findIndex(x => x.emom && x.blockIdx === 1)); render(); });
+    for (const size of [{ width: 844, height: 390 }, { width: 667, height: 375 }]) {
+      await r.setViewportSize(size);
+      await away(30000);
+      await ev(() => new Promise(requestAnimationFrame));
+      const clear = await ev(() => {
+        const b = (id) => document.getElementById(id).getBoundingClientRect();
+        const ctrl = document.querySelector('#workoutView .controls').getBoundingClientRect();
+        return { asked: !document.getElementById('awayBar').hidden, timer: Math.round(ctrl.top - b('timerCard').bottom), total: Math.round(ctrl.top - b('totalTime').bottom),
+                 bar: b('awayBar').bottom <= innerHeight };
+      });
+      assert(clear.asked && clear.bar && clear.timer >= 0 && clear.total >= 0,
+             `${size.width} x ${size.height}: with the question up, the buttons clear the timer card and its Total line: ` + JSON.stringify(clear));
+      await r.click('#btnAwayKept');
+    }
     await r.setViewportSize({ width: 1180, height: 820 });
     assert(await ev(() => getComputedStyle(document.getElementById('workoutView')).display) === 'flex', 'an iPad keeps its own layout');
     await run.close();
-    ok('on its side (844 x 390 and 667 x 375): the timer on the left, both people side by side on the right and Pause, Skip and Reset all on one screen; an AMRAP\'s +1 round buttons too');
+    ok('on its side (844 x 390 and 667 x 375): the timer on the left, both people side by side on the right and Pause, Skip and Reset all on one screen; an AMRAP\'s +1 round buttons too; an EMOM\'s buttons clear the timer with the question after time away up');
   }
 
   step = 'iPhone sound: beeps on silent, back after a call; the wake lock outlasts a pause';
@@ -1300,15 +1437,19 @@ try {
   await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
   await p.click('#btnSkip');
   assert(await st(() => { saveRun(); return JSON.stringify(readRun().skipped); }) === '[0]', 'a session saved part-way keeps what was skipped');
+  await st(() => noteUntilGoing("Back to 7:30. Tap Pause when you're ready."));      // as if it had been, a note from before the end
   await runOut();
   const fin1 = await st(() => ({ lines: [...document.querySelectorAll('#roundDots .finish-line')].map(e => e.textContent),
     total: document.getElementById('totalTime').textContent, n: state.workout.blocks.length, whole: fmt(state.totalDuration),
-    done: fmt(Math.round(timeDone())), near: Math.abs(timeDone() - (state.totalDuration - 240)) < 3, min: Math.round((state.totalDuration - 240) / 60),
+    done: fmt(Math.round(timeDone())), near: Math.abs(timeDone() - (state.totalDuration - 240)) < 3, min: Math.floor(Math.round(timeDone()) / 60),
+    note: document.getElementById('workoutNote').textContent,
     asks: ['finishA', 'finishB'].map(id => document.querySelector(`#${id} .feel-ask`) && document.querySelector(`#${id} .feel-ask`).textContent),
     chips: [...document.querySelectorAll('#finishA .feel-chip')].map(c => c.textContent).join('|') }));
   assert(fin1.lines.length === 1 && fin1.lines[0] === `${fin1.min} min done · ${fin1.n - 1} of ${fin1.n} blocks, 1 skipped`,
          'the summary says the minutes done and the block skipped: ' + JSON.stringify(fin1.lines));
   assert(fin1.total === `Total ${fin1.done} / ${fin1.whole}` && fin1.near, 'and the clock the time it ran, four minutes short: ' + fin1.total);
+  assert(fin1.done.split(':')[0] === String(fin1.min), `the minutes done are the clock's whole minutes: ${fin1.min} min beside ${fin1.done}`);
+  assert(fin1.note === '', 'a note from before the end is gone from the finish screen: ' + fin1.note);
   assert(fin1.asks.every(a => a === 'How was that?') && fin1.chips === 'Too easy|About right|Cooked', 'each person is asked how it was, three answers: ' + JSON.stringify(fin1));
   await p.click('#finishA .feel-chip[data-feel="easy"]');
   await p.click('#finishB .feel-chip[data-feel="right"]');
@@ -1387,6 +1528,17 @@ try {
   await p.click('#btnBack'); await p.click('#pathLibrary');
   await p.click('.workout-card:has-text("☆")');
   assert((await reps()).seq === lv.seq, 'the favourite replays the same moves and the same reps for each person');
+  // Wayne has moved up since it was saved: Shuffle builds at today's levels, not the favourite's
+  const shuffled = await st(() => {
+    state.levels.wayne = { k: 1.3, easy: 0 };
+    document.getElementById('btnShuffle').click();
+    const got = { seed: state.workout.seed, scales: JSON.stringify(state.workout.request.repScales), a: personScale(state.workout, 'a'),
+                  style: state.workout.request.intervalId };
+    state.levels.wayne = { k: 1.1, easy: 0 };
+    return got;
+  });
+  assert(shuffled.seed !== lv.seed && shuffled.scales === '{"wayne":1.3,"dave":0.9}' && shuffled.a === 1.3 && shuffled.style === 'emom',
+         "Shuffle after a favourite builds at each person's level now, the rest of the request as it was: " + JSON.stringify(shuffled));
   await p.click('#btnBack');
   await p.click('#pathBuild'); await p.fill('#nameA', 'Dave'); await p.fill('#nameB', 'Sam'); await p.click('#btnSetupBack');
   await p.click('#pathLibrary'); await p.click('.workout-card:has-text("☆")');
@@ -1612,8 +1764,10 @@ try {
     want: `Total ${fmt(Math.round(timeDone()))} / ${fmt(state.totalDuration)}`, n: state.workout.blocks.length,
     lines: [...document.querySelectorAll('#roundDots .finish-line')].map(e => e.textContent) }));
   assert(summary.total === summary.want && summary.total.startsWith('Total 0:0'), 'the finish clock says how much of it ran, not the whole: ' + JSON.stringify(summary));
-  assert(summary.top === 'Workout complete. Nice work.' && summary.lines[0] === `Under a minute done · 0 of ${summary.n} blocks, ${summary.n} skipped`
-         && summary.lines[1] === 'Day 1 of 42 done. Next: Pop-ups & legs', 'and the summary says the minutes, the blocks skipped and the next day: ' + JSON.stringify(summary.lines));
+  assert(summary.top === 'Session ended early' && summary.lines[0] === `Under a minute done · 0 of ${summary.n} blocks, ${summary.n} skipped`
+         && summary.lines[1] === 'Day 1 of 42 done. Next: Pop-ups & legs', 'and the summary says it ended early, the minutes, the blocks skipped and the next day: ' + JSON.stringify(summary));
+  assert(await st(() => !document.querySelector('.feel-ask') && document.getElementById('workoutView').classList.contains('unstarted')),
+         "with next to nothing done, nobody is asked how it was, so a tap can't move their level");
   await p.click('#timerCard');
   assert(await st(() => !state.running && isFinished()), 'a tap on the finished timer does nothing');
   await p.click('#btnStart');
@@ -1901,7 +2055,7 @@ try {
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
   // (until this tab has written back: a read here can still see the copy from before the stale one lands)
-  await p.waitForFunction(() => { const x = JSON.parse(localStorage.getItem('fit-prefs-2')); return x.schema === 2 && 'beepOnSilent' in x; },
+  await p.waitForFunction(() => { const x = JSON.parse(localStorage.getItem('fit-prefs-2')); return x.schema === 3 && 'beepOnSilent' in x; },
                           null, { timeout: 5000 }).catch(() => {});
   const merged = await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
@@ -1914,6 +2068,17 @@ try {
   await tab2.evaluate(() => { state.levels.tabtwo = { k: 1.2, easy: 0 }; savePrefs(); });
   await p.waitForFunction(() => state.levels.tabtwo && state.levels.tabtwo.k === 1.2, null, { timeout: 5000 });
   await st(() => { delete state.levels.tabtwo; savePrefs(); });
+  // a tab still on the last release (schema 2, no levels) saving leaves this tab's levels as they are
+  await st(() => { state.levels.keepme = { k: 0.8, easy: 0 }; savePrefs(); });
+  await tab2.evaluate(() => {
+    const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
+    prefs.schema = 2; delete prefs.levels;
+    localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+  });
+  await p.waitForFunction(() => { const x = JSON.parse(localStorage.getItem('fit-prefs-2')); return x.schema === 3; }, null, { timeout: 5000 });
+  const lv2 = await st(() => ({ mem: JSON.stringify(state.levels.keepme), stored: JSON.stringify((JSON.parse(localStorage.getItem('fit-prefs-2')).levels || {}).keepme) }));
+  assert(lv2.mem === '{"k":0.8,"easy":0}' && lv2.stored === lv2.mem, "a save from a tab on the last release leaves the levels here, and they're written back: " + JSON.stringify(lv2));
+  await st(() => { delete state.levels.keepme; savePrefs(); });
   await tab2.close();
   ok('two tabs: each takes in the other\'s history as it saves, so neither writes over the other; a stale save from a tab on the older version is merged, not taken');
 
@@ -2233,6 +2398,58 @@ try {
            'and works, with nothing more going wrong: ' + broken.slice(failedLoads).join(' | '));
     await fresh.close();
     ok('a first visit whose scripts fail loads again, once, from the offline copy as it takes over');
+  }
+
+  step = 'the first open of this release on one bar, through the last one, loses nothing and loads again whole';
+  {
+    const up = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const u = await up.newPage();
+    const seen = [];
+    u.on('pageerror', e => seen.push(String(e)));
+    u.on('console', m => { if (m.type() === 'error') seen.push(m.text()); });
+    // a phone on the last release, with Wayne's data as that release kept it
+    serve.previous = true;
+    await u.goto(URL + 'e2e-blank.html');
+    await u.evaluate(() => navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready));
+    await u.waitForFunction(async () => !!(await (await caches.open('fit-previous')).match('/')) && !!navigator.serviceWorker.controller,
+                            null, { timeout: 30000 });
+    const kept = await u.evaluate(() => {
+      const day = 86400e3, now = Date.now();
+      const prefs = { schema: 2, gearAsked: true, people: 2, nameA: 'Wayne', nameB: 'Dave', minutes: 25,
+        gearSets: [{ id: 'home', name: 'Home', equipment: { kettlebells: true }, weights: { kb: [12, 16], db: [], bar: 10 } },
+                   { id: 'set-dave', name: "Dave's place", equipment: { kettlebells: false }, weights: { kb: [], db: [], bar: 10 } }],
+        gearSetId: 'home',
+        programs: { 'surf-fit': { startedAt: now - 12 * day, done: [...Array(11)].map((_, n) => ({ n, at: now - (12 - n) * day })) } },
+        saved: [{ name: 'Full Body · 20 min', blurb: '', focus: 'whole-body', seed: 4711, savedOn: '1/9/2026',
+                  request: { minutes: 20, people: 1, intervalId: 'short', regions: ['push', 'pull', 'core', 'legs', 'cardio'], blockedTags: [] } }],
+        history: [...Array(31)].map((_, i) => ({ key: `id:quick-spark-${i}`, name: 'Quick Spark', at: now - (i + 1) * day, people: 1,
+                                                 intervalId: 'short', generated: false, workoutId: 'quick-spark', minutes: 13, completed: true })) };
+      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+      return localStorage.getItem('fit-prefs-2');
+    });
+    // this release goes up, and the page takes eight seconds to come: the
+    // old worker hands over its old page at four, beside this release's scripts
+    serve.previous = false;
+    serve.pageDelayMs = 8000;
+    await u.goto(URL, { waitUntil: 'domcontentloaded' });
+    const broke = await u.evaluate(() => !document.getElementById('btnGearRestore'));
+    assert(broke && seen.some(e => e.includes('addEventListener')), 'the old page with the new scripts fails as it loads: ' + seen.join(' | '));
+    // a tap on the half-started page saves nothing over what's kept
+    await u.evaluate(() => document.getElementById('pathLibrary').click());
+    assert(await u.evaluate(() => localStorage.getItem('fit-prefs-2')) === kept, "a tap on the broken page leaves the data as it was");
+    // the new release installs, takes over and loads the page again, whole
+    await u.waitForFunction(() => !!document.getElementById('btnGearRestore') && typeof state === 'object' && state.view === 'welcome',
+                            null, { timeout: 40000 });
+    serve.pageDelayMs = 0;
+    const after = await u.evaluate(() => ({ history: state.history.length, saved: state.saved.length, places: state.gearSets.map(g => g.name).join(),
+      days: state.programs['surf-fit'].done.length, name: state.nameA, program: !!document.querySelector('#todayCard .program-go'),
+      stored: JSON.parse(localStorage.getItem('fit-prefs-2')).history.length, caches: null }));
+    after.caches = await u.evaluate(() => caches.keys().then(k => k.join()));
+    assert(after.history === 31 && after.saved === 1 && after.places === "Home,Dave's place" && after.days === 11 && after.name === 'Wayne'
+           && after.program && after.stored === 31, 'everything is still there, and home has his program day: ' + JSON.stringify(after));
+    assert(!after.caches.includes('fit-previous'), 'running from this release now: ' + after.caches);
+    await up.close();
+    ok("the first open of this release through the last one's worker on a slow page: nothing saved over the data, and it loads again whole");
   }
 
   if (errors.length) {
