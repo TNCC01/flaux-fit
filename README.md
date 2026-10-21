@@ -113,7 +113,10 @@ and the next time you open the same workout the counter shows last time's
 number to beat. With two people, B starts one exercise along, and anything
 in B's lap that needs a kettlebell, the barbell, the rope or the rings that
 A's lap also uses goes to its bodyweight version, because the two of you
-won't be in step.
+won't be in step. With more bells than the two in use, B takes a spare
+instead (`spareLoads` in `js/app.js`): with 8, 12, 16 and 24kg ticked and
+A on the 24 and the 16, B swings the 12 and presses the 8 rather than
+doing good mornings. Setup says so under the bells.
 
 **Surf fitness** is a goal you pick at the top of setup, alongside General
 fitness. It builds from exercises tagged with what they do for surfing
@@ -235,6 +238,26 @@ rather than hardcoded.
   movements" below
 - **What's coming up**: during a rest, a button shows the next block's
   exercises as small moving figures, each opening the full view
+- **Swap a move**: a move you can't or won't do can be swapped for one
+  like it. In a rest (the move coming up) or while paused, **Swap** on a
+  person's card does it just for them: their mate's moves stay as they
+  are, even in a block the two of you go round. Before Start, every move
+  in the preview is a button, and a swap there is for both of you. Either
+  way a sheet offers up to three moves of the same kind (for surfing, that
+  do the same job on the board) as moving figures, best first: the move's
+  own easier option, then nothing that jumps, the same pattern, the most
+  body areas in common, and not done lately (`swapCandidates` in
+  `js/generator.js`). They suit the gear and the leave-outs, are new to
+  the block, and never need gear the other person could be holding then,
+  with the two of you either way round. Opening it pauses the clock; a
+  swap changes the moves, never the timeline, so it carries on from where
+  it was, in that block and any later one with the same move. **Put it
+  back** undoes one, and **Leave it out from now on** puts the move on the
+  leave-out list for every build after. The workout keeps its swaps beside
+  what it was built as (`w.swaps`, SWAPS in `js/workouts.js`), by name
+  like the levels, so Save (and **Save with the swap** on a favourite
+  swapped since), Share, the session in history and Resume all have
+  them, for classics too; a tab on the release before opens them as built
 - **16 named workouts** and **3 stretch routines**
 - Equipment picker: kettlebells, a barbell, dumbbells, a skipping rope,
   rings, a pull-up bar, resistance bands, a medicine or slam ball and a box
@@ -384,11 +407,18 @@ rather than hardcoded.
   stays hidden until one is tapped). A shorter spell just carries on
 - A phone on its side gets its own layout: the timer and its buttons on
   the left, the two people side by side on the right, all on one screen
+- The badge by the workout's name ("1 person", "Wayne & Dave") is a button
+  until Start: a tap changes one person for two and back, the same moves
+  shared out again, for when a mate turns up (or doesn't). Once it's
+  going it stays as it is
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
   tablet, for the same number of people, with no account and no server
-  involved. The message says the minutes, style and people, and Share stays
-  on screen once the workout is going. A link passed on keeps the gear it
+  involved. The message says the minutes, style and people ("Wayne &
+  Dave" once they're named), and Share stays on screen once the workout
+  is going. With two people it carries their names, so the other phone
+  has the same person on each card ("Opened from a shared link, for Wayne
+  & Dave"), and any moves swapped. A link passed on keeps the gear it
   was first built with, so the third person gets the same session too.
   It carries each named person's level, so on the other device Wayne's
   reps reach whoever is called Wayne there and nobody else, and someone
@@ -535,7 +565,11 @@ shape or names a move that's gone is refused. Every rung of a program's
 work/rest ladder runs its block in 240 seconds and reaches the build;
 the level rules (two Too easy up, one Cooked down, 0.7 to 1.3) hold, and
 the same seed with levels picks the same moves in every style with only
-the rep targets different. It also checks that every
+the rep targets different. A swap is checked for every move of a sweep of
+builds and every classic, for each person and both: what's offered suits
+the gear and the leave-outs, is new to the block, and never puts two
+people on one item at once, with them either way round, and swapping it
+in changes that person's moves and nothing else. It also checks that every
 file the pages load is precached and that `FILES_HASH` in `sw.js` is
 current (see Offline and updates).
 
@@ -550,7 +584,10 @@ keeping their moves through a library change, backing up, copying and
 restoring your data on a second device (and putting it back), the finish
 screen's summary and How was that? (two Too easy taps lifting one
 person's EMOM reps above the other's, kept through a favourite, a swap of
-spots and a link), Surf Fit's timed days building week by week, the app
+spots and a link), swapping a move for both before Start and for one
+person in a rest (kept by Save, a link with the names, Resume, history
+and a tab on the last release), the people badge before and after Start,
+a mate on the spare bells, Surf Fit's timed days building week by week, the app
 opening with the network switched off and at once with a six-second
 network, a new release waiting for its tap and never running beside the
 old one, a page whose scripts fail handing over to the release

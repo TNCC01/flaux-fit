@@ -24,7 +24,7 @@
 
 // Which release this file is from, sw.js's VERSION: js/app.js won't run
 // beside a file from another one (see the check at its top).
-const WORKOUTS_RELEASE = 'fit-v18';
+const WORKOUTS_RELEASE = 'fit-v19';
 
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',
@@ -89,11 +89,13 @@ function cleanWorkRest(x) {
 
 // ---------------------------------------------------------------------
 // EXERCISE RESOLUTION
-// ctx = { rounds, workSec, restSec, reps, lap, repScale, level, hasEquip },
-// where hasEquip(id) => bool, reps is true for the styles that count reps
-// rather than seconds (EMOM, AMRAP, For Time), lap for the two that work
-// through the block as one list (AMRAP, For Time), repScale a program's
-// build-up and level the person's own (see PERSONAL LEVELS)
+// ctx = { rounds, workSec, restSec, reps, lap, repScale, level, hasEquip,
+// swaps, spare }, where hasEquip(id) => bool, reps is true for the styles
+// that count reps rather than seconds (EMOM, AMRAP, For Time), lap for the
+// two that work through the block as one list (AMRAP, For Time), repScale
+// a program's build-up, level the person's own (see PERSONAL LEVELS),
+// swaps the moves this person has swapped in this block (see SWAPS) and
+// spare the bells a mate can take in a lap (see amrapCircuits)
 // ---------------------------------------------------------------------
 
 // Walk bw fallbacks until everything the exercise needs is on hand.
@@ -195,7 +197,7 @@ function loadFor(ex, ctx) {
 // Build what the workout screen actually shows: a short bold name plus a
 // coaching cue whose timings match the interval in play.
 function describeEx(id, ctx) {
-  const ex = resolveEx(id, ctx);
+  const ex = resolveEx(swappedFor(id, ctx), ctx);
   const emom = !!(ctx && ctx.reps);
   // the program's build-up, then the person's own level on top
   const base = ctx && ctx.lap ? amrapTarget(ex.emom) : ex.emom;
@@ -217,7 +219,9 @@ function describeEx(id, ctx) {
   // the cue, so a pair sharing a movement at two weights can tell at a
   // glance which one is theirs.
   const load = loadFor(ex, ctx);
-  return { id: ex.id, name: ex.name, load, cue, reps: emom ? repsLabel(target) : '',
+  // `base` is the block's own id this stands for, before any swap or
+  // fallback: what a swap from this card replaces
+  return { id: ex.id, base: id, name: ex.name, load, cue, reps: emom ? repsLabel(target) : '',
            more: emom && level !== 1 ? targetDiff(target, plain) : '',
            display: load ? `${ex.name} · ${load}` : ex.name,
            alt: ex.alt || '', img: ex.img || null, adapted: ex.adapted };
@@ -262,6 +266,52 @@ function cleanRepScales(x) {
     if (key && key.length <= 30 && key !== '__proto__' && k >= LEVEL_MIN && k <= LEVEL_MAX && k !== 1) out[key] = k;
   });
   return Object.keys(out).length ? out : undefined;
+}
+
+// ---------------------------------------------------------------------
+// SWAPS
+// A move someone can't or won't do can be swapped for one like it: before
+// Start, in a rest or while paused, for the rest of the session. The
+// workout keeps them beside what it was built as, so a favourite, the
+// session in history, a link and a session picked up again all have them:
+// w.swaps = [{ block, from, to, who }], `from` one of that block's ids and
+// `who` the person's name (or their spot, '#a', with no name, as for the
+// levels), or left out for both of you. Each person's context then carries
+// their own for the block (ctx.swaps, { from: to }), and the block hands
+// them `to` wherever it would hand them `from`. So the rounds and the
+// clock stay as built, and with two people a swap changes only that
+// person's moves. A two-weight block's ids are one movement at two loads,
+// so a swap takes both. What's safe to swap in: swapCandidates, in
+// js/generator.js.
+// ---------------------------------------------------------------------
+const SWAPS_MOST = 60;
+function swappedFor(id, ctx) {
+  return ctx && ctx.swaps && ownKey(ctx.swaps, id) ? ctx.swaps[id] : id;
+}
+// Swaps from a favourite, history, a link or a saved session, checked:
+// known moves, someone or nobody, and with a workout, a move that's in
+// that block. Anything else is dropped, so the move stays as built.
+function cleanSwaps(x, w) {
+  if (!Array.isArray(x)) return [];
+  const plain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  return x.slice(0, SWAPS_MOST).filter(s => plain(s) && Number.isInteger(s.block) && s.block >= 0
+      && ownKey(EXERCISES, s.from) && ownKey(EXERCISES, s.to) && s.to !== s.from
+      && (s.who === undefined || (typeof s.who === 'string' && s.who.length > 0 && s.who.length <= 30))
+      && (!w || (Array.isArray(w.blocks) && !!w.blocks[s.block] && w.blocks[s.block].ids.includes(s.from))))
+    .map(s => ({ block: s.block, from: s.from, to: s.to, ...(s.who !== undefined ? { who: s.who } : {}) }));
+}
+// Each spot's swaps in one block, { a: { from: to }, b: { ... } }, for
+// whoever is in each spot now (keys: { a, b }, as levelKey in js/app.js
+// says): the swaps for both of you first, then each person's own over them.
+function swapMaps(w, blockIdx, keys) {
+  const maps = { a: {}, b: {} };
+  const block = w && Array.isArray(w.blocks) && w.blocks[blockIdx];
+  if (!block || !Array.isArray(w.swaps)) return maps;
+  const put = (m, s) => (block.shape === 'swap' ? block.ids : [s.from]).forEach(id => { m[id] = s.to; });
+  const here = w.swaps.filter(s => s.block === blockIdx && block.ids.includes(s.from));
+  here.filter(s => !s.who).forEach(s => { put(maps.a, s); put(maps.b, s); });
+  ['a', 'b'].forEach(k => here.filter(s => s.who && s.who === keys[k]).forEach(s => put(maps[k], s)));
+  return maps;
 }
 
 // ---------------------------------------------------------------------
@@ -345,23 +395,28 @@ function blockSwapAlternating(name, heavyId, lightId) {
 // AMRAP: each person laps the block's exercises at their own pace, so the
 // two of them are never in step and a shared bell could be wanted by both
 // at once. B starts one exercise along, and anything in B's lap that needs
-// single-instance gear A's lap uses goes to its bodyweight version. A swap
-// block's two ids are one movement at two weights: A takes the first, B
-// the second.
+// single-instance gear A's lap uses takes another bell you've got where
+// there is one (ctx.spare(roles) gives B's load for each kettlebell role
+// it can fill, see spareLoads in js/app.js), or goes to its bodyweight
+// version. A swap block's two ids are one movement at two weights: A takes
+// the first, B the second. ctx is the context of the lap wanted (B's for
+// B's), and ctxA A's, for the gear A's lap holds, each person's swaps in.
 // For Time: laps to finish, so the work lands around three quarters of the
 // cap for most people (three minutes of a four-minute cap), leaving the rest
 // to recover. A longer cap in a mix gets proportionally more laps.
 const forTimeRounds = (lapLength, capSec = 240) =>
   Math.max(2, Math.round((lapLength >= 3 ? 3 : lapLength === 2 ? 4 : 5) * capSec / 240));
 
-function amrapCircuits(block, ctx, duo) {
+function amrapCircuits(block, ctx, duo, ctxA = ctx) {
   const swap = block.shape === 'swap';
   const ids = swap ? [block.ids[0]] : block.ids;
-  const a = ids.map(id => describeEx(id, ctx));
+  const a = ids.map(id => describeEx(id, ctxA));
   if (!duo) return { a, b: null };
   const aGear = new Set(a.flatMap(ex => EXERCISES[ex.id].equipment).filter(g => SINGLE_INSTANCE.includes(g)));
   const has = (ctx && ctx.hasEquip) || (() => true);
-  const bCtx = { ...ctx, hasEquip: (g) => !aGear.has(g) && has(g) };
+  const spare = (ctx && ctx.spare && ctx.spare([...aGear])) || {};
+  const bCtx = { ...ctx, hasEquip: (g) => (ownKey(spare, g) || !aGear.has(g)) && has(g) };
+  if (Object.keys(spare).length) bCtx.loads = { ...(ctx && ctx.loads), ...spare };
   const bIds = swap ? [block.ids[1]] : [...ids.slice(1), ids[0]];
   const b = [];
   for (const id of bIds) {

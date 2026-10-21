@@ -2963,7 +2963,8 @@ try {
     const here = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8').match(/^const RELEASE = '([^']+)'/m)[1];
     const lastApp = fromMain('js/app.js');
     const lastRelease = lastApp && (String(lastApp).match(/^const RELEASE = '([^']+)'/m) || [])[1];
-    const lastSchema = Number((String(lastApp || '').match(/^const PREFS_SCHEMA = (\d+)/m) || [])[1]) || 5;
+    // with no git, the old tab runs this release, so it saves at this schema
+    const lastSchema = lastApp ? Number((String(lastApp).match(/^const PREFS_SCHEMA = (\d+)/m) || [])[1]) || 5 : HERE_SCHEMA;
     const both = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
     const watch = (pg, who) => {
       pg.on('pageerror', e => errors.push(`${who}: ${e}`));
@@ -3041,7 +3042,8 @@ try {
     // with no tab of this release open, its save can't lose them either: the next tab finds them under their own key
     await mine.close();
     await old.evaluate(() => { state.minutes = 30; savePrefs(); });
-    assert(await old.evaluate(() => !('checks' in JSON.parse(localStorage.getItem('fit-prefs-2')))), 'the last release saved without them');
+    // (with no git the old tab is this release, which keeps them itself)
+    if (lastApp) assert(await old.evaluate(() => !('checks' in JSON.parse(localStorage.getItem('fit-prefs-2')))), 'the last release saved without them');
     const next = await both.newPage(); watch(next, 'this release, later');
     await next.goto(URL);
     assert(await next.evaluate((m) => JSON.stringify(state.checks) === m && state.minutes === 30, k3.mem), 'a tab of this release opened after has them again');
@@ -3221,6 +3223,279 @@ try {
   if (peopleWas !== 2) await p.evaluate((n) => { state.people = n; savePrefs(); }, peopleWas);
   note(`link is ${shareUrl.length} characters`);
   ok('share link rebuilds the same workout on a fresh device for as many people as it was sent for, says the minutes, style and people, and Share stays once started; a first visit by link asks the gear question on the way home; classics and bad links handled');
+
+  step = 'swap a move: for both of you before Start, for one of you in a rest, kept by Save, a link, Resume and history; Leave it out from now on';
+  {
+    const sw = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await sw.addInitScript(() => {
+      if (location.protocol === 'about:' || localStorage.getItem('fit-prefs-2')) return;
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ gearAsked: true, people: 2, nameA: 'Wayne', nameB: 'Dave', minutes: 20, styleAuto: false,
+        intervalStyle: 'short', equipment: { kettlebells: true }, weights: { kb: [8, 12, 16, 24], db: [], bar: 10 } }));
+    });
+    const s = await sw.newPage();
+    s.on('pageerror', e => errors.push('swap: ' + e));
+    s.on('console', m => { if (m.type() === 'error') errors.push('swap: ' + m.text()); });
+    const ev = (fn, arg) => s.evaluate(fn, arg);
+    // every phase as the timer hands it out, who does what in the work
+    const moves = (pg = s) => pg.evaluate(() => state.sequence.map(x => (x.kind === 'work' ? `${x.blockIdx}.${x.round || 0}:${x.a.id}/${x.b ? x.b.id : '-'}` : x.kind)));
+    const swapsOf = (pg = s) => pg.evaluate(() => JSON.stringify(state.workout.swaps || []));
+    const sheet = () => ev(() => ({ open: !document.getElementById('swapSheet').hidden, title: document.getElementById('swapTitle').textContent,
+      for: document.getElementById('swapFor').textContent, cards: [...document.querySelectorAll('#swapList .swap-card')].map(e => e.dataset.to),
+      thumbs: [...document.querySelectorAll('#swapList .next-thumb')].map(e => e.dataset.move), running: state.running,
+      leave: document.getElementById('swapLeaveText').textContent, back: document.getElementById('swapBack').hidden ? null : document.getElementById('swapBack').textContent }));
+    const nameOf = (id) => ev((i) => EXERCISES[i].name, id);
+    await s.goto(URL);
+    await s.click('#todayCard .today-go');
+    for (let i = 0; i < 15 && !(await ev(() => state.workout.blocks.some(b => b.shape === 'cycle'))); i++) await s.click('#btnShuffle');
+    const c = await ev(() => state.workout.blocks.findIndex(b => b.shape === 'cycle'));
+    assert(c >= 0, 'a workout with a block the two of you go round');
+    assert(await s.$eval('#previewHint', e => e.offsetParent !== null && e.textContent) === 'Tap a move to swap it for one like it.', 'the preview says a move can be swapped');
+    const pills = await s.$$eval(`.preview-move[data-block="${c}"]`, els => els.map(e => e.dataset.from));
+    assert(pills.length === 4 && JSON.stringify(pills) === await ev((c) => JSON.stringify(state.workout.blocks[c].ids), c), 'each of the block\'s moves is a button: ' + pills);
+    // before Start, from the preview: for both of you
+    const seq0 = await moves(), blocks0 = await ev(() => JSON.stringify(state.workout.blocks.map(b => b.ids)));
+    const from1 = pills[1];
+    await s.click(`.preview-move[data-block="${c}"][data-from="${from1}"]`);
+    const sh1 = await sheet();
+    assert(sh1.open && sh1.title === `Instead of ${await nameOf(from1)}` && sh1.for === 'For both of you, in this workout.'
+           && sh1.cards.length >= 1 && sh1.cards.length <= 3 && sh1.thumbs.join() === sh1.cards.join() && sh1.back === null,
+           'a tap on a move opens up to three like it, each with its figure, for both of you: ' + JSON.stringify(sh1));
+    assert(sh1.leave === `Leave ${await nameOf(from1)} out from now on`, 'with the leave-out tick: ' + sh1.leave);
+    const to1 = sh1.cards[0];
+    await s.click(`.swap-card[data-to="${to1}"]`);
+    const seq1 = await moves();
+    const want1 = seq0.map(x => (x.startsWith(`${c}.`) ? x.replace(new RegExp(`\\b${from1}\\b`, 'g'), to1) : x));
+    assert(!(await sheet()).open && JSON.stringify(seq1) === JSON.stringify(want1), 'picked: both of you do it wherever the block had the move, nothing else changes');
+    assert(await swapsOf() === JSON.stringify([{ block: c, from: from1, to: to1 }]), 'and the workout keeps it: ' + await swapsOf());
+    const pillText = await s.$$eval(`.preview-move[data-block="${c}"]`, els => els.map(e => e.textContent).join('|'));
+    assert(pillText.includes(await nameOf(to1)) && !pillText.includes(await nameOf(from1)), 'the preview shows it: ' + pillText);
+    // the people badge, before Start: 1 person, the same moves, and back
+    assert(await s.$eval('#peopleBadge', e => !e.disabled && e.classList.contains('can-flip') && e.textContent === 'Wayne & Dave'), 'before Start the badge is a button');
+    await s.click('#peopleBadge');
+    const solo = await ev(() => ({ people: state.people, badge: document.getElementById('peopleBadge').textContent, noB: document.getElementById('personB').offsetParent === null,
+      oneEach: state.sequence.every(x => x.kind !== 'work' || !x.b), blocks: JSON.stringify(state.workout.blocks.map(b => b.ids)), swaps: JSON.stringify(state.workout.swaps),
+      stored: JSON.parse(localStorage.getItem('fit-prefs-2')).people, started: state.started, setup: document.querySelector('#peoplePicker .chip.active').dataset.people }));
+    assert(solo.people === 1 && solo.badge === '1 person' && solo.noB && solo.oneEach && solo.stored === 1 && solo.setup === '1' && !solo.started,
+           'a tap on it before Start: the same workout for one person: ' + JSON.stringify(solo));
+    assert(solo.blocks === blocks0 && solo.swaps === await swapsOf(), 'the same moves, the swap kept');
+    await s.click('#peopleBadge');
+    assert(await ev(() => state.people === 2 && document.getElementById('peopleBadge').textContent === 'Wayne & Dave') && JSON.stringify(await moves()) === JSON.stringify(seq1),
+           'and again for two, shared out as before');
+    // once started the badge is locked
+    await s.click('#btnStart');
+    assert(await s.$eval('#peopleBadge', e => e.disabled && !e.classList.contains('can-flip')), 'once Start is pressed the badge is just a badge');
+    await s.click('#peopleBadge', { force: true });
+    assert(await ev(() => state.people === 2 && state.started), 'and a tap on it changes nothing');
+    // in a rest, Swap on Dave's card: his next move, just for him
+    const at = await ev((c) => {
+      const i = state.sequence.findIndex(x => x.kind === 'rest' && x.blockIdx === c && x.round === 1);
+      state.elapsedAtResume = startOf(i) + 1; state.runStartWall = Date.now(); tickClock();
+      const n = state.sequence[i + 1];
+      return { i, len: state.sequence.length, total: state.totalDuration, running: state.running, swapA: !els.swapA.hidden, swapB: !els.swapB.hidden,
+               b: { base: n.b.base, id: n.b.id, name: n.b.name }, a: n.a.id, cardB: els.exerciseB.textContent };
+    }, c);
+    assert(at.running && at.swapA && at.swapB && at.cardB.startsWith(at.b.name), 'a rest shows Swap on each card, beside the move coming up: ' + JSON.stringify(at));
+    const seqRest = await moves();
+    await s.click('#swapB');
+    const sh2 = await sheet();
+    assert(sh2.open && !sh2.running && sh2.title === `Instead of ${at.b.name}`, 'Swap pauses the clock and offers moves like Dave\'s next one: ' + JSON.stringify(sh2));
+    assert(sh2.for === `Just for Dave, for the rest of this workout. Wayne keeps ${at.b.name}.`, 'and says it is just for him: ' + sh2.for);
+    const toB = sh2.cards[0];
+    await s.click(`.swap-card[data-to="${toB}"]`);
+    const seq2 = await moves();
+    const after2 = await ev(() => ({ len: state.sequence.length, idx: state.currentIdx, total: state.totalDuration, elapsed: state.elapsedTotal, running: state.running,
+      cardA: els.exerciseA.textContent, cardB: els.exerciseB.textContent, note: els.goingNote.textContent }));
+    assert(after2.len === at.len && after2.idx === at.i && after2.total === at.total && !after2.running, 'the clock stays where it was, paused: ' + JSON.stringify(after2));
+    const cut = (x) => x.split(':')[1].split('/');
+    const onlyDave = seq2.every((x, i) => {
+      if (x === seqRest[i]) return !(x.startsWith(`${c}.`) && cut(x)[1] === at.b.id);
+      const [a0, b0] = cut(seqRest[i]), [a1, b1] = cut(x);
+      return x.startsWith(`${c}.`) && a1 === a0 && b0 === at.b.id && b1 === toB;
+    });
+    assert(onlyDave, 'only Dave\'s moves change, and only where his block had that move: Wayne\'s stay as they were');
+    assert(after2.cardB.startsWith(await nameOf(toB)) && after2.cardA === (await ev(() => els.exerciseA.textContent)) && after2.note === `Swapped in ${await nameOf(toB)} for Dave. Tap Resume when you're ready.`,
+           'his card shows it, with a note: ' + JSON.stringify(after2));
+    const swaps2 = await swapsOf();
+    assert(swaps2 === JSON.stringify([{ block: c, from: from1, to: to1 }, { block: c, from: at.b.base, to: toB, who: 'dave' }]), 'kept by name: ' + swaps2);
+    assert(await ev(() => JSON.stringify(JSON.parse(localStorage.getItem('fit-prefs-2')).history[0].swaps)) === swaps2, 'and the session in history has it');
+    // paused in work, Swap is there; running in work, it isn't
+    const inWork = await ev(() => {
+      seekTo(state.currentIdx + 1); render();
+      const paused = !els.swapA.hidden;
+      startTimer(); const running = !els.swapA.hidden; pauseTimer();
+      seekTo(state.currentIdx - 1); render();
+      return { paused, running };
+    });
+    assert(inWork.paused && !inWork.running, 'paused mid-round Swap is on the card; going, it is not: ' + JSON.stringify(inWork));
+    // Leave it out from now on
+    await s.click('#swapA');
+    const leaveId = await s.$eval('#swapLeave', e => e.dataset.id);
+    await s.check('#swapLeave');
+    assert(await ev((id) => state.excluded.includes(id) && JSON.parse(localStorage.getItem('fit-prefs-2')).excluded.includes(id), leaveId), 'the tick puts it on the leave-out list');
+    const builds = await ev((id) => {
+      // (with nothing done lately, which would push it back anyway)
+      const uses = (seed) => { const w = buildWorkout(requestFromState(), seed, { recent: [] }); return !w.error && w.blocks.some(b => b.ids.includes(id)); };
+      const was = state.excluded.slice();
+      state.excluded = was.filter(x => x !== id);
+      const seeds = []; for (let seed = 1; seed <= 300 && seeds.length < 5; seed++) if (uses(seed)) seeds.push(seed);
+      state.excluded = was;
+      return { before: seeds.length, after: seeds.filter(uses).length };
+    }, leaveId);
+    assert(builds.before > 0 && builds.after === 0, 'builds from now on leave it out: ' + JSON.stringify(builds));
+    await s.uncheck('#swapLeave');
+    assert(await ev((id) => !state.excluded.includes(id), leaveId), 'and taking the tick off brings it back');
+    await s.click('#swapClose');
+    assert(!(await sheet()).open && JSON.stringify(await moves()) === JSON.stringify(seq2), 'Close changes nothing');
+    // Resume after a reload has the swaps
+    await ev(() => window.dispatchEvent(new Event('pagehide')));
+    assert(await ev(() => JSON.stringify(JSON.parse(localStorage.getItem('fit-run-1')).swaps)) === swaps2, 'the session to pick up keeps the swaps');
+    await s.reload();
+    await s.click('#btnResumeRun');
+    assert(await swapsOf() === swaps2 && JSON.stringify(await moves()) === JSON.stringify(seq2) && await ev(() => state.currentIdx) === at.i,
+           'Resume picks it up with both swaps, at the same rest');
+    assert((await s.$eval('#exerciseB', e => e.textContent)).startsWith(await nameOf(toB)), 'and Dave\'s card still shows his');
+    // a link has the swaps and the names
+    const link = await ev(() => ({ url: shareUrlFor(state.workout), text: shareText(state.workout) }));
+    assert(link.text.endsWith(' · Wayne & Dave'), 'the share text says who: ' + link.text);
+    const mates = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const m = await mates.newPage();
+    m.on('pageerror', e => errors.push('mate: ' + e));
+    await m.goto(link.url);
+    const there = await m.evaluate(() => ({ a: state.nameA, b: state.nameB, people: state.people, badge: document.getElementById('peopleBadge').textContent,
+      note: document.getElementById('workoutNote').textContent, labels: [els.labelA.textContent, els.labelB.textContent] }));
+    assert(there.a === 'Wayne' && there.b === 'Dave' && there.people === 2 && there.badge === 'Wayne & Dave' && there.labels.join() === 'Wayne,Dave',
+           'a link opens on the other phone with the names it was sent with, in the same spots: ' + JSON.stringify(there));
+    assert(there.note === 'Opened from a shared link, for Wayne & Dave.', 'and says who it is for: ' + there.note);
+    assert(await swapsOf(m) === swaps2 && JSON.stringify(await moves(m)) === JSON.stringify(seq2), 'with both swaps: the same moves for each of them');
+    // a phone with the two of them the other way round takes the link's order, so its cards match
+    await m.evaluate(() => { state.nameA = 'Dave'; state.nameB = 'Wayne'; state.people = 1; savePrefs(); });
+    await m.goto(link.url);
+    assert(await m.evaluate(() => state.nameA === 'Wayne' && state.nameB === 'Dave' && state.people === 2) && JSON.stringify(await moves(m)) === JSON.stringify(seq2),
+           "Dave's phone set the other way round lines up with Wayne's");
+    // and a link with nobody named leaves a phone's names as they are
+    const plain = await ev(() => { const n = [state.nameA, state.nameB]; state.nameA = state.nameB = ''; const u = shareUrlFor(state.workout); state.nameA = n[0]; state.nameB = n[1]; return u; });
+    await m.evaluate(() => { state.nameA = 'Sam'; state.nameB = 'Jo'; savePrefs(); });
+    await m.goto(plain);
+    assert(await m.evaluate(() => state.nameA === 'Sam' && state.nameB === 'Jo' && document.getElementById('workoutNote').textContent === 'Opened from a shared link.'),
+           'a link with no names leaves the names here alone');
+    await mates.close();
+    // finished: Save keeps the swaps, and the favourite opens with them
+    await ev(() => finish());
+    assert(await s.$eval('#btnSave', e => e.offsetParent !== null && e.textContent === '☆ Save as favourite'), 'Save on the finish screen');
+    await s.click('#btnSave');
+    assert(await ev(() => JSON.stringify(state.saved[0].swaps)) === swaps2 && await s.$eval('#btnSave', e => e.textContent === '★ Saved' && e.disabled), 'saved with its swaps');
+    await s.click('#btnStart');                                    // Done
+    await s.click('#pathLibrary');
+    await s.click('.workout-card:not(.history-card):has-text("☆")');
+    assert(await swapsOf() === swaps2 && JSON.stringify(await moves()) === JSON.stringify(seq2), 'the favourite opens with both swaps');
+    assert(await s.$eval('#btnSave', e => e.textContent === '★ Saved' && e.disabled), 'and is saved as it is');
+    // swapped again before Start, Save offers to keep that in the favourite too
+    const other = (await s.$$eval(`.preview-move[data-block="${c}"]`, els => els.map(e => e.dataset.from))).find(id => id !== from1 && id !== at.b.base);
+    await s.click(`.preview-move[data-block="${c}"][data-from="${other}"]`);
+    await s.click('.swap-card >> nth=0');
+    assert(await s.$eval('#btnSave', e => e.textContent === '☆ Save with the swaps' && !e.disabled), 'a favourite swapped since says Save with the swaps: ' + await s.$eval('#btnSave', e => e.textContent));
+    await s.click('#btnSave');
+    assert(await ev(() => state.saved[0].swaps.length === 3 && state.saved.length === 1) && await s.$eval('#btnSave', e => e.textContent === '★ Saved'), 'and keeps it in the same favourite');
+    // the session in history opens as it was done, with its two swaps
+    await s.click('#btnBack'); await s.click('#pathLibrary');
+    await s.click('.history-card >> nth=0');
+    assert(await swapsOf() === swaps2 && JSON.stringify(await moves()) === JSON.stringify(seq2), 'the session in history opens with the swaps it was done with');
+    // a tab still on the last release, saving beside this one, keeps the
+    // swaps on the favourites and sessions, and opens one as it was built
+    {
+      const main = (file) => { try { return execFileSync('git', ['show', `origin/main:${file}`], { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return null; } };
+      const lastApp = main('js/app.js');
+      const lastSchema = lastApp ? Number((String(lastApp).match(/^const PREFS_SCHEMA = (\d+)/m) || [])[1]) || HERE_SCHEMA : HERE_SCHEMA;
+      const store = await ev(() => localStorage.getItem('fit-prefs-2'));
+      const two = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+      const mine = await two.newPage(), old = await two.newPage();
+      [[mine, 'this release'], [old, 'last release']].forEach(([pg, who]) => {
+        pg.on('pageerror', e => errors.push(`${who}: ${e}`));
+        pg.on('console', m => { if (m.type() === 'error') errors.push(`${who}: ${m.text()}`); });
+      });
+      await mine.goto(URL + 'e2e-blank.html');
+      await mine.evaluate((x) => localStorage.setItem('fit-prefs-2', x), store);
+      await mine.goto(URL);
+      const files = {};
+      await old.route('**/*', (route) => {
+        const rel = route.request().url().slice(URL.length).split('?')[0] || 'index.html';
+        if (!(rel in files)) files[rel] = main(rel);
+        return files[rel] == null ? route.continue() : route.fulfill({ body: files[rel], contentType: TYPES[path.extname(rel)] || 'application/octet-stream' });
+      });
+      await old.goto(URL);
+      const lastRelease = lastApp && (String(lastApp).match(/^const RELEASE = '([^']+)'/m) || [])[1];
+      assert(!lastRelease || await old.evaluate(() => RELEASE) === lastRelease, 'the old tab runs the last release');
+      await listenFor(mine, lastSchema);
+      await old.evaluate(() => { state.minutes = 25; savePrefs(); });
+      await heard(mine);
+      const swapsIn = (prefs) => JSON.stringify([prefs.saved.map(x => x.swaps || null), prefs.history.map(h => h.swaps || null)]);
+      const was = swapsIn(JSON.parse(store));
+      const kept = await mine.evaluate(() => ({ mem: { saved: state.saved, history: state.history }, stored: JSON.parse(localStorage.getItem('fit-prefs-2')) }));
+      assert(JSON.parse(was)[0][0].length === 3 && swapsIn(kept.mem) === was && swapsIn(kept.stored) === was,
+             "a save from a tab on the last release keeps every swap, here and in storage: " + swapsIn(kept.stored));
+      assert(await old.evaluate(() => openFromRecord({ ...state.saved[0], generated: true }) === null && state.view === 'workout'), 'and the favourite opens there, as built');
+      await two.close();
+    }
+    // a backup carries them, and swaps that are the wrong shape are dropped as the prefs are read
+    const checked = await ev(() => {
+      const back = readBackup(backupText()).prefs;
+      const junk = cleanPrefs({ history: [{ key: 'gen:5', at: 1, swaps: [{ block: 'x' }, { block: 0, from: 'crunch', to: 'deadBug', who: 'wayne' }] }, { key: 'gen:6', at: 2, swaps: 'no' }],
+                                saved: [{ seed: 5, request: {}, swaps: [null] }] });
+      return { backup: JSON.stringify([back.saved[0].swaps, back.history[0].swaps]), live: JSON.stringify([state.saved[0].swaps, state.history[0].swaps]),
+               junk: JSON.stringify([junk.history.map(h => h.swaps), 'swaps' in junk.saved[0]]) };
+    });
+    assert(checked.backup === checked.live, 'a backup keeps the swaps: ' + checked.backup);
+    assert(checked.junk === '[[[{"block":0,"from":"crunch","to":"deadBug","who":"wayne"}],null],false]', 'swaps that are the wrong shape are dropped: ' + checked.junk);
+    // a classic: swapped, run, and back from history the same
+    await s.click('#btnBack'); await s.click('#pathLibrary');
+    await s.click(`.workout-card:not(.history-card):has(.card-name:text-is("Quick Spark"))`);
+    const qFrom = await s.$eval('.preview-move', e => e.dataset.from);
+    await s.click('.preview-move');
+    await s.click('.swap-card >> nth=0');
+    const qSwaps = await swapsOf(), qMoves = await moves();
+    assert(JSON.parse(qSwaps)[0].from === qFrom && await ev(() => !CLASSICS[0].swaps), 'a classic swaps too, and the library\'s copy is left alone');
+    await s.click('#btnStart'); await leaveStarted(s);
+    await s.click('#pathLibrary');
+    await s.click('.history-card >> nth=0');
+    assert(await ev(() => state.workout.id) === 'quick-spark' && await swapsOf() === qSwaps && JSON.stringify(await moves()) === JSON.stringify(qMoves),
+           'and comes back from history with it');
+    // the bells: with 8, 12, 16 and 24, in an AMRAP for two, a mate takes the spare bells rather than going bodyweight
+    const bells = await ev(() => {
+      const f = { v: 1, name: 'Bells', intervalId: 'amrap', warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [],
+                  blocks: [{ make: 'alt', name: 'Swings & presses', ids: ['kbSwing15', 'kbPress10'] }] };
+      openWorkout(thawWorkout(f, 99, { minutes: 6, people: 2, intervalId: 'amrap' }));
+      const i = state.sequence.findIndex(x => x.amrap);
+      seekTo(i); render();
+      const lap = (w) => state.sequence[i][w].circuit.map(x => x.display).join(' | ');
+      const spares = [['kb15', 'kb10'], ['kb15'], ['kb10']].map(t => JSON.stringify(spareLoads({ kb: [8, 12, 16, 24] }, t)));
+      return { a: lap('a'), b: lap('b'), shown: els.circuitB.textContent.replace(/\s+/g, ' ').trim(), spares, none: JSON.stringify(spareLoads({ kb: [16, 24] }, ['kb15', 'kb10'])),
+               solo: describeEx('kbSwing15', buildCtx(null)).display };
+    });
+    assert(bells.a === 'KB swings · 24kg | Single-arm KB press · 16kg' && bells.b === 'Single-arm KB press · 8kg | KB swings · 12kg',
+           'an AMRAP for two: you on the 24 and the 16, your mate on the 8 and the 12: ' + JSON.stringify(bells));
+    assert(bells.shown.includes('8kg') && bells.shown.includes('12kg'), 'on the card: ' + bells.shown);
+    assert(bells.spares.join() === '{"kb15":"12kg","kb10":"8kg"},{"kb15":"16kg"},{"kb10":"12kg"}' && bells.none === '{}' && bells.solo === 'KB swings · 24kg',
+           'the spare for each bell in use, none with only two, and on your own the 24 as before: ' + JSON.stringify(bells));
+    const built = await ev(() => {
+      const seen = new Set(); let clash = 0;
+      const kg = (lap) => lap.filter(x => EXERCISES[x.id].equipment.some(e => e === 'kb15' || e === 'kb10')).map(x => x.load);
+      for (let seed = 1; seed <= 200; seed++) {
+        const w = buildWorkout({ ...requestFromState(), intervalId: 'amrap', mix: undefined }, seed);
+        if (w.error) continue;
+        buildSequence(w, 2).filter(x => x.amrap).forEach(x => {
+          const a = kg(x.a.circuit), b = kg(x.b.circuit);
+          if (a.some(l => b.includes(l))) clash++;
+          b.forEach(l => seen.add(l));
+        });
+      }
+      return { seen: [...seen].sort().join(), clash };
+    });
+    assert((built.seen.includes('8kg') || built.seen.includes('12kg')) && !built.clash, 'built AMRAPs for two use the lighter bells too, and never one bell for both: ' + JSON.stringify(built));
+    await s.click('#btnBack'); await s.click('#pathBuild');
+    assert((await s.$eval('#weightPicker', e => e.textContent)).includes('With a mate, the others are spares for when you both want a bell at once.'), 'setup says what the other bells are for');
+    await sw.close();
+  }
+  ok('swap a move: three like it for the gear, for both of you from the preview or one of you from a card in a rest or paused, only that person\'s moves changed, the clock where it was; kept by Save, a link (with the names), Resume and history, classics too; Leave it out from now on; the badge flips before Start only; a mate takes the spare bells');
 
   step = 'two tabs open: one saving does not wipe what the other saved';
   await p.click('#btnBack'); await p.click('#pathLibrary');

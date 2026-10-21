@@ -273,7 +273,8 @@
     <div class="top-bar">
       <button class="back-btn" id="btnBack">← Menu</button>
       <div class="workout-title" id="workoutTitle"></div>
-      <div class="people-badge" id="peopleBadge">2 people</div>
+      <!-- before Start, a tap changes 1 person for 2 and back (flipPeople) -->
+      <button class="people-badge" id="peopleBadge">2 people</button>
     </div>
 
     <!-- Back after a while with the clock running: it stops where it has
@@ -307,6 +308,8 @@
     <div class="exercise-grid" id="exerciseGrid">
       <div class="person a">
         <div class="person-label" id="labelA">Person A</div>
+        <!-- in a rest or while paused: swap this person's move (SWAP A MOVE) -->
+        <button class="secondary swap-btn" id="swapA" hidden>⇄ Swap</button>
         <div class="next-eyebrow">Up next</div>
         <div class="exercise-reps" id="repsA"></div>
         <div class="exercise-name" id="exerciseA"></div>
@@ -320,6 +323,7 @@
       </div>
       <div class="person b" id="personB">
         <div class="person-label" id="labelB">Person B</div>
+        <button class="secondary swap-btn" id="swapB" hidden>⇄ Swap</button>
         <div class="next-eyebrow">Up next</div>
         <div class="exercise-reps" id="repsB"></div>
         <div class="exercise-name" id="exerciseB"></div>
@@ -355,6 +359,7 @@
       </div>
       <div class="preview-card" id="previewCard">
         <div class="preview-title">Workout preview</div>
+        <p class="preview-hint" id="previewHint">Tap a move to swap it for one like it.</p>
         <ol class="preview-list" id="previewList"></ol>
       </div>
     </div>
@@ -402,6 +407,27 @@
     </div>
     <div class="next-cols" id="nextCols"></div>
     <p class="next-hint">Tap an exercise for how to do it.</p>
+  </div>
+</div>
+
+<!-- Swap a move: up to three like it that suit the gear and leave-outs,
+     for one person from their card or both of you from the preview (SWAP
+     A MOVE in js/app.js). Tap one to do it instead. -->
+<div class="next-sheet swap-sheet" id="swapSheet" hidden>
+  <div class="next-sheet-inner" role="dialog" aria-modal="true" aria-labelledby="swapTitle">
+    <div class="next-head">
+      <div><div class="coming-eyebrow">Swap a move</div><h2 id="swapTitle"></h2></div>
+      <button class="move-sheet-close next-close" id="swapClose">Close</button>
+    </div>
+    <p class="swap-for" id="swapFor"></p>
+    <div class="swap-list" id="swapList"></div>
+    <p class="next-hint swap-tap">Tap one to do it instead.</p>
+    <button class="link-btn swap-back" id="swapBack" hidden></button>
+    <label class="toggle swap-leave">
+      <input type="checkbox" id="swapLeave">
+      <span id="swapLeaveText">Leave it out from now on</span>
+    </label>
+    <p class="next-hint">FIT won't build it into a workout again. To bring it back: Change on the home screen, then More options.</p>
   </div>
 </div>
 

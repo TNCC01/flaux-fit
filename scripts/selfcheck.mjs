@@ -34,7 +34,8 @@ const {
   LEVEL_MIN, LEVEL_MAX, warmupPlan, cooldownPlan, warmupCard, cooldownCard, WARMUP_REHEARSAL,
   planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL,
   programEase, easeWeek, easeLeft, easedDay, weekLoad, EASE_SESSIONS, WATER_SESSIONS, WATER_SAFETY,
-  SURF_CHECK, checkSeconds, checkMinutes, checkShape, checkChange, isCheckDay
+  SURF_CHECK, checkSeconds, checkMinutes, checkShape, checkChange, isCheckDay,
+  swapCandidates, swapMaps, cleanSwaps, blockAlt, blockCycle
 } = A;
 
 const failures = [];
@@ -1226,6 +1227,128 @@ let frozenChecked = 0;
   if (Object.keys(BLOCK_MAKERS).join() !== 'same,alt,cycle,swap,swapAlt') fail('BLOCK_MAKERS should cover every block helper');
 }
 
+// ------------------------------------------------------------- swaps
+// A move swapped (SWAPS in js/workouts.js, swapCandidates in
+// js/generator.js), for every move of every block of a sweep of builds,
+// for one person and for both. What's offered suits the gear and the
+// leave-outs, is new to the block (never the same move at another
+// weight), comes in threes at most, the same each time, and never needs
+// gear the other person could be holding at that moment, with them in
+// either spot. Swapped in, it changes that person's moves where the block
+// had the move, and nothing else: not the other person's, not another
+// round. And swaps from storage or a link come back checked.
+let swapsChecked = 0, swapsOffered = 0, swapsNone = 0;
+{
+  const keys = { a: 'wayne', b: 'dave' }, swappedRound = { a: 'dave', b: 'wayne' };
+  // every round of a block for two people, with each spot's swaps in
+  const rounds = (block, w, bi, k, iv) => {
+    const maps = swapMaps(w, bi, k);
+    const ctx = (m) => ({ ...ctxFor(iv), hasEquip: () => true, swaps: m });
+    if (INTERVALS[iv].lap) {
+      const lapA = amrapCircuits(block, ctx(maps.a), true).a, lapB = amrapCircuits(block, ctx(maps.b), true, ctx(maps.a)).b;
+      return [{ a: lapA.map(x => x.id).join(','), b: lapB.map(x => x.id).join(','), lapA, lapB }];
+    }
+    const out = [];
+    for (let r = 1; r <= INTERVALS[iv].rounds; r++) out.push({ a: block.duo(r, ctx(maps.a)).a.id, b: block.duo(r, ctx(maps.b)).b.id });
+    return out;
+  };
+  const sweep = (where, w, iv, goal, equipment, excluded, blockedTags) => {
+        w.blocks.forEach((block, bi) => block.ids.forEach(from => [null, 'a', 'b'].forEach(who => {
+          const label = `swap [${where}] block ${bi + 1} ${from} for ${who || 'both'}`;
+          const opts = { equipment, excluded, blockedTags, recent: [], surf: goal === 'surf', lap: !!INTERVALS[iv].lap, who, swaps: { a: {}, b: {} } };
+          const got = swapCandidates(block, from, opts);
+          swapsChecked++;
+          swapsOffered += got.length;
+          if (!got.length) swapsNone++;
+          if (got.length > 3 || new Set(got).size !== got.length) fail(`${label}: offers ${got.join(', ')}`);
+          if (swapCandidates(block, from, opts).join() !== got.join()) fail(`${label}: offers something else the second time`);
+          const before = rounds(block, w, bi, keys, iv);
+          got.forEach(to => {
+            const ex = EXERCISES[to];
+            if (!ex) { fail(`${label}: offers unknown ${to}`); return; }
+            if (!ex.equipment.every(e => equipment[e] !== false)) fail(`${label}: offers ${to}, which needs gear that's off`);
+            if (excluded.includes(to) || ex.tags.some(t => blockedTags.includes(t))) fail(`${label}: offers ${to}, which is left out`);
+            if (block.ids.includes(to) || block.ids.some(id => EXERCISES[id].img === ex.img)) fail(`${label}: offers ${to}, already in the block`);
+            if (swapCandidates(block, from, { ...opts, only: to }).join() !== to) fail(`${label}: ${to} isn't safe when asked on its own`);
+            const sw = { ...w, swaps: [{ block: bi, from, to, ...(who ? { who: keys[who] } : {}) }] };
+            const slot = block.shape === 'swap' ? block.ids : [from];
+            // with them either way round, nobody's holding the other one's gear
+            [keys, swappedRound].forEach(k => rounds(block, sw, bi, k, iv).forEach((x, r) => {
+              if (x.lapA) {
+                x.lapA.forEach(m => x.lapB.forEach(n => { if (sharesSingle(m.id, n.id)) fail(`${label} -> ${to}: the laps share gear: ${m.id} + ${n.id}`); }));
+              } else if (sharesSingle(x.a, x.b)) fail(`${label} -> ${to}: round ${r + 1} has ${x.a} + ${x.b} at once`);
+            }));
+            // only the person who swapped, only where the move was
+            const after = rounds(block, sw, bi, keys, iv);
+            after.forEach((x, r) => ['a', 'b'].forEach(k => {
+              const mine = !who || who === k;
+              if (x.lapA) {
+                // a lap: the one who swapped has it (A's as it is, a mate's
+                // too when it was only theirs), the other's lap is as it was
+                // or better, never a move sent to bodyweight that wasn't
+                const lap = k === 'a' ? x.lapA : x.lapB, was = k === 'a' ? before[r].lapA : before[r].lapB;
+                if (mine && (k === 'a' || who === 'b') && !lap.some(m => m.id === to)) fail(`${label} -> ${to}: ${k}'s lap hasn't got it: ${x[k]}`);
+                if (!mine && k === 'b' && lap.some(m => m.adapted && was.some(n => n.base === m.base && !n.adapted))) fail(`${label} -> ${to}: sent a move of b's lap to bodyweight: ${x.b}`);
+                if (!mine && k === 'a' && x.a !== before[r].a) fail(`${label} -> ${to}: changed a's lap too`);
+                return;
+              }
+              const changed = x[k] !== before[r][k];
+              const due = mine && slot.includes(before[r][k]);
+              if (changed !== due || (due && x[k] !== to)) fail(`${label} -> ${to}: round ${r + 1} gives ${k} ${x[k]}, was ${before[r][k]}`);
+            }));
+          });
+        })));
+  };
+  const cases = [['full kit', ALL_EQUIP], ['no kettlebells', noKb], ['bodyweight only', bodyOnly]];
+  for (const [equipLabel, equipment] of cases) {
+    for (const seed of [3, 77, 1201, 9001]) {
+      for (const [iv, goal] of [['short', undefined], ['long', 'surf'], ['amrap', undefined], ['emom', undefined]]) {
+        const blockedTags = seed === 77 ? ['impact'] : [];
+        const excluded = seed === 1201 ? ['pushup', 'airSquat', 'plankHold'] : [];
+        const w = generateWorkout({ minutes: 30, people: 2, intervalId: iv, goal, regions: REGION_IDS, equipment, excluded, blockedTags, seed, recent: [] });
+        if (!w.error) sweep(`${equipLabel} | seed ${seed} | ${iv}${goal ? ' surf' : ''}`, w, iv, goal, equipment, excluded, blockedTags);
+      }
+    }
+  }
+  // and the classics, which run in whatever style is picked
+  CLASSICS.forEach(w => ['short', 'fortime'].forEach(iv => sweep(`${w.id} | ${iv}`, w, iv, undefined, ALL_EQUIP, [], [])));
+  if (swapsOffered < swapsChecked) fail(`swaps: offered only ${swapsOffered} moves over ${swapsChecked} asks`);
+  // a swap for one person over one for both, a two-weight block's pair
+  // swapped as one, and a swap for both you put back for one of you
+  const pairBlock = A.blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10');
+  const sw = { blocks: [pairBlock, blockCycle('t', ['crunch', 'flutterKicks', 'reverseCrunch', 'tuckUp'])],
+               swaps: [{ block: 0, from: 'gobletSquat10', to: 'airSquat' }, { block: 0, from: 'gobletSquat15', to: 'tempoSquat', who: 'dave' },
+                       { block: 1, from: 'crunch', to: 'deadBug', who: 'wayne' }, { block: 1, from: 'tuckUp', to: 'vUp', who: 'nobody' }] };
+  const m0 = swapMaps(sw, 0, { a: 'wayne', b: 'dave' }), m1 = swapMaps(sw, 1, { a: 'dave', b: 'wayne' });
+  if (JSON.stringify(m0) !== '{"a":{"gobletSquat15":"airSquat","gobletSquat10":"airSquat"},"b":{"gobletSquat15":"tempoSquat","gobletSquat10":"tempoSquat"}}') {
+    fail(`swapMaps: a swap for both, then one person's over it, a pair as one: ${JSON.stringify(m0)}`);
+  }
+  if (JSON.stringify(m1) !== '{"a":{},"b":{"crunch":"deadBug"}}') fail(`swapMaps: a person's swap goes with their name: ${JSON.stringify(m1)}`);
+  // checked as they come back: junk dropped, what's left as it was
+  const junk = [null, 'x', { block: 0, from: 'crunch', to: 'crunch' }, { block: -1, from: 'crunch', to: 'deadBug' },
+                { block: 1.5, from: 'crunch', to: 'deadBug' }, { block: 1, from: 'noSuchMove', to: 'deadBug' },
+                { block: 1, from: 'crunch', to: 'noSuchMove' }, { block: 1, from: 'crunch', to: 'deadBug', who: '' },
+                { block: 1, from: 'crunch', to: 'deadBug', who: 'x'.repeat(31) }, { block: 1, from: 'crunch', to: 'deadBug', who: 7 },
+                { block: 1, from: 'crunch', to: 'deadBug', who: 'wayne', extra: 'gone' }, { block: 0, from: 'crunch', to: 'deadBug' },
+                { block: 5, from: 'crunch', to: 'deadBug' }];
+  const kept = cleanSwaps(JSON.parse(JSON.stringify(junk)), sw);
+  if (JSON.stringify(kept) !== '[{"block":1,"from":"crunch","to":"deadBug","who":"wayne"}]') fail(`cleanSwaps kept ${JSON.stringify(kept)}`);
+  if (cleanSwaps(junk).length !== 3 || cleanSwaps('nope').length || cleanSwaps(Array(80).fill({ block: 0, from: 'crunch', to: 'tuckUp' })).length !== 60) {
+    fail('cleanSwaps: without a workout, only the shape is checked, sixty at most');
+  }
+  // the spare bells: a mate's lap takes another bell where there's one
+  // (ctx.spare), rather than its bodyweight version, and with none spare
+  // goes to bodyweight as before
+  const lap = blockAlt('t', 'kbSwing15', 'kbPress10');
+  const base = { ...ctxFor('amrap'), loads: { kb15: '24kg', kb10: '16kg' } };
+  const spare = amrapCircuits(lap, { ...base, spare: (taken) => (taken.length === 2 ? { kb15: '12kg', kb10: '8kg' } : {}) }, true);
+  const none = amrapCircuits(lap, { ...base, spare: () => ({}) }, true);
+  if (spare.b.map(x => x.display).join(' | ') !== 'Single-arm KB press · 8kg | KB swings · 12kg' || spare.a.map(x => x.display).join(' | ') !== 'KB swings · 24kg | Single-arm KB press · 16kg') {
+    fail(`spare bells: a mate's lap should take the spares: ${spare.a.map(x => x.display).join(' | ')} / ${spare.b.map(x => x.display).join(' | ')}`);
+  }
+  if (none.b.some(x => EXERCISES[x.id].equipment.length)) fail(`spare bells: with none spare, the mate's lap goes bodyweight: ${none.b.map(x => x.id).join()}`);
+}
+
 // ------------------------------------------------------------- report
 const reused = ids.filter(id => EXERCISES[id].equipment.length === 0).length;
 console.log(`exercises          ${ids.length} (${reused} bodyweight)`);
@@ -1240,6 +1363,7 @@ console.log(`generator sweep    ${generated} combinations, ${errored} correctly 
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 console.log(`frozen favourites  ${frozenChecked} built and frozen, the same run after thawing; the golden one unchanged`);
 console.log(`personal levels    ${levelsChecked} builds with two levels: the same moves, only the reps differ`);
+console.log(`swaps              ${swapsChecked} asks, ${swapsOffered} moves offered (${swapsNone} with none), each safe for two, only the one person's moves changed`);
 console.log(`warm-up, cool-down ${bookendsChecked} sessions: real moves and stretches, to the second, nothing that jumps`);
 console.log(`main blocks        ${sameAsMain ? `${sameAsMain} builds the same as origin/main` : 'not compared (no origin/main here)'}`);
 if (warnings.length) {

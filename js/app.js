@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v18';
+const RELEASE = 'fit-v19';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -239,6 +239,13 @@ function cleanPrefs(p) {
   s.saved = s.saved.filter(x => plain(x) && Number.isInteger(x.seed) && x.seed > 0 && plain(x.request));
   if (!Array.isArray(s.history)) s.history = [];
   s.history = s.history.filter(h => plain(h) && typeof h.key === 'string' && typeof h.at === 'number').slice(0, HISTORY_CAP);
+  // the moves swapped in (see SWAP A MOVE), where there are any: checked
+  // again against the workout when it opens
+  [...s.saved, ...s.history].forEach(x => {
+    if (x.swaps === undefined) return;
+    const swaps = cleanSwaps(x.swaps);
+    if (swaps.length) x.swaps = swaps; else delete x.swaps;
+  });
   // how it felt, when someone said (older sessions have nothing)
   s.history.forEach(h => {
     if (h.feel === undefined) return;
@@ -498,6 +505,29 @@ function loadsFor(weights) {
   }
   return L;
 }
+// The bells a mate can take in an AMRAP or For Time lap (see amrapCircuits
+// in js/workouts.js) while the other lap holds the kettlebell roles in
+// `taken`: for each one, a bell nobody's using, the heaviest left for the
+// heavier role and the one nearest two thirds of the heavier for the
+// lighter (one person can use one bell for both). So with 8, 12, 16 and
+// 24, a mate swings the 12 rather than doing good mornings while you've
+// got the 24 and the 16. {} when there's none spare: that move goes to its
+// bodyweight version, as it did.
+function spareLoads(weights, taken) {
+  const bells = state.equipment.kettlebells !== false ? weights.kb : [];
+  if (!bells.length) return {};
+  const top = Math.max(...bells), light = lighterOf(bells);
+  const held = new Set(taken.map(r => (r === 'kb15' ? top : r === 'kb10' ? light : null)).filter(kg => kg !== null));
+  const free = bells.filter(kg => !held.has(kg)).sort((a, b) => b - a);
+  const out = {};
+  if (!free.length) return out;
+  if (taken.includes('kb15')) out.kb15 = `${free[0]}kg`;
+  if (taken.includes('kb10')) {
+    const heavier = taken.includes('kb15') ? free[0] : top;
+    out.kb10 = `${free.reduce((best, kg) => (Math.abs(kg - heavier * 2 / 3) < Math.abs(best - heavier * 2 / 3) ? kg : best))}kg`;
+  }
+  return out;
+}
 const hasEquip = (id) => effectiveEquip()[id] !== false;
 const currentInterval = () => INTERVALS[state.intervalStyle] || INTERVALS[DEFAULT_INTERVAL];
 // A generated workout carries the interval it was built for, so a saved
@@ -519,7 +549,7 @@ const buildCtx = (w, ivOverride, who = 'a') => {
   const iv = ivOverride || intervalFor(w);
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
            hasEquip, loads: loadsFor(state.weights), repScale: (w && w.repScale) || undefined,
-           level: personScale(w, who) };
+           level: personScale(w, who), spare: (taken) => spareLoads(state.weights, taken) };
 };
 
 // ------------------------------------------------------------- levels
@@ -550,6 +580,24 @@ function personScale(w, who) {
   const key = levelKey(who);
   return (ownKey(s, key) && s[key]) || undefined;
 }
+
+// -------------------------------------------------------------- swaps
+// Who's in each spot now, for their swaps (see SWAPS in js/workouts.js),
+// which go by name like the levels: with Dave and Wayne swapped round, each
+// keeps their own. And a context with a person's swaps for one block in.
+const swapKeys = () => ({ a: levelKey('a'), b: levelKey('b') });
+const withSwaps = (ctx, map) => (Object.keys(map).length ? { ...ctx, swaps: map } : ctx);
+// A workout with these swaps on it, checked against its blocks: a copy, so
+// a classic in the library is never changed, and none left on it when
+// there are none.
+function swapped(w, list) {
+  const swaps = cleanSwaps(list, w);
+  const out = { ...w };
+  if (swaps.length) out.swaps = swaps; else delete out.swaps;
+  return out;
+}
+// A record's swaps, for keeping: undefined when there are none.
+const keptSwaps = (w) => (w && Array.isArray(w.swaps) && w.swaps.length ? w.swaps.map(x => ({ ...x })) : undefined);
 
 // Classics carry no bookends of their own; derive them once at load.
 CLASSICS.forEach(w => Object.assign(w, classicBookends(w)));
@@ -602,7 +650,7 @@ const els = {
   circuitA: $('circuitA'), counterA: $('counterA'), circuitB: $('circuitB'), counterB: $('counterB'),
   animB: $('animB'), alternativeB: $('alternativeB'),
   upcoming: $('upcoming'), preStart: $('preStart'),
-  previewList: $('previewList'),
+  previewList: $('previewList'), previewHint: $('previewHint'), swapA: $('swapA'), swapB: $('swapB'),
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'), btnShare: $('btnShare'),
   btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'), btnAgain: $('btnAgain'),
   workoutNote: $('workoutNote'), goingNote: $('goingNote'),
@@ -704,18 +752,21 @@ function buildSequence(workout, people) {
       workout.blocks.slice(sec.start, sec.start + sec.count).forEach((block, i) => {
         const blockIdx = sec.start + i;
         const label = `Block ${blockIdx + 1} of ${total}: ${block.name}`;
+        // and each person's swaps in this block (see SWAPS)
+        const swaps = swapMaps(workout, blockIdx, swapKeys());
+        const sA = withSwaps(ctxA, swaps.a), sB = withSwaps(ctxB, swaps.b);
         if (iv.lap) {
           // one phase for the whole block; each person carries their lap, and
           // in For Time how many laps of it to finish
-          const lapA = amrapCircuits(block, ctxA, isDuo).a;
-          const lapB = isDuo ? amrapCircuits(block, ctxB, true).b : null;
+          const lapA = amrapCircuits(block, sA, isDuo).a;
+          const lapB = isDuo ? amrapCircuits(block, sB, true, sA).b : null;
           const carry = (lap) => lap && { ...lap[0], circuit: lap, lapRounds: iv.forTime ? forTimeRounds(lap.length, iv.workSec) : 0 };
           seq.push({ kind: 'work', amrap: !!iv.amrap, forTime: !!iv.forTime, duration: iv.workSec,
                      blockIdx, totalBlocks: total, name: label, explain: i ? undefined : explain, a: carry(lapA), b: carry(lapB) });
         }
         for (let round = 1; !iv.lap && round <= iv.rounds; round++) {
           // the same moves either way: duo() is deterministic, only the targets differ
-          const w = isDuo ? { a: block.duo(round, ctxA).a, b: block.duo(round, ctxB).b } : { a: block.solo(round, ctxA), b: null };
+          const w = isDuo ? { a: block.duo(round, sA).a, b: block.duo(round, sB).b } : { a: block.solo(round, sA), b: null };
           seq.push({ kind: 'work', duration: iv.workSec, blockIdx, round, emom: !!iv.reps,
                      totalBlocks: total, totalRounds: iv.rounds, name: label, explain: i ? undefined : explain, a: w.a, b: w.b });
           // an EMOM's rest is whatever is left of the minute, not a phase of its own
@@ -1659,7 +1710,9 @@ function weightRow(kind, rerender = renderEquipmentPicker) {
     note.className = 'picker-hint';
     note.textContent = !n ? 'Tick at least one, or switch kettlebells off.'
       : n === 1 ? `With one bell, ${L.kb15} does everything a kettlebell can, and the lighter-bell moves go bodyweight.`
-      : `${L.kb15} for swings, squats and deadlifts; ${L.kb10} for presses and single-arm work.`;
+      : `${L.kb15} for swings, squats and deadlifts; ${L.kb10} for presses and single-arm work.`
+        // the others are spares, for a mate who wants a bell when both of those are in use
+        + (n > 2 ? ' With a mate, the others are spares for when you both want a bell at once.' : '');
     row.appendChild(note);
   }
   if (kind === 'db') {
@@ -1979,12 +2032,13 @@ function buildWorkout(request, seed, extra) {
   if (!w.error) w.builtWith = { equipment: opts.equipment, excluded: opts.excluded };
   return w;
 }
-// Builds and opens a workout. Returns an error message, or null on success.
-function buildAndOpen(request, seed, extra) {
+// Builds and opens a workout, with any moves swapped in it (a favourite's,
+// say). Returns an error message, or null on success.
+function buildAndOpen(request, seed, extra, swaps) {
   const w = buildWorkout(request, seed, extra);
   if (w.error) return w.error;
   state.lastRequest = request;
-  openWorkout(w);
+  openWorkout(swapped(w, swaps));
   return null;
 }
 
@@ -2225,7 +2279,7 @@ function historyCard(rec) {
       if (state.saved.some(x => x.seed === rec.seed)) return;
       state.saved.unshift({
         name: rec.name, blurb: rec.blurb, focus: rec.focus, seed: rec.seed,
-        request: rec.request, frozen: rec.frozen || undefined, savedOn: new Date().toLocaleDateString()
+        request: rec.request, frozen: rec.frozen || undefined, swaps: rec.swaps, savedOn: new Date().toLocaleDateString()
       });
       savePrefs();
       keepStorage();
@@ -2320,22 +2374,19 @@ function openWorkout(workout) {
   // and in history, not "Surf fitness · 20 min"
   const run = programRunLabel();
   els.workoutTitle.textContent = run ? run.day : workout.name;
-  els.peopleBadge.textContent = state.people === 1
-    ? '1 person'
-    : ((state.nameA || '').trim() || (state.nameB || '').trim()
-        ? `${personName('a')} & ${personName('b')}` : '2 people');
+  els.peopleBadge.textContent = peopleText();
   els.exerciseGrid.classList.toggle('solo', state.people === 1);
   els.personB.style.display = state.people === 1 ? 'none' : '';
   els.labelA.textContent = state.people === 1 ? 'You' : personName('a');
   els.labelB.textContent = personName('b');
+  els.swapA.setAttribute('aria-label', state.people === 1 ? 'Swap this move' : `Swap ${personName('a')}'s move`);
+  els.swapB.setAttribute('aria-label', `Swap ${personName('b')}'s move`);
 
   // Shuffle and Save only mean something for a generated session.
   const gen = !!workout.generated;
   els.btnShuffle.style.display = gen ? '' : 'none';
   els.btnSave.style.display = gen ? '' : 'none';
-  const alreadySaved = gen && state.saved.some(s => s.seed === workout.seed);
-  els.btnSave.textContent = alreadySaved ? '★ Saved' : '☆ Save as favourite';
-  els.btnSave.disabled = alreadySaved;
+  renderSaveButton();
   // a Surf check is your own numbers, not a workout to pass on
   els.btnShare.style.display = workout.format === 'check' ? 'none' : '';
   els.workoutNote.textContent = '';
@@ -2345,6 +2396,48 @@ function openWorkout(workout) {
   renderPreview();
   setView('workout');
   render();
+}
+
+// Who it's for, on the badge beside the name: "1 person", "2 people", or
+// "Wayne & Dave". Before Start a tap on it changes 1 for 2 and back (see
+// flipPeople), and it says so.
+function peopleText() {
+  return state.people === 1 ? '1 person'
+    : ((state.nameA || '').trim() || (state.nameB || '').trim() ? `${personName('a')} & ${personName('b')}` : '2 people');
+}
+const canFlipPeople = () => !!state.workout && !state.started && state.workout.format !== 'check' && !isFinished();
+function renderPeopleBadge() {
+  const can = canFlipPeople();
+  els.peopleBadge.disabled = !can;
+  els.peopleBadge.classList.toggle('can-flip', can);
+  els.peopleBadge.setAttribute('aria-label', can
+    ? `${peopleText()}. Tap for ${state.people === 1 ? 'two people' : 'one person'}` : peopleText());
+}
+// The same workout, for one more or one fewer: the moves stay as they
+// are, and they're shared out again for the people training. Each keeps
+// the level it was built at, as a favourite does (a new mate gets the
+// plain targets). Once Start is pressed it stays as it is (the timeline
+// would change under the clock); a Surf check asks for its people first.
+function flipPeople() {
+  if (!canFlipPeople()) return;
+  state.people = state.people === 1 ? 2 : 1;
+  savePrefs();
+  renderPeoplePicker();
+  const note = els.workoutNote.textContent;
+  openWorkout(state.workout);
+  els.workoutNote.textContent = note;
+}
+els.peopleBadge.addEventListener('click', flipPeople);
+
+// Save: a favourite this isn't yet, or one saved without the swaps made
+// since (see SWAP A MOVE), which a tap puts in it; otherwise Saved.
+function renderSaveButton() {
+  const w = state.workout;
+  const fav = w && w.generated && state.saved.find(s => s.seed === w.seed);
+  const same = fav && JSON.stringify(fav.swaps || []) === JSON.stringify(keptSwaps(w) || []);
+  const n = (keptSwaps(w) || []).length;
+  els.btnSave.textContent = !fav ? '☆ Save as favourite' : same ? '★ Saved' : `☆ Save with the swap${n === 1 ? '' : 's'}`;
+  els.btnSave.disabled = !!same;
 }
 
 function personName(which) {
@@ -2368,9 +2461,10 @@ function lastScoresFrom(rec) {
 function renderPreview() {
   const w = state.workout;
   if (!w) return;
-  const ctx = buildCtx(w);
   els.previewList.innerHTML = '';
-  const add = (name, sub) => {
+  // a block's moves are buttons: a tap swaps one (see SWAP A MOVE)
+  els.previewHint.hidden = !canSwap(w);
+  const add = (name, sub, moves) => {
     const li = document.createElement('li');
     const n = document.createElement('div');
     n.className = 'preview-item-name';
@@ -2381,6 +2475,20 @@ function renderPreview() {
       s.className = 'preview-item-sub';
       s.textContent = sub;
       li.appendChild(s);
+    }
+    if (moves) {
+      const row = document.createElement('div');
+      row.className = 'preview-moves';
+      moves.forEach(m => {
+        const b = document.createElement('button');
+        b.className = 'preview-move';
+        b.dataset.block = m.block;
+        b.dataset.from = m.from;
+        b.textContent = m.text;
+        b.setAttribute('aria-label', `${m.text}: swap it`);
+        row.appendChild(b);
+      });
+      li.appendChild(row);
     }
     els.previewList.appendChild(li);
   };
@@ -2412,13 +2520,20 @@ function renderPreview() {
     if (si > 0) add(`Change over: ${fmtMin(w.changeoverSec || CHANGEOVER_SEC)}`, `Next up, ${iv.label}: ${iv.blurb}`);
     w.blocks.slice(sec.start, sec.start + sec.count).forEach((b, j) => {
       const i = sec.start + j;
+      // with each person's swaps in: one who swapped a move does another
+      const swaps = swapMaps(w, i, swapKeys());
+      const sA = withSwaps(ctxA, swaps.a), sB = withSwaps(ctxB, swaps.b);
       const both = (id) => {
-        const a = describeEx(id, ctxA), bx = duo ? describeEx(id, ctxB) : a;
+        const a = describeEx(id, sA), bx = duo ? describeEx(id, sB) : a;
+        if (bx.id !== a.id) return `${withReps(a)} for ${short('a')}, ${withReps(bx)} for ${short('b')}`;
         return bx.reps === a.reps ? withReps(a) : `${a.display || a.name} (${short('a')} ${a.reps}, ${short('b')} ${bx.reps})`;
       };
-      const names = Array.from(new Set((b.ids || []).map(both)));
+      // once each: a two-weight block's pair reads as one move
+      const moves = [];
+      (b.ids || []).forEach(id => { const text = both(id); if (!moves.some(m => m.text === text)) moves.push({ text, block: i, from: id }); });
       add(`Block ${i + 1}: ${b.name}`,
-          `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.label}, ${iv.rounds} × ${iv.workSec}s`} · ${names.join('  ·  ')}`);
+          `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.label}, ${iv.rounds} × ${iv.workSec}s`}`,
+          moves);
     });
   });
   if (w.cooldownSec > 0) {
@@ -2722,6 +2837,173 @@ document.getElementById('nextSheet').addEventListener('click', (e) => {
   if (c) openMove(c.dataset.move);
 });
 
+// ------------------------------------------------------- swap a move
+// A move someone can't or won't do: Swap on their card (in a rest, the
+// move coming up; paused, the one on it) or a tap on a move in the
+// preview before Start opens up to three like it that suit the gear and
+// the leave-outs (see swapCandidates in js/generator.js), as moving
+// thumbnails. One tap swaps it in for the rest of the session: from a
+// card just for that person (their mate's moves stay as they are), from
+// the preview for both of you, in that block and any later one with the
+// same move. The workout keeps it (see SWAPS in js/workouts.js), so Save,
+// Share, the session in history and Resume all have it. Opening it pauses
+// the clock: ten seconds of rest is too short to choose in. Leave it out
+// from now on puts the move on the leave-out list for every build after.
+const canSwap = (w) => !!w && w.format === 'tabata' && Array.isArray(w.blocks) && w.blocks.length > 0;
+let swapping = null;            // what the sheet is swapping: { block, from, who, shown }
+// What Swap on a person's card swaps ('a' or 'b'), or null when there's
+// nothing to: the move coming up in a rest, the one on the card while
+// paused, and in a lap the one picked.
+function cardSwapTarget(which) {
+  const w = state.workout, phase = state.sequence[state.currentIdx];
+  if (!canSwap(w) || !phase || isFinished() || (which === 'b' && state.people !== 2)) return null;
+  const rest = (phase.kind === 'rest' || phase.kind === 'blockrest') && phase.tally === undefined;
+  if (!rest && !(phase.kind === 'work' && !state.running)) return null;
+  let p = phase;
+  if (rest) {
+    let j = state.currentIdx + 1;
+    while (j < state.sequence.length && state.sequence[j].kind !== 'work') j++;
+    p = state.sequence[j];
+  }
+  const ex = p && p.blockIdx !== undefined && shownFor(which, p[which]);
+  return ex && ex.base && w.blocks[p.blockIdx] ? { block: p.blockIdx, from: ex.base, who: which, shown: ex } : null;
+}
+// What swapCandidates works to: the gear here now, the leave-outs now and
+// the ones it was built with, and everyone's swaps in the block so far.
+function swapOpts(w, blockIdx, who) {
+  const around = bookendOpts(w);
+  const sec = sectionsOf(w).find(x => blockIdx >= x.start && blockIdx < x.start + x.count);
+  return { equipment: effectiveEquip(), excluded: around.excluded, blockedTags: around.blockedTags,
+           recent: state.recent, surf: !!(w.request && w.request.goal === 'surf'), who: who || null,
+           lap: !!(sec && (INTERVALS[sec.intervalId] || {}).lap), swaps: swapMaps(w, blockIdx, swapKeys()) };
+}
+function openSwapSheet(target) {
+  const w = state.workout;
+  if (!target || !canSwap(w)) return;
+  if (state.running) pauseTimer();
+  closeNextSheet();
+  swapping = target;
+  const block = w.blocks[target.block];
+  const ids = swapCandidates(block, target.from, swapOpts(w, target.block, target.who));
+  // what each of you does there now, the swaps in
+  const maps = swapMaps(w, target.block, swapKeys());
+  const now = (k) => describeEx(target.from, withSwaps(buildCtx(w, null, k), maps[k]));
+  const shown = target.shown || now(target.who || 'a');
+  const duo = state.people === 2;
+  document.getElementById('swapTitle').textContent = `Instead of ${shown.name}`;
+  const other = target.who === 'a' ? 'b' : 'a';
+  document.getElementById('swapFor').textContent = !target.who ? (duo ? 'For both of you, in this workout.' : 'For this workout.')
+    : duo ? `Just for ${personName(target.who)}, for the rest of this workout. ${personName(other)} keeps ${now(other).name}.`
+    : 'For the rest of this workout.';
+  const ctx = buildCtx(w, null, target.who || 'a');
+  document.getElementById('swapList').innerHTML = ids.length ? ids.map(id => {
+    const ex = describeEx(id, ctx);
+    return `<div class="next-card swap-card" role="button" tabindex="0" data-to="${esc(id)}" aria-label="${esc(ex.display || ex.name)}: do this instead">
+        <div class="next-thumb" data-move="${esc(id)}"></div>
+        <div class="next-text"><strong>${esc(ex.display || ex.name)}</strong>${ex.cue ? `<span>${esc(ex.cue)}</span>` : ''}</div>
+      </div>`;
+  }).join('') : '<p class="swap-none">Nothing else like it fits your gear and what you\'ve left out.</p>';
+  // a move already swapped can go back to the one it was built with
+  const swappedHere = (target.who ? [target.who] : ['a', 'b']).some(k => now(k).id !== describeEx(target.from, buildCtx(w, null, k)).id);
+  const back = document.getElementById('swapBack');
+  back.hidden = !swappedHere;
+  back.textContent = `Put ${describeEx(target.from, ctx).name} back`;
+  // leaving it out goes by the move on screen (a bodyweight stand-in, say)
+  const leave = document.getElementById('swapLeave');
+  leave.checked = state.excluded.includes(shown.id);
+  leave.dataset.id = shown.id;
+  document.getElementById('swapLeaveText').textContent = `Leave ${shown.name} out from now on`;
+  document.getElementById('swapSheet').hidden = false;
+  for (const t of document.querySelectorAll('#swapList .next-thumb')) showFigure(t, t.dataset.move, { thumb: true });
+  document.getElementById('swapClose').focus();
+}
+function closeSwapSheet() {
+  const sheet = document.getElementById('swapSheet');
+  if (sheet.hidden) return;
+  sheet.hidden = true;
+  swapping = null;
+  if (window.FitDeck) for (const t of document.querySelectorAll('#swapList .next-thumb')) window.FitDeck.clear(t);
+  document.getElementById('swapList').innerHTML = '';
+}
+// The swaps with this one made: in its block, and in any later block with
+// the same move where it's safe there too. For one person it goes over
+// any swap for both of you; for both of you it takes the place of
+// everyone's. `to` the move it was built with puts it back, and a swap for
+// both of you that one person puts back stays with the other.
+function swapsWith(w, target, to) {
+  const { from } = target;
+  const key = target.who ? levelKey(target.who) : null;
+  const otherKey = target.who ? levelKey(target.who === 'a' ? 'b' : 'a') : null;
+  let list = (w.swaps || []).slice();
+  const covers = (x, k) => x.block === k && (w.blocks[k].shape === 'swap' ? w.blocks[k].ids : [from]).includes(x.from);
+  w.blocks.forEach((b, k) => {
+    if (k < target.block || !b.ids.includes(from)) return;
+    if (k > target.block && to !== from) {
+      const opts = swapOpts({ ...w, swaps: list }, k, target.who);
+      if (!swapCandidates(b, from, { ...opts, only: to }).length) return;
+    }
+    if (!key) {
+      list = list.filter(x => !covers(x, k));
+      if (to !== from) list.push({ block: k, from, to });
+      return;
+    }
+    list = list.filter(x => !(covers(x, k) && x.who === key));
+    if (to !== from) { list.push({ block: k, from, to, who: key }); return; }
+    const both = list.find(x => covers(x, k) && !x.who);
+    if (both) {
+      list = list.filter(x => x !== both);
+      if (!list.some(x => covers(x, k) && x.who === otherKey)) list.push({ ...both, who: otherKey });
+    }
+  });
+  return list;
+}
+// Picked: the session again with it in. A swap changes the moves, never
+// the clock, so the phases line up and it carries on from where it was,
+// paused, with the session in history (and the one to pick up) keeping it.
+function pickSwap(to) {
+  const w = state.workout, target = swapping;
+  if (!w || !target) return;
+  state.workout = swapped(w, swapsWith(w, target, to));
+  state.sequence = buildSequence(state.workout, state.people);
+  state.totalDuration = state.sequence.reduce((t, p) => t + p.duration, 0);
+  closeSwapSheet();
+  if (state.started) {
+    rememberExercises();
+    const entry = state.history.find(h => h.key === historyKey(state.workout));
+    if (entry) { entry.swaps = keptSwaps(state.workout); if (!entry.swaps) delete entry.swaps; }
+    savePrefs();
+    const name = to === target.from ? null : describeEx(to, buildCtx(state.workout)).name;
+    noteUntilGoing(name ? `Swapped in ${name}${target.who && state.people === 2 ? ` for ${personName(target.who)}` : ''}.`
+      : `Back to ${describeEx(to, buildCtx(state.workout)).name}.`);
+  }
+  renderPreview();
+  renderSaveButton();
+  render();
+  saveRun();
+}
+for (const k of ['a', 'b']) {
+  els['swap' + k.toUpperCase()].addEventListener('click', () => openSwapSheet(cardSwapTarget(k)));
+}
+els.previewList.addEventListener('click', (e) => {
+  const b = e.target.closest('.preview-move');
+  if (!b || state.running) return;
+  // one person on their own swaps it for themselves; two, for both
+  openSwapSheet({ block: +b.dataset.block, from: b.dataset.from, who: state.people === 2 ? null : 'a' });
+});
+document.getElementById('swapClose').addEventListener('click', closeSwapSheet);
+document.getElementById('swapBack').addEventListener('click', () => { if (swapping) pickSwap(swapping.from); });
+document.getElementById('swapSheet').addEventListener('click', (e) => {
+  if (e.target.id === 'swapSheet') return closeSwapSheet();
+  const c = e.target.closest('.swap-card');
+  if (c) pickSwap(c.dataset.to);
+});
+document.getElementById('swapLeave').addEventListener('change', (e) => {
+  const id = e.target.dataset.id, i = state.excluded.indexOf(id);
+  if (e.target.checked && i < 0) state.excluded.push(id);
+  else if (!e.target.checked && i >= 0) state.excluded.splice(i, 1);
+  savePrefs();
+});
+
 // ------------------------------------------------------------ 3D sheet
 async function openMove(id) {
   if (!id) return;
@@ -2757,6 +3039,7 @@ document.getElementById('moveSheet').addEventListener('click', (e) => { if (e.ta
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!document.getElementById('moveSheet').hidden) closeMove();
+  else if (!document.getElementById('swapSheet').hidden) closeSwapSheet();
   else closeNextSheet();
 });
 window.addEventListener('message', (e) => {
@@ -2976,10 +3259,15 @@ function render() {
 
   renderUpcoming();
 
+  // Swap on each card, in a rest or while paused (see SWAP A MOVE)
+  els.swapA.hidden = !cardSwapTarget('a');
+  els.swapB.hidden = !cardSwapTarget('b');
+
   els.btnStart.textContent = state.running ? 'Pause' : (state.elapsedTotal > 0 ? 'Resume' : 'Start');
   els.btnStart.classList.toggle('running', state.running);
   // once it's going, only Share is left of the pre-start strip (css)
   els.preStart.classList.toggle('underway', state.running || state.elapsedTotal > 0);
+  renderPeopleBadge();
 }
 
 // "+1 rep: you said too easy", under a target that a person's level moved
@@ -3276,6 +3564,10 @@ function finish() {
   els.upcoming.innerHTML = '';
   document.getElementById('btnNextBlock').hidden = true;
   closeNextSheet();
+  closeSwapSheet();
+  els.swapA.hidden = els.swapB.hidden = true;
+  renderPeopleBadge();
+  renderSaveButton();
   els.btnStart.textContent = 'Done';
   els.btnStart.classList.remove('running');
   els.btnAgain.hidden = false;
@@ -3505,7 +3797,8 @@ function skipsBlock(cur, target, from) {
 function rememberExercises() {
   const w = state.workout;
   if (!w || !w.blocks) return;
-  const ids = [...new Set(w.blocks.flatMap(b => b.ids || []))];
+  // and the moves swapped in
+  const ids = [...new Set([...w.blocks.flatMap(b => b.ids || []), ...(w.swaps || []).map(x => x.to)])];
   state.recent = [...ids, ...state.recent.filter(id => !ids.includes(id))].slice(0, RECENT_CAP);
   savePrefs();
 }
@@ -3529,6 +3822,9 @@ function recordHistory() {
   const existing = state.history.find(h => h.key === key && now - h.at < HISTORY_MERGE_MS);
   if (existing) {
     existing.at = now;
+    // with this go's swaps, the moves it's doing
+    existing.swaps = keptSwaps(w);
+    if (!existing.swaps) delete existing.swaps;
     savePrefs();
     return;
   }
@@ -3548,6 +3844,8 @@ function recordHistory() {
     request: w.request || null,
     frozen: w.generated ? freezeWorkout(w) : undefined,
     workoutId: w.generated ? null : w.id,
+    // and any moves swapped (see SWAP A MOVE), kept up to date as it goes
+    swaps: keptSwaps(w),
     // who it was, so a score stays with the person who made it after a
     // rename, and which program day, so the card can say so
     names: { a: (state.nameA || '').trim(), b: state.people === 2 ? (state.nameB || '').trim() : '' },
@@ -3602,10 +3900,10 @@ function openFromRecord(rec) {
     const w = rec.frozen ? thawWorkout(rec.frozen, rec.seed, rec.request) : null;
     if (w) {
       state.lastRequest = rec.request;
-      openWorkout(w);
+      openWorkout(swapped(w, rec.swaps));
       return null;
     }
-    const err = buildAndOpen(rec.request, rec.seed, { recent: (rec.request && rec.request.recent) || [] });
+    const err = buildAndOpen(rec.request, rec.seed, { recent: (rec.request && rec.request.recent) || [] }, rec.swaps);
     if (err) return err;
     if (rec.frozen) els.workoutNote.textContent = 'Some of its moves have changed since it was saved, so it was built again.';
     // a favourite then keeps this build, but only one made with the gear
@@ -3620,7 +3918,7 @@ function openFromRecord(rec) {
   }
   const w = namedAsRun(rec.workoutId, rec.intervalId);
   if (!w) return 'That workout is no longer in the library.';
-  openWorkout(w);
+  openWorkout(rec.swaps ? swapped(w, rec.swaps) : w);
   return null;
 }
 // A classic, stretch routine or Surf check the way it was run: a classic takes
@@ -3692,7 +3990,7 @@ function saveRun() {
     v: 1, savedAt: runSavedAt, sig: runSig(w, state.sequence),
     generated: !!w.generated, seed: w.seed || null, request: w.request || null, builtWith: w.builtWith || null,
     frozen: w.generated ? freezeWorkout(w) : null,
-    workoutId: w.generated ? null : w.id, intervalId: intervalFor(w).id,
+    workoutId: w.generated ? null : w.id, intervalId: intervalFor(w).id, swaps: keptSwaps(w),
     people: state.people, names: { a: state.nameA || '', b: state.nameB || '' },
     programRun: state.programRun || null,
     elapsed, idx, scores: state.scores, laps: state.laps, pick: state.pick, lastScores: state.lastScores || null,
@@ -3752,6 +4050,9 @@ function cleanRun(s) {
     generated: !!s.generated, seed: s.seed, request: s.request, builtWith: built,
     frozen: plain(s.frozen) ? s.frozen : null,
     workoutId: s.workoutId, intervalId: typeof s.intervalId === 'string' ? s.intervalId : null,
+    // the moves swapped (saved before there were swaps: none), checked
+    // again against the workout as it's built
+    swaps: cleanSwaps(s.swaps),
     names: { a: name(names.a), b: name(names.b) },
     programRun: prog ? { id: s.programRun.id, n: s.programRun.n, ...(s.programRun.check === true ? { check: true } : {}) } : null,
     scores, laps, pick,
@@ -3765,7 +4066,10 @@ function cleanRun(s) {
 // The saved session built again: a built one from the exercises it was
 // built with (or, saved before it kept them, from its seed with the gear
 // and leave-outs it was first built with), a named one by its id at the
-// style it ran in. Null if it no longer comes out the same.
+// style it ran in, either with the moves swapped in it. Null if it no
+// longer comes out the same. (A swap never changes the timeline, so the
+// fingerprint leaves the swaps out: a tab on the release before, which
+// knows nothing of them, still picks the session up, as built.)
 function rebuildRun(s) {
   try {
     let w;
@@ -3777,6 +4081,7 @@ function rebuildRun(s) {
       w = namedAsRun(s.workoutId, s.intervalId);
       if (!w) return null;
     }
+    if (s.swaps.length) w = swapped(w, s.swaps);
     const seq = buildSequence(w, s.people);
     return runSig(w, seq) === s.sig && s.idx < seq.length ? { w, seq } : null;
   } catch (e) { return null; }
@@ -3893,25 +4198,41 @@ const SHARE_VERSION = 1;
 // (someone with no name) stays behind, since that spot could be anyone.
 // The other device's own levels are never put on a link: it's the sender's
 // session, and their levels go on their own next build.
+//
+// For two people it carries their names too, so the other phone has Wayne
+// and Dave on the cards each side as this one does, and their levels and
+// swaps go to the right one of them; and any moves swapped (see SWAP A
+// MOVE). A release before these leaves both out, and opens it as built.
 function sharePayload(w) {
+  const extra = {};
+  const names = linkNames();
+  if (names) extra.names = names;
+  const swaps = keptSwaps(w);
+  if (swaps) extra.swaps = swaps;
   if (w.generated) {
     const built = w.builtWith || { equipment: effectiveEquip(), excluded: state.excluded };
     const request = { ...w.request, people: state.people };
     const named = cleanRepScales(Object.fromEntries(Object.entries(w.repScales || {}).filter(([k]) => !k.startsWith('#'))));
     if (named) request.repScales = named; else delete request.repScales;
     return { v: SHARE_VERSION, seed: w.seed, request,
-             equipment: { ...built.equipment }, excluded: built.excluded.slice() };
+             equipment: { ...built.equipment }, excluded: built.excluded.slice(), ...extra };
   }
-  return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id, people: state.people };
+  return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id, people: state.people, ...extra };
+}
+// The names a link carries: with two people and either named, both (as
+// they are, an empty one too); otherwise none.
+function linkNames() {
+  const a = (state.nameA || '').trim(), b = (state.nameB || '').trim();
+  return state.people === 2 && (a || b) ? { a, b } : null;
 }
 
 // What goes with the link, so it says what it is before anyone opens it:
-// "FIT: Lower body · 20 min · Short bursts · 2 people". A built workout's
+// "FIT: Lower body · 20 min · Short bursts · Wayne & Dave" ("1 person" or
+// "2 people" with nobody named), as the badge says it. A built workout's
 // name already ends in its minutes.
 function shareText(w) {
   const style = styleLabel({ intervalId: styleIdOf(w), request: w.request });
-  return [`FIT: ${w.name}`, ...(w.generated ? [] : [`${durationParts(w).totalMin} min`]), style,
-          state.people === 1 ? '1 person' : '2 people'].join(' · ');
+  return [`FIT: ${w.name}`, ...(w.generated ? [] : [`${durationParts(w).totalMin} min`]), style, peopleText()].join(' · ');
 }
 
 // URL-safe base64 of UTF-8 text, and back.
@@ -3932,7 +4253,9 @@ function shareUrlFor(w) {
 }
 
 // Opens the workout in a share link. Returns an error message, or null.
+let linkFor = '';                // who the link was for, when it said ("Wayne & Dave")
 function openSharedLink(hash) {
+  linkFor = '';
   let payload;
   try { payload = JSON.parse(decodeShare(hash.slice(3))); }
   catch (e) { return 'That link is not a FIT workout.'; }
@@ -3940,17 +4263,27 @@ function openSharedLink(hash) {
   if (payload.v !== SHARE_VERSION) return 'That link was made by a different version of FIT.';
   if (!payload.id && (!payload.seed || !payload.request)) return 'That link is missing its workout.';
   // it opens for as many people as it was sent for (a classic's link from
-  // before it said keeps today's count)
+  // before it said keeps today's count), and two by the names they were
+  // sent with, in the same spots, so each card here says what the same
+  // card there does
   const people = payload.id ? payload.people : payload.request.people;
   if (people === 1 || people === 2) { state.people = people; savePrefs(); }
+  const names = payload.names;
+  if (state.people === 2 && names && typeof names === 'object' && [names.a, names.b].every(x => typeof x === 'string')
+      && (names.a.trim() || names.b.trim())) {
+    state.nameA = els.nameA.value = names.a.trim().slice(0, 14);
+    state.nameB = els.nameB.value = names.b.trim().slice(0, 14);
+    savePrefs();
+    linkFor = peopleText();
+  }
   if (payload.id) {
-    return openFromRecord({ workoutId: payload.id, intervalId: payload.intervalId, generated: false });
+    return openFromRecord({ workoutId: payload.id, intervalId: payload.intervalId, generated: false, swaps: payload.swaps });
   }
   return buildAndOpen(payload.request, payload.seed, {
     equipment: payload.equipment || effectiveEquip(),
     excluded: Array.isArray(payload.excluded) ? payload.excluded : [],
     recent: Array.isArray(payload.request.recent) ? payload.request.recent : []
-  });
+  }, payload.swaps);
 }
 
 // A link in the address bar, on load or pasted into the open app.
@@ -3964,7 +4297,8 @@ function openLinkFromHash() {
     // a first visit lands on the gear question, so the note goes there
     (state.gearAsked ? els.welcomeNote : els.gearNote).textContent = err;
   } else {
-    els.workoutNote.textContent = 'Opened from a shared link.';
+    // and who for, when the link said
+    els.workoutNote.textContent = linkFor ? `Opened from a shared link, for ${linkFor}.` : 'Opened from a shared link.';
   }
 }
 
@@ -5154,18 +5488,23 @@ els.btnShuffle.addEventListener('click', () => {
 els.btnSave.addEventListener('click', () => {
   const w = state.workout;
   if (!w || !w.generated) return;
-  if (state.saved.some(s => s.seed === w.seed)) return;
-  // the exercises it was built with, so an update can't change it (see
-  // FROZEN WORKOUTS in js/workouts.js)
-  state.saved.unshift({
-    name: w.name, blurb: w.blurb, focus: w.focus, seed: w.seed,
-    request: w.request, frozen: freezeWorkout(w),
-    savedOn: new Date().toLocaleDateString()
-  });
+  const fav = state.saved.find(s => s.seed === w.seed);
+  if (fav) {
+    // saved before a swap: it keeps the swaps from now on
+    fav.swaps = keptSwaps(w);
+    if (!fav.swaps) delete fav.swaps;
+  } else {
+    // the exercises it was built with, so an update can't change it (see
+    // FROZEN WORKOUTS in js/workouts.js), and any moves swapped
+    state.saved.unshift({
+      name: w.name, blurb: w.blurb, focus: w.focus, seed: w.seed,
+      request: w.request, frozen: freezeWorkout(w), swaps: keptSwaps(w),
+      savedOn: new Date().toLocaleDateString()
+    });
+  }
   savePrefs();
   keepStorage();
-  els.btnSave.textContent = '★ Saved';
-  els.btnSave.disabled = true;
+  renderSaveButton();
 });
 
 els.btnShare.addEventListener('click', async () => {

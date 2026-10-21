@@ -630,7 +630,14 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .people-badge {
   color: var(--muted); font-size: 0.85rem; background: var(--card);
   padding: 0.4rem 0.7rem; border-radius: 0.75rem; font-weight: 700; white-space: nowrap;
+  border: 2px solid transparent; box-shadow: none; flex-shrink: 0;
 }
+.people-badge:disabled { cursor: default; }
+.people-badge:disabled:active { transform: none; box-shadow: none; }
+/* before Start it's a button: 1 person or 2 */
+.people-badge.can-flip { color: var(--text); border-color: var(--border); padding: 0.5rem 0.75rem; }
+.people-badge.can-flip::after { content: ' ⇄'; color: var(--teal-bright); }
+.people-badge.can-flip:active { transform: scale(0.97); border-color: var(--teal); box-shadow: none; }
 
 /* back after a while with the clock running: go back, or carry on (AWAY in js/app.js) */
 .away-bar {
@@ -706,6 +713,13 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
   padding: 1.1rem 1.2rem; border: 2px solid var(--border);
   display: flex; flex-direction: column; min-height: 120px;
 }
+/* Swap, top right of the card, in a rest or while paused */
+.person { position: relative; }
+.swap-btn {
+  position: absolute; top: 0.55rem; right: 0.6rem; z-index: 1;
+  padding: 0.45rem 0.8rem; min-height: 2.5rem; border-radius: 999px; font-size: 0.95rem; font-weight: 800;
+}
+.swap-btn[hidden] { display: none; }
 .person.a { border-top: 6px solid var(--accent); }
 .person.b { border-top: 6px solid var(--accent-b); }
 .person-label {
@@ -877,6 +891,26 @@ body.hide-photos .ex-anim { display: none; }
 .next-text span { color: var(--muted); font-size: 0.86rem; line-height: 1.35; }
 .next-text .next-rounds { color: var(--teal-bright); font-weight: 700; font-size: 0.8rem; }
 .next-hint { color: var(--muted); font-size: 0.85rem; margin: 14px 0 0; }
+/* swap a move: the same sheet, a list of up to three, and the leave-out tick */
+.swap-sheet .next-sheet-inner { max-width: 640px; }
+.swap-for { margin: 0 0 12px; font-size: 1rem; line-height: 1.4; color: var(--text); }
+.swap-list { display: grid; gap: 10px; }
+.swap-none { color: var(--muted); line-height: 1.45; margin: 0; }
+.swap-sheet .swap-tap { margin-top: 10px; }
+.swap-back { display: block; margin-top: 6px; }
+.swap-back[hidden] { display: none; }
+.swap-leave { display: flex; margin-top: 16px; font-size: 1rem; font-weight: 700; }
+.swap-leave + .next-hint { margin-top: 6px; }
+/* a phone on its side: the three side by side, so they're all on screen */
+@media (orientation: landscape) and (max-height: 500px) {
+  .swap-sheet .next-sheet-inner { max-width: 960px; padding-top: 12px; }
+  .swap-sheet .next-head { margin-bottom: 6px; }
+  .swap-for { margin-bottom: 8px; font-size: 0.95rem; }
+  .swap-list { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; }
+  .swap-card { grid-template-columns: 1fr; align-items: start; gap: 6px; }
+  .swap-card .next-thumb { aspect-ratio: auto; height: 96px; }
+  .swap-sheet .swap-tap, .swap-leave { margin-top: 8px; }
+}
 
 /* the 3D movement viewer over the workout */
 .move-sheet {
@@ -967,6 +1001,17 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .preview-list { list-style: none; display: flex; flex-direction: column; gap: 0.65rem; }
 .preview-item-name { font-weight: 700; font-size: 1rem; line-height: 1.3; }
 .preview-item-sub { color: var(--muted); font-size: 0.9rem; line-height: 1.4; margin-top: 0.1rem; }
+/* a block's moves, each a tap to swap it (SWAP A MOVE in js/app.js) */
+.preview-hint { color: var(--muted); font-size: 0.9rem; line-height: 1.4; margin: -0.3rem 0 0.7rem; }
+.preview-hint[hidden] { display: none; }
+.preview-moves { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.preview-move {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); box-shadow: none;
+  border-radius: 999px; padding: 0.4rem 0.75rem; min-height: 2.4rem;
+  font-size: 0.92rem; font-weight: 600; line-height: 1.25; text-align: left;
+}
+.preview-move::after { content: ' ⇄'; color: var(--teal-bright); font-weight: 800; }
+.preview-move:active { transform: scale(0.97); border-color: var(--teal); background: var(--card-hi); box-shadow: none; }
 
 .toggle-row {
   display: flex; justify-content: space-around; gap: 1rem;
