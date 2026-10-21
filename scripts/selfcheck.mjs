@@ -918,7 +918,7 @@ let picksChecked = 0;
     if (typeof text !== 'string' || !/^[A-Z].{20,90}\.$/.test(text) || /[—–]|\.\s+[A-Z]|undefined|NaN/.test(text)) fail(`styleHow ${id}: not one plain sentence: "${text}"`);
   });
   const want = { short: '20s, rest 10s, 8 rounds', long: '40s, rest 20s, 4 rounds', 'long at 45/15': '45s, rest 15s, 4 rounds',
-                 amrap: 'in 4 minutes', 'AMRAP in a 7-minute section': 'in 7 minutes', fortime: '4-minute cap', 'For Time in a 6-minute section': '6-minute cap' };
+                 amrap: 'in 4 minutes, tapping', 'AMRAP in a 7-minute section': 'in 7 minutes', fortime: 'in 4 minutes at most', 'For Time in a 6-minute section': 'in 6 minutes at most' };
   said.forEach(([id, text]) => { if (want[id] && !text.includes(want[id])) fail(`styleHow ${id}: should say "${want[id]}": "${text}"`); });
 }
 

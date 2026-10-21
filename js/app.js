@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v19';
+const RELEASE = 'fit-v20';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -263,7 +263,10 @@ function cleanPrefs(p) {
   // (which leaves it out), has the two tick boxes it replaced: Mute audio
   // is No sound, and Beep even on silent (on unless it was unticked) is
   // Beeps even on silent, off is Beeps over my music. They're kept in step
-  // with it for such a tab, the second as it was under No sound.
+  // with it for such a tab, the second as it was under No sound. (So an
+  // older tab that saves with no tab of this release open puts back the
+  // choice its tick boxes had when it loaded, as it does the minutes and
+  // the style: one made since in a tab now closed is lost to it.)
   s.sound = SOUNDS.includes(p.sound) ? p.sound
     : p.muteAudio === true ? 'off' : p.beepOnSilent === false ? 'music' : 'silent';
   s.muteAudio = s.sound === 'off';
@@ -507,12 +510,14 @@ function loadsFor(weights) {
 }
 // The bells a mate can take in an AMRAP or For Time lap (see amrapCircuits
 // in js/workouts.js) while the other lap holds the kettlebell roles in
-// `taken`: for each one, a bell nobody's using, the heaviest left for the
-// heavier role and the one nearest two thirds of the heavier for the
-// lighter (one person can use one bell for both). So with 8, 12, 16 and
-// 24, a mate swings the 12 rather than doing good mornings while you've
-// got the 24 and the 16. {} when there's none spare: that move goes to its
-// bodyweight version, as it did.
+// `taken`: for each one, a lighter bell nobody's using, the heaviest left
+// for the heavier role and the one nearest two thirds of the heavier for
+// the lighter (one person can use one bell for both). Never a heavier one:
+// a lighter-bell move (a press, a snatch) never goes up to the top bell.
+// So with 8, 12, 16 and 24, a mate swings the 12 rather than doing good
+// mornings while you've got the 24 and the 16. A role with none lighter
+// spare is left out, and that move goes to its bodyweight version, as it
+// did (with 16 and 24, a mate's press while you've got the 16).
 function spareLoads(weights, taken) {
   const bells = state.equipment.kettlebells !== false ? weights.kb : [];
   if (!bells.length) return {};
@@ -520,11 +525,12 @@ function spareLoads(weights, taken) {
   const held = new Set(taken.map(r => (r === 'kb15' ? top : r === 'kb10' ? light : null)).filter(kg => kg !== null));
   const free = bells.filter(kg => !held.has(kg)).sort((a, b) => b - a);
   const out = {};
-  if (!free.length) return out;
-  if (taken.includes('kb15')) out.kb15 = `${free[0]}kg`;
-  if (taken.includes('kb10')) {
-    const heavier = taken.includes('kb15') ? free[0] : top;
-    out.kb10 = `${free.reduce((best, kg) => (Math.abs(kg - heavier * 2 / 3) < Math.abs(best - heavier * 2 / 3) ? kg : best))}kg`;
+  const heavy = free.filter(kg => kg < top);
+  if (taken.includes('kb15') && heavy.length) out.kb15 = `${heavy[0]}kg`;
+  const lighter = light === null ? [] : free.filter(kg => kg < light);
+  if (taken.includes('kb10') && lighter.length) {
+    const heavier = taken.includes('kb15') ? (heavy[0] || top) : top;
+    out.kb10 = `${lighter.reduce((best, kg) => (Math.abs(kg - heavier * 2 / 3) < Math.abs(best - heavier * 2 / 3) ? kg : best))}kg`;
   }
   return out;
 }
@@ -544,22 +550,38 @@ function sectionsOf(w) {
 // routine, 'check' for a Surf check, 'mix', or the interval's id.
 const styleIdOf = (w) => (w.format === 'stretch' || w.format === 'check' ? w.format : w.sections ? 'mix' : intervalFor(w).id);
 // The cards' context for one person ('a', the default, or 'b'): their
-// level comes with it (see personScale).
+// level comes with it (see personScale). The spare bells only for a build
+// that says so (see SPARE_BELLS): one built before them, a favourite, a
+// session in history, a link or one to pick up, keeps the mate's lap it had.
 const buildCtx = (w, ivOverride, who = 'a') => {
   const iv = ivOverride || intervalFor(w);
   return { rounds: iv.rounds, workSec: iv.workSec, restSec: iv.restSec, reps: !!iv.reps, lap: !!iv.lap,
            hasEquip, loads: loadsFor(state.weights), repScale: (w && w.repScale) || undefined,
-           level: personScale(w, who), spare: (taken) => spareLoads(state.weights, taken) };
+           level: personScale(w, who), spare: withSpares(w) ? (taken) => spareLoads(state.weights, taken) : undefined };
 };
+// A new build is marked as one with the spare bells (request.spare), and
+// the mark goes with its request wherever that's kept, so it's built the
+// same way again; a build from before them has none, and a classic never
+// does. A tab on the release before ignores it.
+const SPARE_BELLS = 1;
+const withSpares = (w) => !!(w && w.generated && w.request && w.request.spare === SPARE_BELLS);
 
 // ------------------------------------------------------------- levels
 // How each person said a session felt (see PERSONAL LEVELS in
 // js/workouts.js), as the finish screen and history say it.
 const FEEL_LABEL = { easy: 'Too easy', right: 'About right', cooked: 'Cooked' };
+// The names on the cards: this phone's own, or while a workout opened
+// from a shared link is on screen (or one picked up that was), the names
+// it came with, so each card says what the same card on the other phone
+// does, and each person's level, swaps and results go to them. They're
+// never saved over this phone's: Dave opening Wayne's link for the two of
+// them is still Dave here after. Let go as you leave it (see setView).
+let namesShown = null;           // { a, b }, or null for this phone's own
+const nameOn = (which) => (((namesShown || { a: state.nameA, b: state.nameB })[which]) || '').trim();
 // Whose level it is: the person's name, or with no name set, their spot
 // ('#a', '#b'), so it follows Wayne whichever spot he's in.
 function levelKey(which) {
-  const name = ((which === 'a' ? state.nameA : state.nameB) || '').trim().toLowerCase();
+  const name = nameOn(which).toLowerCase();
   return name ? name.slice(0, 30) : `#${which}`;
 }
 // Each person's level for a new build, for its request: undefined while
@@ -741,13 +763,14 @@ function buildSequence(workout, people) {
       explained.add(iv.id);
       // each person's own context, so their level reaches their reps only
       const ctxA = buildCtx(workout, iv, 'a'), ctxB = buildCtx(workout, iv, 'b');
-      // between the sections of a mix: a longer break that says what's next
+      // between the sections of a mix: a longer break that says what's next,
+      // and how it works with the section's own numbers
       if (secIdx > 0) {
         const first = workout.blocks[sec.start];
         seq.push({ kind: 'blockrest', changeover: true, duration: workout.changeoverSec || CHANGEOVER_SEC,
-                   blockIdx: sec.start - 1, totalBlocks: total, howTo: `${iv.label}: ${iv.blurb}`,
+                   blockIdx: sec.start - 1, totalBlocks: total, howTo: `${iv.label}: ${styleHow(iv)}`,
                    name: `Next: ${iv.label}${sec.minutes ? `, ${sec.minutes} min` : ''}. ${first.name}`,
-                   ...pair({ name: `Next: ${iv.label}`, display: `Next: ${iv.label}`, cue: iv.blurb, alt: '', img: null }) });
+                   ...pair({ name: `Next: ${iv.label}`, display: `Next: ${iv.label}`, cue: styleHow(iv), alt: '', img: null }) });
       }
       workout.blocks.slice(sec.start, sec.start + sec.count).forEach((block, i) => {
         const blockIdx = sec.start + i;
@@ -856,7 +879,7 @@ const CAN_SILENT = 'audioSession' in navigator && navigator.maxTouchPoints > 0;
 // no silent switch to play through, Beeps even on silent plays as Beeps.
 const SOUND_CHOICES = [
   { id: 'music', label: 'Beeps over my music', plain: 'Beeps',
-    hint: 'Keeps your music playing. Needs the ringer on: with the silent switch on, you won\'t hear FIT.' },
+    hint: 'Lets your music play. Needs the ringer on: with the silent switch on, you won\'t hear FIT.' },
   { id: 'silent', label: 'Beeps even on silent',
     hint: 'Plays with the silent switch on too, but pauses Spotify or other music while you train.' },
   { id: 'off', label: 'No sound', hint: 'No beeps and no voice. Keep an eye on the screen.' }
@@ -1228,9 +1251,23 @@ function callSaid(w, from) {
     : !lap && p.totalRounds > 2 && p.round === p.totalRounds ? 'Last round: ' : 'Next: ';
   return workSaid(p).map(t => lead + t);
 }
+// Work that's the work before it again: the same block, each person on
+// the same move, reps and weight, and not the last round. Nothing calls
+// it (the screen and the chime say it), so an EMOM's minutes on the same
+// moves, or sprints after a rest too short to call them, aren't said over
+// and over. A change of moves, a new block and the last round always are.
+function sameAgain(idx) {
+  const seq = state.sequence, p = seq[idx];
+  if (!p || p.kind !== 'work' || p.amrap || p.forTime || (p.totalRounds > 2 && p.round === p.totalRounds)) return false;
+  let j = idx - 1;
+  while (j >= 0 && seq[j].kind === 'rest' && seq[j].blockIdx === p.blockIdx) j--;
+  const q = seq[j];
+  const same = (x, y) => (!x && !y) || (!!x && !!y && x.id === y.id && x.reps === y.reps && x.load === y.load);
+  return !!q && q.kind === 'work' && q.blockIdx === p.blockIdx && same(q.a, p.a) && same(q.b, p.b);
+}
 // What to say as a phase starts, and the work it calls, if it does: a
-// rest calls the work after it, work that nothing called says itself,
-// and a warm-up move or stretch says its name.
+// rest calls the work after it, work that nothing called says itself
+// (unless it's the same again), and a warm-up move or stretch says its name.
 function entrySaid(idx) {
   const seq = state.sequence, p = seq[idx], next = seq[idx + 1];
   if (p.kind === 'rest' || p.kind === 'blockrest') {
@@ -1239,7 +1276,7 @@ function entrySaid(idx) {
     // after a Surf check test, how many first ("How many pop-ups? Next: ...")
     return { w: idx + 1, lines: p.tally !== undefined ? [...lines.map(l => `${p.a.name} ${l}`), ...lines] : lines };
   }
-  if (p.kind === 'work') return coach.called === idx ? null : { w: idx, lines: workSaid(p) };
+  if (p.kind === 'work') return coach.called === idx || sameAgain(idx) ? null : { w: idx, lines: workSaid(p) };
   const first = p.kind === 'warmup' ? !p.warmIdx && 'Warm-up. ' : p.kind === 'cooldown' ? !p.coolIdx && 'Cool-down. ' : '';
   return p.a ? { lines: [`${first || ''}${p.a.name}.`] } : null;
 }
@@ -1248,7 +1285,7 @@ function entrySaid(idx) {
 // the time left once the phase has started.
 function aheadSaid(idx, left) {
   const seq = state.sequence, p = seq[idx], next = seq[idx + 1];
-  if (!next || next.kind !== 'work' || p.kind === 'rest' || p.kind === 'blockrest') return null;
+  if (!next || next.kind !== 'work' || p.kind === 'rest' || p.kind === 'blockrest' || sameAgain(idx + 1)) return null;
   for (const line of callSaid(idx + 1, idx)) {
     const t = sayTime(spoken(line));
     const at = VOICE_CLEAR + t + 0.5;
@@ -1345,6 +1382,7 @@ let swReloadAfterWorkout = false;
 function setView(v) {
   if (swReloadAfterWorkout && v !== 'workout') { location.reload(); return; }
   state.view = v;
+  if (v !== 'workout') namesShown = null;     // a link's names, for its workout only
   ['welcome', 'gear', 'setup', 'library', 'program', 'workout'].forEach(name => {
     els[name + 'View'].classList.toggle('active', v === name);
     document.body.classList.toggle('view-' + name, v === name);   // for the scroll fade (css)
@@ -1982,7 +2020,8 @@ function requestFromState() {
     goal: state.goal === 'surf' ? 'surf' : undefined,
     regions: state.regions.slice(),
     blockedTags: state.blockedTags.slice(),
-    repScales: personalScales()
+    repScales: personalScales(),
+    spare: SPARE_BELLS
   };
 }
 
@@ -2030,6 +2069,8 @@ function buildWorkout(request, seed, extra) {
   // the gear and leave-outs it was built with, so a link passed on from
   // here rebuilds this workout, not one for this device's gear
   if (!w.error) w.builtWith = { equipment: opts.equipment, excluded: opts.excluded };
+  // and a mate's lap with the spare bells, where its request had them
+  if (!w.error && request && request.spare === SPARE_BELLS) w.request.spare = SPARE_BELLS;
   return w;
 }
 // Builds and opens a workout, with any moves swapped in it (a favourite's,
@@ -2403,13 +2444,15 @@ function openWorkout(workout) {
 // flipPeople), and it says so.
 function peopleText() {
   return state.people === 1 ? '1 person'
-    : ((state.nameA || '').trim() || (state.nameB || '').trim() ? `${personName('a')} & ${personName('b')}` : '2 people');
+    : (nameOn('a') || nameOn('b') ? `${personName('a')} & ${personName('b')}` : '2 people');
 }
 const canFlipPeople = () => !!state.workout && !state.started && state.workout.format !== 'check' && !isFinished();
 function renderPeopleBadge() {
   const can = canFlipPeople();
   els.peopleBadge.disabled = !can;
   els.peopleBadge.classList.toggle('can-flip', can);
+  // what a tap does, in words beside it (css)
+  els.peopleBadge.dataset.flip = can ? (state.people === 1 ? 'Add a mate' : 'Just me?') : '';
   els.peopleBadge.setAttribute('aria-label', can
     ? `${peopleText()}. Tap for ${state.people === 1 ? 'two people' : 'one person'}` : peopleText());
 }
@@ -2423,9 +2466,9 @@ function flipPeople() {
   state.people = state.people === 1 ? 2 : 1;
   savePrefs();
   renderPeoplePicker();
-  const note = els.workoutNote.textContent;
   openWorkout(state.workout);
-  els.workoutNote.textContent = note;
+  // and says so on the first screen, with how to go back
+  noteUntilGoing(`Now for ${peopleText()}. Tap the badge again for ${state.people === 1 ? 'two' : 'one'}.`);
 }
 els.peopleBadge.addEventListener('click', flipPeople);
 
@@ -2441,8 +2484,7 @@ function renderSaveButton() {
 }
 
 function personName(which) {
-  const raw = which === 'a' ? state.nameA : state.nameB;
-  return (raw || '').trim() || (which === 'a' ? 'Person A' : 'Person B');
+  return nameOn(which) || (which === 'a' ? 'Person A' : 'Person B');
 }
 // Last time's scores, each moved to whoever made it: with Dave and Wayne
 // swapped round, each still sees their own, and a new name sees none. An
@@ -2451,7 +2493,7 @@ function personName(which) {
 function lastScoresFrom(rec) {
   const score = (s, v) => (v && !(s.skipped && !s[v]) ? s[v] : undefined);
   if (!rec.names) return rec.scores.map(s => s && ({ ...s, a: score(s, 'a'), b: score(s, 'b') }));
-  const now = { a: (state.nameA || '').trim(), b: state.people === 2 ? (state.nameB || '').trim() : '' };
+  const now = { a: nameOn('a'), b: state.people === 2 ? nameOn('b') : '' };
   const spots = rec.people === 2 ? ['a', 'b'] : ['a'];
   const from = (w) => [w, ...spots].find(v => spots.includes(v) && rec.names[v] === now[w] && (now[w] || v === w));
   const fa = from('a'), fb = from('b');
@@ -2513,11 +2555,11 @@ function renderPreview() {
   if (w.warmupSec > 0) add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupPlan(w, fitAround).map(m => warmupCard(m.id, m.sec).name).join(' · '));
   // two people at different levels: each one's reps ("Burpees (Wayne 9 reps, Dave 7 reps)")
   const duo = state.people === 2;
-  const short = (which) => ((which === 'a' ? state.nameA : state.nameB) || '').trim() || which.toUpperCase();
+  const short = (which) => nameOn(which) || which.toUpperCase();
   sectionsOf(w).forEach((sec, si) => {
     const iv = sectionInterval(sec, w.workRest);
     const ctxA = buildCtx(w, iv, 'a'), ctxB = buildCtx(w, iv, 'b');
-    if (si > 0) add(`Change over: ${fmtMin(w.changeoverSec || CHANGEOVER_SEC)}`, `Next up, ${iv.label}: ${iv.blurb}`);
+    if (si > 0) add(`Change over: ${fmtMin(w.changeoverSec || CHANGEOVER_SEC)}`, `Next up, ${iv.label}: ${styleHow(iv)}`);
     w.blocks.slice(sec.start, sec.start + sec.count).forEach((b, j) => {
       const i = sec.start + j;
       // with each person's swaps in: one who swapped a move does another
@@ -2626,7 +2668,7 @@ function renderCircuit(w, ex, phase) {
     <div class="count-now"><b>${n}</b> ${n === 1 ? 'round' : 'rounds'}${last != null ? `<span>Last time ${last}</span>` : ''}</div>
     <button class="count-more" data-step="1">+1 round</button>`;
 }
-// For Time: the round you're on ("2 of 3 rounds"), +1 round after each and
+// For Time: the round you're on ("Round 2 of 3"), +1 round after each and
 // Done on the last, which logs the time; then the time, and an undo that
 // goes back to the last round.
 function renderDone(w, counter, k, rounds) {
@@ -2642,7 +2684,7 @@ function renderDone(w, counter, k, rounds) {
     ? `<button class="secondary count-less" data-step="undo" aria-label="Not done yet">↺</button>
        <div class="count-now"><b>${fmt(t)}</b> done, rest up${lastLine}</div>`
     : `<button class="secondary count-less" data-step="-1" aria-label="Take one round off"${n ? '' : ' disabled'}>−</button>
-       <div class="count-now"><b>${n + 1}</b> of ${rounds} rounds${lastLine}</div>
+       <div class="count-now">Round <b>${n + 1}</b> of ${rounds}${lastLine}</div>
        <button class="count-more" data-step="1"${final ? ' aria-label="Done: that was the last round"' : ''}>${final ? 'Done' : '+1 round'}</button>`;
 }
 // A Surf check: in the rest after a test, how many each person did (one
@@ -2800,7 +2842,7 @@ function upcomingBlock() {
 function openNextSheet() {
   const up = upcomingBlock();
   if (!up) return;
-  const label = (w) => ((w === 'a' ? state.nameA : state.nameB) || '').trim() || (w === 'a' ? 'Person A' : 'Person B');
+  const label = (w) => personName(w);
   const rounds = (r) => !r.length ? '' : r.length === 1 ? `Round ${r[0]}` : `Rounds ${r.join(', ')}`;
   const card = ({ ex, rounds: r }) => `
     <div class="next-card" role="button" tabindex="0" data-move="${esc(ex.id || ex.img)}"
@@ -2866,7 +2908,11 @@ function cardSwapTarget(which) {
     p = state.sequence[j];
   }
   const ex = p && p.blockIdx !== undefined && shownFor(which, p[which]);
-  return ex && ex.base && w.blocks[p.blockIdx] ? { block: p.blockIdx, from: ex.base, who: which, shown: ex } : null;
+  // on your own it's for whoever does the workout (see the preview's); and
+  // whether the other one is on the same move then, for the sheet to say
+  const mate = state.people === 2 && p && p[which === 'a' ? 'b' : 'a'];
+  return ex && ex.base && w.blocks[p.blockIdx] ? { block: p.blockIdx, from: ex.base, who: state.people === 2 ? which : null, shown: ex,
+                                                   together: !!(mate && !mate.circuit && mate.base === ex.base) } : null;
 }
 // What swapCandidates works to: the gear here now, the leave-outs now and
 // the ones it was built with, and everyone's swaps in the block so far.
@@ -2892,9 +2938,8 @@ function openSwapSheet(target) {
   const duo = state.people === 2;
   document.getElementById('swapTitle').textContent = `Instead of ${shown.name}`;
   const other = target.who === 'a' ? 'b' : 'a';
-  document.getElementById('swapFor').textContent = !target.who ? (duo ? 'For both of you, in this workout.' : 'For this workout.')
-    : duo ? `Just for ${personName(target.who)}, for the rest of this workout. ${personName(other)} keeps ${now(other).name}.`
-    : 'For the rest of this workout.';
+  document.getElementById('swapFor').textContent = !target.who ? (duo ? 'For both of you, in this workout.' : state.started ? 'For the rest of this workout.' : 'For this workout.')
+    : `Just for ${personName(target.who)}, for the rest of this workout. ${personName(other)} ${target.together ? 'keeps' : 'still does'} ${now(other).name}${target.together ? '' : ' when it comes round'}.`;
   const ctx = buildCtx(w, null, target.who || 'a');
   document.getElementById('swapList').innerHTML = ids.length ? ids.map(id => {
     const ex = describeEx(id, ctx);
@@ -2987,8 +3032,10 @@ for (const k of ['a', 'b']) {
 els.previewList.addEventListener('click', (e) => {
   const b = e.target.closest('.preview-move');
   if (!b || state.running) return;
-  // one person on their own swaps it for themselves; two, for both
-  openSwapSheet({ block: +b.dataset.block, from: b.dataset.from, who: state.people === 2 ? null : 'a' });
+  // for whoever does it: both of you, or on your own, whoever opens it
+  // later (a mate from a link, you once your name's in), kept for nobody
+  // in particular, so it comes back the same for them
+  openSwapSheet({ block: +b.dataset.block, from: b.dataset.from, who: null });
 });
 document.getElementById('swapClose').addEventListener('click', closeSwapSheet);
 document.getElementById('swapBack').addEventListener('click', () => { if (swapping) pickSwap(swapping.from); });
@@ -3280,8 +3327,7 @@ function levelLine(who, ex) {
 function renderUpcoming() {
   const next = state.sequence[state.currentIdx + 1];
   if (!next) { els.upcoming.innerHTML = ''; return; }
-  const short = (which, fallback) =>
-    ((which === 'a' ? state.nameA : state.nameB) || '').trim() || fallback;
+  const short = (which, fallback) => nameOn(which) || fallback;
   // (a Surf check test is the same for both)
   const work = (p) => state.people === 2 && !p.check
     ? `${short('a', 'A')}: ${withReps(p.a)} · ` +
@@ -3848,7 +3894,7 @@ function recordHistory() {
     swaps: keptSwaps(w),
     // who it was, so a score stays with the person who made it after a
     // rename, and which program day, so the card can say so
-    names: { a: (state.nameA || '').trim(), b: state.people === 2 ? (state.nameB || '').trim() : '' },
+    names: { a: nameOn('a'), b: state.people === 2 ? nameOn('b') : '' },
     program: programRunLabel(),
     at: now,
     completed: false
@@ -3991,7 +4037,7 @@ function saveRun() {
     generated: !!w.generated, seed: w.seed || null, request: w.request || null, builtWith: w.builtWith || null,
     frozen: w.generated ? freezeWorkout(w) : null,
     workoutId: w.generated ? null : w.id, intervalId: intervalFor(w).id, swaps: keptSwaps(w),
-    people: state.people, names: { a: state.nameA || '', b: state.nameB || '' },
+    people: state.people, names: { a: nameOn('a'), b: nameOn('b') },
     programRun: state.programRun || null,
     elapsed, idx, scores: state.scores, laps: state.laps, pick: state.pick, lastScores: state.lastScores || null,
     skipped: state.skipped, skippedSec: state.skippedSec
@@ -4150,8 +4196,10 @@ function resumeRun() {
   const built = s && rebuildRun(s);
   if (!built) { clearRun(); renderToday(); return; }
   state.people = s.people;
-  state.nameA = els.nameA.value = s.names.a;
-  state.nameB = els.nameB.value = s.names.b;
+  // on the cards, the names it was for (a link's, say), where they aren't
+  // this phone's own, which stay as they are
+  const own = (x) => ((x === 'a' ? state.nameA : state.nameB) || '').trim();
+  namesShown = ['a', 'b'].every(x => s.names[x].trim() === own(x)) ? null : { a: s.names.a, b: s.names.b };
   renderPeoplePicker();
   savePrefs();
   state.programRun = s.programRun;
@@ -4220,9 +4268,9 @@ function sharePayload(w) {
   return { v: SHARE_VERSION, id: w.id, intervalId: intervalFor(w).id, people: state.people, ...extra };
 }
 // The names a link carries: with two people and either named, both (as
-// they are, an empty one too); otherwise none.
+// they are on the cards, an empty one too); otherwise none.
 function linkNames() {
-  const a = (state.nameA || '').trim(), b = (state.nameB || '').trim();
+  const a = nameOn('a'), b = nameOn('b');
   return state.people === 2 && (a || b) ? { a, b } : null;
 }
 
@@ -4256,6 +4304,7 @@ function shareUrlFor(w) {
 let linkFor = '';                // who the link was for, when it said ("Wayne & Dave")
 function openSharedLink(hash) {
   linkFor = '';
+  namesShown = null;
   let payload;
   try { payload = JSON.parse(decodeShare(hash.slice(3))); }
   catch (e) { return 'That link is not a FIT workout.'; }
@@ -4265,15 +4314,14 @@ function openSharedLink(hash) {
   // it opens for as many people as it was sent for (a classic's link from
   // before it said keeps today's count), and two by the names they were
   // sent with, in the same spots, so each card here says what the same
-  // card there does
+  // card there does: on the cards for this workout only, never saved over
+  // this phone's own names (see namesShown)
   const people = payload.id ? payload.people : payload.request.people;
   if (people === 1 || people === 2) { state.people = people; savePrefs(); }
   const names = payload.names;
   if (state.people === 2 && names && typeof names === 'object' && [names.a, names.b].every(x => typeof x === 'string')
       && (names.a.trim() || names.b.trim())) {
-    state.nameA = els.nameA.value = names.a.trim().slice(0, 14);
-    state.nameB = els.nameB.value = names.b.trim().slice(0, 14);
-    savePrefs();
+    namesShown = { a: names.a.trim().slice(0, 14), b: names.b.trim().slice(0, 14) };
     linkFor = peopleText();
   }
   if (payload.id) {
@@ -4873,6 +4921,26 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
 // optional now.
 function surfLog(prog, st, rerender, optional) {
   const surf = todaysSurf(st);
+  // one logged today on a release before, in the day's place (see
+  // PROGRAMS): logged, with its Undo while it's the last day done, as then
+  const before = !surf && st.done.find(d => d.surfed && dayKey(d.at) === dayKey(Date.now()));
+  if (before) {
+    const head = document.createElement('div');
+    head.className = 'surf-head';
+    head.textContent = 'Surf logged for today. ';
+    if (st.done[st.done.length - 1] === before) {
+      head.appendChild(linkButton('Undo', () => {
+        const now = state.programs[prog.id];
+        const last = now && now.done[now.done.length - 1];
+        if (last && last.surfed && dayKey(last.at) === dayKey(Date.now())) { now.done.pop(); savePrefs(); }
+        rerender();
+      }));
+    }
+    const box = document.createElement('div');
+    box.className = 'surf-log';
+    box.append(head);
+    return box;
+  }
   if (!surf) {
     const b = document.createElement('button');
     b.className = 'secondary';
@@ -4958,6 +5026,8 @@ function waterAlt(prog, day, rerender, note) {
         note.textContent = '';
         rerender();
       }));
+      // it sits above the card, out of sight from down here
+      note.scrollIntoView({ block: 'center' });
     });
     el.appendChild(did);
     box.appendChild(el);
@@ -5058,7 +5128,7 @@ function startProgramDay(prog, day) {
     goal: prog.goal, surfFocus: day.focus, repScale: day.repScale, workRest: day.workRest,
     // the leave-outs from Build a workout, the same as any other session
     regions: REGIONS.map(r => r.id), blockedTags: state.blockedTags.slice(),
-    repScales: personalScales()
+    repScales: personalScales(), spare: SPARE_BELLS
   };
   const err = buildAndOpen(request);
   if (err) state.programRun = null;
@@ -5151,7 +5221,7 @@ function recordCheck() {
   });
   const results = {};
   who.forEach(x => {
-    const r = { name: ((x === 'a' ? state.nameA : state.nameB) || '').trim().slice(0, 14) };
+    const r = { name: nameOn(x).slice(0, 14) };
     w.stations.forEach((t, k) => {
       const v = state.scores[k] && state.scores[k][x];
       if (v > 0) r[t.id] = Math.min(Math.round(v), t.most);
@@ -5254,7 +5324,8 @@ function fillCheckDay(c, prog, st, day, { tagline, rerender, final }) {
       rerender();
     });
     no.id = 'btnCheckLater';
-    later.append(no, ` does ${day.name} instead, and the next check comes in two weeks.`);
+    // (doing the session is what moves it on: put off and not trained, it's back tomorrow)
+    later.append(no, `? Do ${day.name} instead, and the next check is in two weeks.`);
     c.append(later, surfLog(prog, st, rerender, true));
   }
 }
@@ -5478,9 +5549,9 @@ els.btnBuild.addEventListener('click', () => {
 });
 
 // A new build of the same request, at each person's level today, not the
-// one a favourite or a link was built at.
+// one a favourite or a link was built at, and with the spare bells.
 els.btnShuffle.addEventListener('click', () => {
-  const request = { ...(state.lastRequest || requestFromState()), repScales: personalScales() };
+  const request = { ...(state.lastRequest || requestFromState()), repScales: personalScales(), spare: SPARE_BELLS };
   const err = buildAndOpen(request, newSeed());
   if (err) els.workoutNote.textContent = err;
 });

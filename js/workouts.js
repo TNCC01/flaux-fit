@@ -24,7 +24,7 @@
 
 // Which release this file is from, sw.js's VERSION: js/app.js won't run
 // beside a file from another one (see the check at its top).
-const WORKOUTS_RELEASE = 'fit-v19';
+const WORKOUTS_RELEASE = 'fit-v20';
 
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',
@@ -55,9 +55,9 @@ const ownKey = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 // or a mix's section, see sectionInterval), so the numbers are the real
 // ones.
 function styleHow(iv) {
-  const min = Math.round(iv.workSec / 60);
-  if (iv.forTime) return `Race the rounds, tapping +1 after each, with a ${min}-minute cap.`;
-  if (iv.amrap) return `As many rounds as you can in ${min} minute${min === 1 ? '' : 's'}: tap +1 each round.`;
+  const min = Math.round(iv.workSec / 60), mins = `${min} minute${min === 1 ? '' : 's'}`;
+  if (iv.forTime) return `Race through the rounds, tapping +1 after each, in ${mins} at most.`;
+  if (iv.amrap) return `As many rounds as you can in ${mins}, tapping +1 after each.`;
   if (iv.reps) return 'Do the reps, then rest till the next minute.';
   return `${iv.id === 'long' ? 'Work steady' : 'Go hard'} for ${iv.workSec}s, rest ${iv.restSec}s, ${iv.rounds} rounds a block.`;
 }

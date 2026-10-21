@@ -1578,7 +1578,7 @@ try {
     await ev(() => buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'emom', mix: undefined, minutes: 20 }, 777));
     await v.click('#btnStart');
     const em = await ev(() => {
-      const i = state.sequence.findIndex((x, j) => x.emom && (state.sequence[j + 1] || {}).emom && state.sequence[j + 1].blockIdx === x.blockIdx);
+      const i = state.sequence.findIndex((x, j) => x.emom && (state.sequence[j + 1] || {}).emom && state.sequence[j + 1].blockIdx === x.blockIdx && !sameAgain(j + 1));
       const next = state.sequence[i + 1];
       return { i, a: [spoken(next.a.name), next.a.reps.split(' ')[0].replace(/s$/, '')], b: [spoken(next.b.name), next.b.reps.split(' ')[0].replace(/s$/, '')], reps: next.a.reps };
     });
@@ -1594,6 +1594,20 @@ try {
     assert([em.a, em.b].every(([name, count]) => emLine.includes(name) && emLine.includes(count)),
            `with each person's move and count: "${emLine}" (${em.a} / ${em.b})`);
     await leaveStarted(v);
+    // a minute on the same moves as the one before goes unsaid, before it or
+    // as it starts; the last round, and the next change, are still called
+    const again = await ev(() => {
+      const f = { v: 1, name: 'Again', intervalId: 'emom', warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [],
+                  blocks: [{ make: 'same', name: 'Climbers', ids: ['mountainClimberFast'] }, { make: 'same', name: 'Bridges', ids: ['singleLegBridge'] }] };
+      openWorkout(thawWorkout(f, 98, { minutes: 20, people: 2, intervalId: 'emom' }));
+      const seq = state.sequence, work = seq.map((x, k) => k).filter(k => seq[k].kind === 'work');
+      const first = work[0], second = work[1], last = work.find(k => seq[k].blockIdx === 0 && seq[k].round === seq[k].totalRounds);
+      const nextBlock = work.find(k => seq[k].blockIdx === 1);
+      return { rounds: seq[first].totalRounds, ahead: aheadSaid(first, seq[first].duration), entry: entrySaid(second),
+               lastAhead: aheadSaid(last - 1, seq[last - 1].duration), lastEntry: !!entrySaid(last), newBlock: !!entrySaid(nextBlock) || !!entrySaid(nextBlock - 1) };
+    });
+    assert(again.rounds > 2 && again.ahead === null && again.entry === null && again.lastAhead && again.lastAhead.lines[0].startsWith('Last round: ') && again.newBlock,
+           'the same moves again go unsaid, the last round and a new block are called: ' + JSON.stringify(again));
 
     // AMRAP: the block rest reads out the list, and one minute left
     await ev(() => { state.people = 1; return buildAndOpen({ ...requestFromState(), people: 1, goal: undefined, intervalId: 'amrap', mix: undefined, minutes: 20 }, 99); });
@@ -1832,7 +1846,7 @@ try {
     seekTo(state.sequence.findIndex(x => x.amrap && x.blockIdx === b)); render();
     return { first, later };
   }, blk);
-  assert(amrapSaid.first === 'As many rounds as you can in 4 minutes: tap +1 each round.' && amrapSaid.later === 'As many rounds as you can in 4 min',
+  assert(amrapSaid.first === 'As many rounds as you can in 4 minutes, tapping +1 after each.' && amrapSaid.later === 'As many rounds as you can in 4 min',
          'the first AMRAP says how it works, the next just what it is: ' + JSON.stringify(amrapSaid));
   const shows = (id) => p.$eval(id, e => getComputedStyle(e).display !== 'none');
   assert(await shows('#circuitA') && await shows('#counterA'), 'the lap and the counter show');
@@ -1904,7 +1918,7 @@ try {
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'For time', 'the timer says For time');
   assert(await p.$eval('#timeDisplay', e => e.textContent) === '1:10', 'and counts up: ' + await p.$eval('#timeDisplay', e => e.textContent));
   assert(/rounds of/i.test(await p.$eval('#circuitA', e => e.textContent)), 'the card says how many rounds');
-  assert(await p.$eval('#roundDots', e => e.textContent) === 'Race the rounds, tapping +1 after each, with a 4-minute cap.', 'the first For Time says how it works');
+  assert(await p.$eval('#roundDots', e => e.textContent) === 'Race through the rounds, tapping +1 after each, in 4 minutes at most.', 'the first For Time says how it works');
   // FIT counts the rounds: +1 after each, the last one is Done and logs the time
   const ftRounds = await st(() => state.sequence[state.currentIdx].a.lapRounds);
   const count = (w = 'A') => p.evaluate((w) => {
@@ -1913,16 +1927,16 @@ try {
              less: !!(c.querySelector('.count-less[data-step="-1"]') || {}).disabled };
   }, w);
   const first = await count();
-  assert(first.now === `1 of ${ftRounds} rounds` && first.more === '+1 round' && first.less, 'it starts on round 1, with +1 round and nothing to take off: ' + JSON.stringify(first));
+  assert(first.now === `Round 1 of ${ftRounds}` && first.more === '+1 round' && first.less, 'it starts on round 1, with +1 round and nothing to take off: ' + JSON.stringify(first));
   const bFirst = await st(() => state.people === 2) ? await count('B') : null;
   await p.click('#counterA .count-more');
-  assert((await count()).now === `2 of ${ftRounds} rounds`, '+1 round moves it on to round 2');
+  assert((await count()).now === `Round 2 of ${ftRounds}`, '+1 round moves it on to round 2');
   assert(await st((b) => JSON.parse(localStorage.getItem('fit-run-1')).laps[b].a === 1, ftBlk), 'and a reload would keep the count');
   await p.click('#counterA .count-less');
-  assert((await count()).now === `1 of ${ftRounds} rounds`, '− takes a tap back');
+  assert((await count()).now === `Round 1 of ${ftRounds}`, '− takes a tap back');
   for (let i = 1; i < ftRounds; i++) await p.click('#counterA .count-more');
   const lastRound = await count();
-  assert(lastRound.now === `${ftRounds} of ${ftRounds} rounds` && lastRound.more === 'Done', 'on the last round the button is Done: ' + JSON.stringify(lastRound));
+  assert(lastRound.now === `Round ${ftRounds} of ${ftRounds}` && lastRound.more === 'Done', 'on the last round the button is Done: ' + JSON.stringify(lastRound));
   assert(await p.evaluate((b) => !(state.history[0].scores && state.history[0].scores[b] && state.history[0].scores[b].a), ftBlk), 'no time yet');
   if (bFirst) assert(JSON.stringify(await count('B')) === JSON.stringify(bFirst), "the other person's count is their own");
   await p.click('#counterA .count-more');
@@ -1930,7 +1944,7 @@ try {
   assert((await p.$eval('#counterA', e => e.textContent)).includes('1:10'), 'the card shows the time');
   await p.click('#counterA .count-less');
   const undone = await count();
-  assert(undone.now === `${ftRounds} of ${ftRounds} rounds` && undone.more === 'Done' && await p.evaluate((b) => !state.history[0].scores[b].a, ftBlk),
+  assert(undone.now === `Round ${ftRounds} of ${ftRounds}` && undone.more === 'Done' && await p.evaluate((b) => !state.history[0].scores[b].a, ftBlk),
          'the undo takes the time off and goes back to the last round: ' + JSON.stringify(undone));
   await p.click('#counterA .count-more');
   assert(await p.evaluate((b) => state.history[0].scores[b].a === 70, ftBlk), 'and Done logs it again');
@@ -2164,6 +2178,16 @@ try {
   await st(() => { seekTo(state.sequence.findIndex(x => x.changeover)); render(); });
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Change over', 'the changeover says so');
   assert((await p.$eval('#roundDots', e => e.textContent)).includes('Short bursts'), 'and explains the next style');
+  // the AMRAP's changeover with its own minutes, the same as the block after it says
+  const amrapOver = await st(() => {
+    const i = state.sequence.findIndex((x, k) => x.changeover && state.sequence.slice(k).find(y => y.kind === 'work').amrap);
+    seekTo(i); render();
+    const am = state.sequence.slice(i).find(y => y.kind === 'work');
+    return { dots: document.getElementById('roundDots').textContent, min: am.duration / 60,
+             preview: [...document.querySelectorAll('#previewList li')].map(e => e.textContent).find(t => t.includes('Next up, AMRAP')) || '' };
+  });
+  assert(amrapOver.dots.includes(`AMRAP: As many rounds as you can in ${amrapOver.min} minutes`) && !amrapOver.dots.includes('Four minutes')
+         && amrapOver.preview.includes(`Next up, AMRAP: As many rounds as you can in ${amrapOver.min} minutes`), 'the AMRAP changeover says its real minutes: ' + JSON.stringify(amrapOver));
   // each section says how its style works as it starts, and only then
   const sectionSaid = await st(() => state.sequence.filter(x => x.kind === 'work').map(x => {
     seekTo(state.sequence.indexOf(x)); render();
@@ -2174,7 +2198,7 @@ try {
   const howSaid = sectionSaid.filter(x => !/^\d+:$/.test(x));
   assert(howSaid.length === 3 && howSaid.every((x, i) => x.startsWith(`${firsts[i]}:`))
          && howSaid[0].endsWith(':Do the reps, then rest till the next minute.') && howSaid[1].endsWith(':Go hard for 20s, rest 10s, 8 rounds a block.')
-         && /^\d+:As many rounds as you can in \d+ minutes: tap \+1 each round\.$/.test(howSaid[2]),
+         && /^\d+:As many rounds as you can in \d+ minutes, tapping \+1 after each\.$/.test(howSaid[2]),
          "the first block of each section says how its style works, the others don't: " + sectionSaid.join(' | '));
   await p.click('#btnBack');
   assert((await p.$eval('#todayCard .today-style', e => e.textContent)).startsWith('Mix: EMOM, Short bursts, AMRAP · '), 'the home card names the mix');
@@ -2504,6 +2528,15 @@ try {
     const oldDot = await w.$eval('.program-dot:nth-child(2)', e => ({ mark: e.querySelector('i').textContent, label: e.getAttribute('aria-label') }));
     assert(oldDot.mark === 'Surf' && oldDot.label === 'Day 2, Pop-ups & legs, surfed', 'and is marked Surf in the strip: ' + JSON.stringify(oldDot));
     assert(await ev(() => state.programs['surf-fit'].surfs.length === 0), 'nothing is moved out of it');
+    // one logged this morning on a release before, in the day's place: it's
+    // today's surf here too, not offered again, and Undo takes it back as then
+    await device(0, 0, { done: [{ n: 0, at: Date.now() - 2 * DAY }, { n: 1, at: Date.now() - 60000, surfed: true }] });
+    await w.click('#pathProgram');
+    const morning = await ev(() => ({ log: (document.querySelector('#programBody .surf-log') || {}).textContent, again: [...document.querySelectorAll('#programBody button')].some(b => b.textContent === 'I surfed today') }));
+    assert(morning.log === 'Surf logged for today. Undo' && !morning.again, "a surf this morning on the release before is today's surf: " + JSON.stringify(morning));
+    await w.click('#programBody .surf-log .link-btn:text-is("Undo")');
+    assert(await ev(() => state.programs['surf-fit'].done.length === 1 && JSON.parse(localStorage.getItem('fit-prefs-2')).programs['surf-fit'].done.length === 1)
+           && await w.$('#programBody button:text-is("I surfed today")'), 'and its Undo takes it back, as the release before did');
     // three days done, the last yesterday: a surf today is logged beside them
     await device(3, 1);
     assert(await w.$eval('#todayCard .card-name', e => e.textContent) === 'Engine', 'day 4, Engine, is today');
@@ -2614,6 +2647,9 @@ try {
     await w.click('.program-today .time-chips .chip:text-is("15 min")');      // the card redraws
     assert(await w.$eval('.program-today .water-alt', e => e.open), 'it stays open as the card redraws');
     await w.click('.program-today .water-alt button[data-water="sprint-paddles"]');
+    // the note says so where it can be seen, though it sits above the card
+    assert(await w.waitForFunction(() => { const r = document.getElementById('programNote').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }, null, { timeout: 3000 }).then(() => true, () => false),
+           'the Ticked off line, with its Undo, is on screen');
     const ticked = await ev(() => ({ done: JSON.stringify(state.programs['surf-fit'].done.map(d => ({ n: d.n, water: d.water }))),
       card: document.querySelector('#programBody .program-card .card-blurb').textContent, mark: document.querySelector('.program-dot i').textContent,
       label: document.querySelector('.program-dot').getAttribute('aria-label'), note: document.getElementById('programNote').textContent }));
@@ -2627,6 +2663,8 @@ try {
     await w.click('#btnProgramBack');
     await w.click('#todayCard .water-alt summary');
     await w.click('#todayCard .water-alt button[data-water="paddle-engine"]');
+    assert(await w.waitForFunction(() => { const r = document.getElementById('welcomeNote').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.height > 0; }, null, { timeout: 3000 }).then(() => true, () => false)
+           && (await w.$eval('#welcomeNote', e => e.textContent)) === 'Ticked off: Paddle engine. Undo', 'on home too, the line is on screen: ' + await w.$eval('#welcomeNote', e => e.textContent));
     assert((await w.$eval('#todayCard .today-line', e => e.textContent)) === "Surf Fit: today's done (a paddle counts). Next up: Pop-ups & legs.", 'home says the paddle counts');
     assert(!(await w.$('#todayCard .water-alt')), 'no flat-day paddles on the home card once today is done');
     await ev(() => { state.programs['surf-fit'].done[0].at -= 86400000; savePrefs(); renderToday(); });
@@ -2651,6 +2689,8 @@ try {
     assert(c1.tag === 'Surf Fit · Week 1, Day 1' && c1.name === 'Surf check' && c1.go === 'Start the Surf check' && c1.later && !c1.names && !c1.water
            && c1.blurb.includes('in place of Paddle power') && c1.blurb.includes('Pop-ups in a minute, push-ups in a minute, then a paddle hold') && c1.blurb.includes('About 10 minutes'),
            'home leads with the Surf check on day 1, in place of Paddle power, with Not today: ' + JSON.stringify(c1));
+    assert(await w.$eval('#todayCard .check-later', e => e.textContent) === 'Not today? Do Paddle power instead, and the next check is in two weeks.',
+           'Not today reads as a question with what to do instead: ' + await w.$eval('#todayCard .check-later', e => e.textContent));
     const checkDays = await ev(() => [...Array(42)].map((_, n) => n).filter(n => checkToday(PROGRAMS[0], state.programs['surf-fit'], n)).join());
     assert(checkDays === '0,14,28', 'the Surf check days are day 1 of weeks 1, 3 and 5: ' + checkDays);
     // Not today: the day's own session, the same day after a reload too, and the way back to the check
@@ -3271,6 +3311,9 @@ try {
     assert(pillText.includes(await nameOf(to1)) && !pillText.includes(await nameOf(from1)), 'the preview shows it: ' + pillText);
     // the people badge, before Start: 1 person, the same moves, and back
     assert(await s.$eval('#peopleBadge', e => !e.disabled && e.classList.contains('can-flip') && e.textContent === 'Wayne & Dave'), 'before Start the badge is a button');
+    // that says in words what a tap does (not the swap sign the moves have)
+    const badgeSays = () => s.$eval('#peopleBadge', e => [e.dataset.flip, getComputedStyle(e, '::after').content].join(' | '));
+    assert((await badgeSays()).startsWith('Just me? | ') && !(await badgeSays()).includes('⇄'), 'with two, it offers just one of you: ' + await badgeSays());
     await s.click('#peopleBadge');
     const solo = await ev(() => ({ people: state.people, badge: document.getElementById('peopleBadge').textContent, noB: document.getElementById('personB').offsetParent === null,
       oneEach: state.sequence.every(x => x.kind !== 'work' || !x.b), blocks: JSON.stringify(state.workout.blocks.map(b => b.ids)), swaps: JSON.stringify(state.workout.swaps),
@@ -3278,12 +3321,16 @@ try {
     assert(solo.people === 1 && solo.badge === '1 person' && solo.noB && solo.oneEach && solo.stored === 1 && solo.setup === '1' && !solo.started,
            'a tap on it before Start: the same workout for one person: ' + JSON.stringify(solo));
     assert(solo.blocks === blocks0 && solo.swaps === await swapsOf(), 'the same moves, the swap kept');
+    const flipNote = () => s.$eval('#goingNote', e => (e.offsetParent !== null ? e.textContent : ''));
+    assert(await flipNote() === "Now for 1 person. Tap the badge again for two. Tap Start when you're ready." && (await badgeSays()).startsWith('Add a mate | '),
+           'it says on the first screen what happened and how to go back, and the badge now offers a mate: ' + await flipNote() + ' / ' + await badgeSays());
     await s.click('#peopleBadge');
     assert(await ev(() => state.people === 2 && document.getElementById('peopleBadge').textContent === 'Wayne & Dave') && JSON.stringify(await moves()) === JSON.stringify(seq1),
            'and again for two, shared out as before');
+    assert(await flipNote() === "Now for Wayne & Dave. Tap the badge again for one. Tap Start when you're ready.", 'and says so: ' + await flipNote());
     // once started the badge is locked
     await s.click('#btnStart');
-    assert(await s.$eval('#peopleBadge', e => e.disabled && !e.classList.contains('can-flip')), 'once Start is pressed the badge is just a badge');
+    assert(await s.$eval('#peopleBadge', e => e.disabled && !e.classList.contains('can-flip') && !e.dataset.flip), 'once Start is pressed the badge is just a badge');
     await s.click('#peopleBadge', { force: true });
     assert(await ev(() => state.people === 2 && state.started), 'and a tap on it changes nothing');
     // in a rest, Swap on Dave's card: his next move, just for him
@@ -3292,14 +3339,15 @@ try {
       state.elapsedAtResume = startOf(i) + 1; state.runStartWall = Date.now(); tickClock();
       const n = state.sequence[i + 1];
       return { i, len: state.sequence.length, total: state.totalDuration, running: state.running, swapA: !els.swapA.hidden, swapB: !els.swapB.hidden,
-               b: { base: n.b.base, id: n.b.id, name: n.b.name }, a: n.a.id, cardB: els.exerciseB.textContent };
+               b: { base: n.b.base, id: n.b.id, name: n.b.name }, a: n.a.id, aBase: n.a.base, cardB: els.exerciseB.textContent };
     }, c);
     assert(at.running && at.swapA && at.swapB && at.cardB.startsWith(at.b.name), 'a rest shows Swap on each card, beside the move coming up: ' + JSON.stringify(at));
     const seqRest = await moves();
     await s.click('#swapB');
     const sh2 = await sheet();
     assert(sh2.open && !sh2.running && sh2.title === `Instead of ${at.b.name}`, 'Swap pauses the clock and offers moves like Dave\'s next one: ' + JSON.stringify(sh2));
-    assert(sh2.for === `Just for Dave, for the rest of this workout. Wayne keeps ${at.b.name}.`, 'and says it is just for him: ' + sh2.for);
+    // (Wayne goes round the block too: he's on another move now, and comes to Dave's later)
+    assert(at.aBase !== at.b.base && sh2.for === `Just for Dave, for the rest of this workout. Wayne still does ${at.b.name} when it comes round.`, 'and says it is just for him: ' + sh2.for);
     const toB = sh2.cards[0];
     await s.click(`.swap-card[data-to="${toB}"]`);
     const seq2 = await moves();
@@ -3362,23 +3410,104 @@ try {
     m.on('pageerror', e => errors.push('mate: ' + e));
     await m.goto(link.url);
     const there = await m.evaluate(() => ({ a: state.nameA, b: state.nameB, people: state.people, badge: document.getElementById('peopleBadge').textContent,
-      note: document.getElementById('workoutNote').textContent, labels: [els.labelA.textContent, els.labelB.textContent] }));
-    assert(there.a === 'Wayne' && there.b === 'Dave' && there.people === 2 && there.badge === 'Wayne & Dave' && there.labels.join() === 'Wayne,Dave',
+      note: document.getElementById('workoutNote').textContent, labels: [els.labelA.textContent, els.labelB.textContent],
+      stored: [JSON.parse(localStorage.getItem('fit-prefs-2')).nameA, JSON.parse(localStorage.getItem('fit-prefs-2')).nameB] }));
+    assert(there.people === 2 && there.badge === 'Wayne & Dave' && there.labels.join() === 'Wayne,Dave',
            'a link opens on the other phone with the names it was sent with, in the same spots: ' + JSON.stringify(there));
+    assert(there.a === '' && there.b === '' && there.stored.join() === ',', "for that workout only: the phone's own names (none here) aren't changed: " + JSON.stringify(there));
     assert(there.note === 'Opened from a shared link, for Wayne & Dave.', 'and says who it is for: ' + there.note);
     assert(await swapsOf(m) === swaps2 && JSON.stringify(await moves(m)) === JSON.stringify(seq2), 'with both swaps: the same moves for each of them');
-    // a phone with the two of them the other way round takes the link's order, so its cards match
+    // Dave's own phone, on his own with his level: the link's two on the
+    // cards, in its order, so they match Wayne's; and once he's home it's
+    // still Dave's phone, with his level for his next build on his own
+    await m.evaluate(() => { state.gearAsked = true; state.nameA = 'Dave'; state.nameB = ''; state.people = 1; state.levels = { dave: { k: 1.2, easy: 0 } }; savePrefs(); });
+    await m.goto(link.url);
+    const daves = await m.evaluate(() => ({ labels: [els.labelA.textContent, els.labelB.textContent].join(), people: state.people, keys: [levelKey('a'), levelKey('b')].join() }));
+    assert(daves.labels === 'Wayne,Dave' && daves.people === 2 && daves.keys === 'wayne,dave' && JSON.stringify(await moves(m)) === JSON.stringify(seq2),
+           "on Dave's phone the cards line up with Wayne's: " + JSON.stringify(daves));
+    await m.evaluate(() => goWelcome());
+    const home = await m.evaluate(() => {
+      const p = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      state.people = 1; savePrefs();
+      return { a: state.nameA, b: state.nameB, stored: [p.nameA, p.nameB].join(), key: levelKey('a'), scales: JSON.stringify(personalScales()), today: document.getElementById('todayCard').textContent.includes('Wayne') };
+    });
+    assert(home.a === 'Dave' && home.b === '' && home.stored === 'Dave,' && home.key === 'dave' && home.scales === '{"dave":1.2}' && !home.today,
+           "and home again, Dave's phone is still his, his level on his next build: " + JSON.stringify(home));
+    // a phone with the two of them the other way round shows the link's order, and keeps its own
     await m.evaluate(() => { state.nameA = 'Dave'; state.nameB = 'Wayne'; state.people = 1; savePrefs(); });
     await m.goto(link.url);
-    assert(await m.evaluate(() => state.nameA === 'Wayne' && state.nameB === 'Dave' && state.people === 2) && JSON.stringify(await moves(m)) === JSON.stringify(seq2),
-           "Dave's phone set the other way round lines up with Wayne's");
+    assert(await m.evaluate(() => state.nameA === 'Dave' && state.nameB === 'Wayne' && state.people === 2 && els.labelA.textContent === 'Wayne')
+           && JSON.stringify(await moves(m)) === JSON.stringify(seq2), "Dave's phone set the other way round lines up with Wayne's, its own names as they were");
+    // left part-way and picked up again: the same two on the cards, and the phone's names still its own
+    await m.evaluate(() => { startTimer(); pauseTimer(); window.dispatchEvent(new Event('pagehide')); });
+    await m.reload();
+    await m.click('#btnResumeRun');
+    assert(await m.evaluate(() => els.labelA.textContent === 'Wayne' && els.labelB.textContent === 'Dave' && state.nameA === 'Dave' && state.nameB === 'Wayne'
+                            && JSON.parse(localStorage.getItem('fit-prefs-2')).nameA === 'Dave'), 'picked up again, it has the link\'s names on the cards and the phone keeps its own');
+    await m.evaluate(() => { clearRun(); goWelcome(); });
+    // a link with one name: that one on the cards, and a phone with both named keeps both
+    const one = await ev(() => { const n = state.nameB; state.nameB = ''; const u = shareUrlFor(state.workout); state.nameB = n; return u; });
+    await m.goto(one);
+    const oneThere = await m.evaluate(() => ({ labels: [els.labelA.textContent, els.labelB.textContent].join(), names: [state.nameA, state.nameB].join(),
+      stored: [JSON.parse(localStorage.getItem('fit-prefs-2')).nameA, JSON.parse(localStorage.getItem('fit-prefs-2')).nameB].join(), note: document.getElementById('workoutNote').textContent }));
+    assert(oneThere.labels === 'Wayne,Person B' && oneThere.names === 'Dave,Wayne' && oneThere.stored === 'Dave,Wayne' && oneThere.note === 'Opened from a shared link, for Wayne & Person B.',
+           'a link with one name leaves both names here as they are: ' + JSON.stringify(oneThere));
     // and a link with nobody named leaves a phone's names as they are
     const plain = await ev(() => { const n = [state.nameA, state.nameB]; state.nameA = state.nameB = ''; const u = shareUrlFor(state.workout); state.nameA = n[0]; state.nameB = n[1]; return u; });
     await m.evaluate(() => { state.nameA = 'Sam'; state.nameB = 'Jo'; savePrefs(); });
     await m.goto(plain);
-    assert(await m.evaluate(() => state.nameA === 'Sam' && state.nameB === 'Jo' && document.getElementById('workoutNote').textContent === 'Opened from a shared link.'),
+    assert(await m.evaluate(() => state.nameA === 'Sam' && state.nameB === 'Jo' && els.labelA.textContent === 'Sam' && document.getElementById('workoutNote').textContent === 'Opened from a shared link.'),
            'a link with no names leaves the names here alone');
     await mates.close();
+    // on your own a swap is for whoever does the workout: the favourite once
+    // a name's in, and a link to a mate on his own phone, have it the same
+    {
+      const one = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const mate = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const prefs = (nameA) => JSON.stringify({ gearAsked: true, people: 1, nameA, nameB: '', minutes: 20, styleAuto: false, intervalStyle: 'short' });
+      await one.addInitScript((x) => { if (location.protocol !== 'about:' && !localStorage.getItem('fit-prefs-2')) localStorage.setItem('fit-prefs-2', x); }, prefs(''));
+      await mate.addInitScript((x) => { if (location.protocol !== 'about:' && !localStorage.getItem('fit-prefs-2')) localStorage.setItem('fit-prefs-2', x); }, prefs('Dave'));
+      const o = await one.newPage(), d = await mate.newPage();
+      o.on('pageerror', e => errors.push('solo swap: ' + e));
+      d.on('pageerror', e => errors.push('solo mate: ' + e));
+      await o.goto(URL);
+      await o.click('#todayCard .today-go');
+      // (the first move with something like it for the gear)
+      let said = '', to = null;
+      for (const from of await o.$$eval('.preview-move', els => els.map(e => e.dataset.from))) {
+        await o.click(`.preview-move[data-from="${from}"]`);
+        said = await o.$eval('#swapFor', e => e.textContent);
+        to = await o.evaluate(() => (document.querySelector('.swap-card') || {}).dataset?.to || null);
+        if (to) break;
+        await o.click('#swapClose');
+      }
+      await o.click(`.swap-card[data-to="${to}"]`);
+      const soloSwaps = await swapsOf(o), soloMoves = await moves(o);
+      assert(said === 'For this workout.' && JSON.parse(soloSwaps).length && JSON.parse(soloSwaps).every(x => !('who' in x)) && soloMoves.some(x => x.includes(`:${to}/`)),
+             'on your own, a swap is kept for whoever does it, not by name or spot: ' + said + ' ' + soloSwaps);
+      await o.click('#btnSave');
+      await o.evaluate(() => { goWelcome(); state.nameA = 'Wayne'; savePrefs(); });
+      await o.click('#pathLibrary');
+      await o.click('.workout-card:not(.history-card):has-text("☆")');
+      assert(await swapsOf(o) === soloSwaps && JSON.stringify(await moves(o)) === JSON.stringify(soloMoves) && await o.$eval('#btnSave', e => e.textContent === '★ Saved'),
+             'the favourite, opened once his name is in, still has the swap');
+      const url = await o.evaluate(() => shareUrlFor(state.workout));
+      await d.goto(url);
+      assert(await d.evaluate(() => state.nameA === 'Dave' && state.people === 1) && await swapsOf(d) === soloSwaps && JSON.stringify(await moves(d)) === JSON.stringify(soloMoves),
+             'and a link to a mate on his own, with his own name, opens with the same moves');
+      // the same on a card in a rest, on your own
+      await o.click('#btnStart');
+      const cardSays = await o.evaluate(() => {
+        const i = state.sequence.findIndex(x => x.kind === 'rest' && x.tally === undefined);
+        state.elapsedAtResume = startOf(i) + 1; state.runStartWall = Date.now(); tickClock();
+        return !els.swapA.hidden;
+      });
+      await o.click('#swapA');
+      const restSaid = await o.$eval('#swapFor', e => e.textContent);
+      await o.click('.swap-card >> nth=0');
+      assert(cardSays && restSaid === 'For the rest of this workout.' && JSON.parse(await swapsOf(o)).every(x => !('who' in x)), 'and from the card in a rest: ' + restSaid + ' ' + await swapsOf(o));
+      await one.close(); await mate.close();
+    }
     // finished: Save keeps the swaps, and the favourite opens with them
     await ev(() => finish());
     assert(await s.$eval('#btnSave', e => e.offsetParent !== null && e.textContent === '☆ Save as favourite'), 'Save on the finish screen');
@@ -3463,19 +3592,42 @@ try {
     const bells = await ev(() => {
       const f = { v: 1, name: 'Bells', intervalId: 'amrap', warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [],
                   blocks: [{ make: 'alt', name: 'Swings & presses', ids: ['kbSwing15', 'kbPress10'] }] };
-      openWorkout(thawWorkout(f, 99, { minutes: 6, people: 2, intervalId: 'amrap' }));
+      // (a build since the spare bells says so, see SPARE_BELLS)
+      const old = thawWorkout(f, 99, { minutes: 6, people: 2, intervalId: 'amrap' });
+      const oldLap = buildSequence(old, 2).find(x => x.amrap).b.circuit.map(x => x.display).join(' | ');
+      openWorkout(thawWorkout(f, 99, { minutes: 6, people: 2, intervalId: 'amrap', spare: 1 }));
       const i = state.sequence.findIndex(x => x.amrap);
       seekTo(i); render();
       const lap = (w) => state.sequence[i][w].circuit.map(x => x.display).join(' | ');
       const spares = [['kb15', 'kb10'], ['kb15'], ['kb10']].map(t => JSON.stringify(spareLoads({ kb: [8, 12, 16, 24] }, t)));
-      return { a: lap('a'), b: lap('b'), shown: els.circuitB.textContent.replace(/\s+/g, ' ').trim(), spares, none: JSON.stringify(spareLoads({ kb: [16, 24] }, ['kb15', 'kb10'])),
+      return { a: lap('a'), b: lap('b'), oldLap, shown: els.circuitB.textContent.replace(/\s+/g, ' ').trim(), spares, none: JSON.stringify(spareLoads({ kb: [16, 24] }, ['kb15', 'kb10'])),
                solo: describeEx('kbSwing15', buildCtx(null)).display };
     });
     assert(bells.a === 'KB swings · 24kg | Single-arm KB press · 16kg' && bells.b === 'Single-arm KB press · 8kg | KB swings · 12kg',
            'an AMRAP for two: you on the 24 and the 16, your mate on the 8 and the 12: ' + JSON.stringify(bells));
+    assert(bells.oldLap.split(' | ').every(n => !/kg/.test(n)), 'one built before the spare bells keeps the mate\'s bodyweight lap it had: ' + bells.oldLap);
     assert(bells.shown.includes('8kg') && bells.shown.includes('12kg'), 'on the card: ' + bells.shown);
     assert(bells.spares.join() === '{"kb15":"12kg","kb10":"8kg"},{"kb15":"16kg"},{"kb10":"12kg"}' && bells.none === '{}' && bells.solo === 'KB swings · 24kg',
            'the spare for each bell in use, none with only two, and on your own the 24 as before: ' + JSON.stringify(bells));
+    // a spare is never heavier than the bell the other person has for that
+    // role: with two bells, or 16 and 24, a mate's press while you've got
+    // the lighter bell goes bodyweight, never up to the top bell
+    const capped = await ev(() => {
+      const sets = [[10, 15], [12, 16], [16, 24], [16, 20, 24], [8, 12, 16, 24], [8, 16, 24], [12]];
+      const bad = [];
+      sets.forEach(kb => [['kb15', 'kb10'], ['kb15'], ['kb10']].forEach(t => {
+        const top = Math.max(...kb), light = lighterOf(kb), out = spareLoads({ kb }, t);
+        const kg = (x) => (x === undefined ? null : parseInt(x, 10));
+        if (kg(out.kb15) !== null && kg(out.kb15) >= top) bad.push([kb, t, out]);
+        if (kg(out.kb10) !== null && (light === null || kg(out.kb10) >= light)) bad.push([kb, t, out]);
+        if (Object.keys(out).some(r => !t.includes(r))) bad.push([kb, t, out]);
+      }));
+      const one = (kb, t) => JSON.stringify(spareLoads({ kb }, t));
+      return { bad, light: [one([10, 15], ['kb10']), one([16, 24], ['kb10']), one([16, 20, 24], ['kb10']), one([12, 16], ['kb10'])].join(),
+               heavy: [one([10, 15], ['kb15']), one([16, 24], ['kb15']), one([16, 20, 24], ['kb15', 'kb10'])].join() };
+    });
+    assert(!capped.bad.length && capped.light === '{},{},{},{}' && capped.heavy === '{"kb15":"10kg"},{"kb15":"16kg"},{"kb15":"20kg"}',
+           'a spare is only ever lighter than the bell the other lap has for it, and a lighter-bell move with none lighter goes bodyweight: ' + JSON.stringify(capped));
     const built = await ev(() => {
       const seen = new Set(); let clash = 0;
       const kg = (lap) => lap.filter(x => EXERCISES[x.id].equipment.some(e => e === 'kb15' || e === 'kb10')).map(x => x.load);
@@ -3491,6 +3643,35 @@ try {
       return { seen: [...seen].sort().join(), clash };
     });
     assert((built.seen.includes('8kg') || built.seen.includes('12kg')) && !built.clash, 'built AMRAPs for two use the lighter bells too, and never one bell for both: ' + JSON.stringify(built));
+    // and across built AMRAPs and For Times for two with 16 and 24, or 16,
+    // 20 and 24: a mate's lighter-bell move is never on a bell heavier than
+    // the 16, and a heavier-bell one never on the 24 while it's in the other lap
+    const sweep = await ev(() => {
+      const keep = JSON.stringify(state.weights), out = { over: [], runs: 0 };
+      [[16, 24], [16, 20, 24]].forEach(kb => {
+        state.weights = { ...state.weights, kb };
+        const light = lighterOf(kb), top = Math.max(...kb);
+        for (let seed = 1; seed <= 120; seed++) {
+          ['amrap', 'fortime'].forEach(intervalId => {
+            const w = buildWorkout({ ...requestFromState(), intervalId, mix: undefined }, seed);
+            if (w.error) return;
+            buildSequence(w, 2).filter(x => x.amrap || x.forTime).forEach(x => {
+              out.runs++;
+              const aKg = new Set(x.a.circuit.map(m => m.load).filter(Boolean));
+              x.b.circuit.forEach(m => {
+                const eq = EXERCISES[m.id].equipment, kg = parseInt(m.load, 10);
+                if (eq.includes('kb10') && kg > light) out.over.push([kb.join('/'), m.display]);
+                if (eq.includes('kb15') && kg > top) out.over.push([kb.join('/'), m.display]);
+                if (m.load && aKg.has(m.load)) out.over.push([kb.join('/'), 'shared', m.display]);
+              });
+            });
+          });
+        }
+      });
+      state.weights = JSON.parse(keep);
+      return out;
+    });
+    assert(sweep.runs > 50 && !sweep.over.length, 'with 16 and 24 (or 16, 20 and 24), a mate never gets a bell heavier than the one for that move, or one in the other lap: ' + JSON.stringify(sweep).slice(0, 400));
     await s.click('#btnBack'); await s.click('#pathBuild');
     assert((await s.$eval('#weightPicker', e => e.textContent)).includes('With a mate, the others are spares for when you both want a bell at once.'), 'setup says what the other bells are for');
     await sw.close();

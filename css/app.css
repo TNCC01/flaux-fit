@@ -636,8 +636,13 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .people-badge:disabled:active { transform: none; box-shadow: none; }
 /* before Start it's a button: 1 person or 2 */
 .people-badge.can-flip { color: var(--text); border-color: var(--border); padding: 0.5rem 0.75rem; }
-.people-badge.can-flip::after { content: ' ⇄'; color: var(--teal-bright); }
+.people-badge.can-flip::after { content: ' · ' attr(data-flip); color: var(--teal-bright); }
 .people-badge.can-flip:active { transform: scale(0.97); border-color: var(--teal); box-shadow: none; }
+/* on a phone upright, what a tap does goes under it, leaving the name room */
+@media (max-width: 700px) {
+  .people-badge.can-flip { text-align: center; line-height: 1.2; padding: 0.3rem 0.65rem; }
+  .people-badge.can-flip::after { content: attr(data-flip); display: block; font-size: 0.78rem; }
+}
 
 /* back after a while with the clock running: go back, or carry on (AWAY in js/app.js) */
 .away-bar {
@@ -1143,6 +1148,16 @@ body.show-alternatives .alternative.has-alt { display: block; }
   .round-counter { margin: 0.2rem 0 0.3rem; flex-wrap: wrap; gap: 0.4rem 0.5rem; }
   .round-counter button { min-height: 2.8rem; }
   .round-counter .count-more { flex: 1 0 auto; }
+  /* the count beside its −, clear of Swap at the top right */
+  .round-counter:not(.check-count) .count-now { align-items: flex-start; }
+  /* a Surf check count: the number and its words on one line, the buttons
+     in a row under it, so nothing breaks over three lines */
+  .check-count .count-now {
+    flex: 1 0 100%; order: -1; flex-direction: row; flex-wrap: wrap; justify-content: center;
+    align-items: baseline; column-gap: 0.4rem; white-space: nowrap;
+  }
+  .check-count .count-now span { margin-top: 0; }
+  .check-count .count-less, .check-count .count-more { flex: 1 0 0; width: auto; padding: 0 0.4rem; }
   .ex-anim, .exercise-grid:not(.solo) .ex-anim {
     flex: 1 1 0; aspect-ratio: auto; max-height: none; min-height: 4.5rem; margin-top: 0.5rem;
   }

@@ -67,7 +67,7 @@ before (anything but short bursts, or a mix) keeps it.
 The first block of each style in a session says how it works, under the
 round count ("Do the reps, then rest till the next minute.") or for an
 AMRAP or For Time in place of its line ("As many rounds as you can in 4
-minutes: tap +1 each round."), with the session's real numbers; a mix says
+minutes, tapping +1 after each."), with the session's real numbers; a mix says
 it for each section as it starts.
 
 All five run a **240-second block**, so switching between them never
@@ -113,10 +113,15 @@ and the next time you open the same workout the counter shows last time's
 number to beat. With two people, B starts one exercise along, and anything
 in B's lap that needs a kettlebell, the barbell, the rope or the rings that
 A's lap also uses goes to its bodyweight version, because the two of you
-won't be in step. With more bells than the two in use, B takes a spare
-instead (`spareLoads` in `js/app.js`): with 8, 12, 16 and 24kg ticked and
-A on the 24 and the 16, B swings the 12 and presses the 8 rather than
-doing good mornings. Setup says so under the bells.
+won't be in step. Where there's a lighter bell nobody's using, B takes
+it instead (`spareLoads` in `js/app.js`): with 8, 12, 16 and 24kg ticked
+and A on the 24 and the 16, B swings the 12 and presses the 8 rather than
+doing good mornings. A spare is only ever lighter than the bell that move
+has in A's lap, so with 16 and 24 a press B can't have the 16 for goes to
+its bodyweight version, never up to the 24. Setup says so under the bells.
+Only builds since the spare bells use them (the request says so, `spare`),
+so a favourite, a session in history, a link or one to pick up from before
+keeps the lap it had, and a classic keeps the bodyweight version.
 
 **Surf fitness** is a goal you pick at the top of setup, alongside General
 fitness. It builds from exercises tagged with what they do for surfing
@@ -214,7 +219,7 @@ For Time uses the same laps with a set amount of work: 3 rounds of a lap
 of three or more exercises, 4 of two, 5 of one, which lands around three
 minutes for most people. The clock counts up and FIT counts the rounds,
 so nobody keeps count while puffing: each person's card says the round
-they're on ("2 of 3 rounds"), with +1 round after each (and − for a stray
+they're on ("Round 2 of 3"), with +1 round after each (and − for a stray
 tap), and the last one is Done, which logs the time (saved like an AMRAP
 score, and shown as "Last time" next go; the undo goes back to the last
 round). Once everyone's done the rest of the four-minute cap
@@ -242,7 +247,9 @@ rather than hardcoded.
   like it. In a rest (the move coming up) or while paused, **Swap** on a
   person's card does it just for them: their mate's moves stay as they
   are, even in a block the two of you go round. Before Start, every move
-  in the preview is a button, and a swap there is for both of you. Either
+  in the preview is a button, and a swap there is for both of you. On
+  your own a swap is for whoever does the workout, so it's the same once
+  your name is in, or on a mate's phone from a link. Either
   way a sheet offers up to three moves of the same kind (for surfing, that
   do the same job on the board) as moving figures, best first: the move's
   own easier option, then nothing that jumps, the same pattern, the most
@@ -407,10 +414,11 @@ rather than hardcoded.
   stays hidden until one is tapped). A shorter spell just carries on
 - A phone on its side gets its own layout: the timer and its buttons on
   the left, the two people side by side on the right, all on one screen
-- The badge by the workout's name ("1 person", "Wayne & Dave") is a button
-  until Start: a tap changes one person for two and back, the same moves
-  shared out again, for when a mate turns up (or doesn't). Once it's
-  going it stays as it is
+- The badge by the workout's name ("1 person · Add a mate", "Wayne & Dave
+  · Just me?") is a button until Start: a tap changes one person for two
+  and back, the same moves shared out again, for when a mate turns up (or
+  doesn't), and says so ("Now for 1 person. Tap the badge again for two."). Once
+  it's going it stays as it is
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
   tablet, for the same number of people, with no account and no server
@@ -418,7 +426,10 @@ rather than hardcoded.
   Dave" once they're named), and Share stays on screen once the workout
   is going. With two people it carries their names, so the other phone
   has the same person on each card ("Opened from a shared link, for Wayne
-  & Dave"), and any moves swapped. A link passed on keeps the gear it
+  & Dave"), and any moves swapped. Those names are for that workout only
+  (and picking it up again): the other phone's own names stay as they
+  are, so Dave opening Wayne's link is still Dave, with his own level,
+  once he's home. A link passed on keeps the gear it
   was first built with, so the third person gets the same session too.
   It carries each named person's level, so on the other device Wayne's
   reps reach whoever is called Wayne there and nobody else, and someone
