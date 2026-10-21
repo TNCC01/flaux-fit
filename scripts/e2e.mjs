@@ -1625,7 +1625,68 @@ try {
     n = await lines();
     await later(59.5);
     await waitSaid(n, 'with a minute to go');
-    assert(/^(Halfway\. )?One minute left\.$/.test((await said()).pop()), 'one minute left in the AMRAP: ' + (await said()).pop());
+    assert((await said()).pop() === 'One minute left.', 'one minute left in the AMRAP, on its own: ' + (await said()).pop());
+    await leaveStarted(v);
+    // Halfway only leads what a rest (or a warm-up move or stretch) says:
+    // never in work, where it would sound like half the minute or block had
+    // gone, never with One minute left, and not at all in a Surf check
+    // (a session walked through on the clock, `step` seconds a tick, and what's said)
+    const walk = (step) => ev(async (step) => {
+      __speech.ms = 5;
+      const from = __speech.said.length;
+      const settle = async () => { for (let k = 0; k < 200 && (coach.timer || __speech.current); k++) await new Promise(r => setTimeout(r, 10)); };
+      for (let i = 0; i < state.sequence.length; i++) {
+        const d = state.sequence[i].duration;
+        for (let left = d - 1.5; left > 3; left -= step) {
+          state.runStartWall = Date.now() - (startOf(i) + d - left - state.elapsedAtResume) * 1000;
+          tickClock();
+          await settle();
+        }
+      }
+      __speech.ms = null;
+      return __speech.said.slice(from).filter(x => x.text.trim()).map(x => ({ text: x.text, kind: x.kind, idx: x.idx, left: x.left }));
+    }, step);
+    await ev(() => { state.people = 2; savePrefs(); return buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'fortime', mix: undefined, minutes: 20 }, 4242); });
+    await v.click('#btnStart');
+    const ft = await walk(2.5);
+    const ftHalf = ft.filter(x => x.text.includes('Halfway'));
+    assert(ft.some(x => x.text === 'One minute left.') && ft.filter(x => x.kind === 'work').length > 0, 'a For Time for two, walked through, says its lines: ' + JSON.stringify(ft.map(x => x.text)).slice(0, 300));
+    assert(ftHalf.length === 1 && ftHalf.every(x => x.kind !== 'work' && x.text.startsWith('Halfway. ') && !x.text.includes('One minute')),
+           'Halfway once, in front of a rest\'s line, never in a For Time block: ' + JSON.stringify(ftHalf));
+    await leaveStarted(v);
+    // Dave on a move of his own in a lap (swapped in the rest before): the
+    // call still has the moves, and where he starts
+    const lapSwap = await ev(() => {
+      buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'fortime', mix: undefined, minutes: 20 }, 4242);
+      const w = state.workout;
+      const r = state.sequence.findIndex((x, j) => x.kind === 'blockrest' && (state.sequence[j + 1] || {}).forTime && state.sequence[j + 1].b.circuit.length > 1);
+      const bi = state.sequence[r + 1].blockIdx, from = state.sequence[r + 1].b.circuit[0].base;
+      const to = swapCandidates(w.blocks[bi], from, swapOpts(w, bi, 'b'))[0];
+      openWorkout(swapped(w, [{ block: bi, from, to, who: 'dave' }]));
+      const room = Math.min(state.sequence[r].duration - VOICE_CLEAR - VOICE_AFTER_CHIME_MS / 1000, VOICE_MOST);
+      return { r, to: to && spoken(EXERCISES[to].name), first: spoken(state.sequence[r + 1].a.circuit[0].name),
+               line: callSaid(r + 1, r).map(spoken).find(t => sayTime(t) <= room) };
+    });
+    assert(lapSwap.r > 0 && lapSwap.to && lapSwap.line.includes(lapSwap.first) && lapSwap.line.includes(`Dave starts on ${lapSwap.to}`),
+           'after a swap of his own in a lap, the rest still calls the moves, and where Dave starts: ' + JSON.stringify(lapSwap));
+    await ev(() => { state.programRun = null; openWorkout(SURF_CHECK); });
+    await v.click('#btnStart');
+    const sc = await walk(2.5);
+    assert(sc.length > 3 && !sc.some(x => x.text.includes('Halfway')), 'and never in a Surf check: ' + JSON.stringify(sc.map(x => `${x.kind}: ${x.text}`)));
+    await leaveStarted(v);
+    // Surf Fit's 25s on, 5s off: the 5 seconds between sprints can't fit a
+    // call, so each sprint is called near the end of the one before, clear
+    // of its 3-2-1, and doesn't say itself again after Go
+    await ev(() => buildAndOpen({ ...requestFromState(), people: 2, goal: 'surf', intervalId: 'short', mix: undefined, minutes: 20, workRest: { short: [25, 5] } }, 4242));
+    await v.click('#btnStart');
+    const sprints = await walk(0.5);
+    const late = await ev(() => state.sequence.map((x, i) => i).filter(i => state.sequence[i].kind === 'work' && restTooShort(i - 1) && !sameAgain(i)));
+    const calledAhead = late.filter(i => sprints.some(x => x.idx === i - 2 && x.kind === 'work' && /^(Next|Last round): /.test(x.text) && x.left - (0.4 + x.text.length / 13) >= 3.5));
+    // (a sprint's own line would be as it starts; the one before calls it in its last few seconds)
+    const saidAtGo = sprints.filter(x => late.includes(x.idx) && x.left > 20);
+    assert(late.length >= 10 && calledAhead.length === late.length && !saidAtGo.length,
+           'each sprint after a 5s rest is called in the one before, and says nothing after Go: ' + JSON.stringify({ late, calledAhead, saidAtGo }));
+    assert(sprints.some(x => x.text.startsWith('Last round: ')), 'the last round called ahead too, as the last round');
     await leaveStarted(v);
 
     // what it says, said well: weights, seconds, sides, and no symbols, for every exercise
@@ -1682,7 +1743,7 @@ try {
     note(`at a rest: "${rest.text}"; before an EMOM minute: "${emLine}"; before an AMRAP: "${amLine}"`);
     await phone.close();
   }
-  ok('voice coach: on for a new visitor in an Australian voice, primed by the Start tap, names the warm-up, calls both people\'s next move at each rest, Last round, the next block, Halfway once, an EMOM\'s reps ahead of the minute and an AMRAP\'s list and one minute left; never under 3.5 seconds, cut off at the 3-2-1, on pause, skip and leave, never over itself; silent with No sound or the voice off; spoken words for every exercise; the choice and the switch persist, back up and survive a tab on the last release');
+  ok('voice coach: on for a new visitor in an Australian voice, primed by the Start tap, names the warm-up, calls both people\'s next move at each rest, Last round, the next block, Halfway once in front of a rest\'s line (never in work or a Surf check), an EMOM\'s reps ahead of the minute, a sprint past a 5s rest called in the one before, an AMRAP\'s list (with a mate\'s own move) and one minute left on its own; never under 3.5 seconds, cut off at the 3-2-1, on pause, skip and leave, never over itself; silent with No sound or the voice off; spoken words for every exercise; the choice and the switch persist, back up and survive a tab on the last release');
 
   step = 'the card shows the exercise as a 3D figure; drag turns it, a tap opens the full view';
   // the full viewer is checked by move-check; here it's the app's side of the tap
@@ -2691,6 +2752,7 @@ try {
            'home leads with the Surf check on day 1, in place of Paddle power, with Not today: ' + JSON.stringify(c1));
     assert(await w.$eval('#todayCard .check-later', e => e.textContent) === 'Not today? Do Paddle power instead, and the next check is in two weeks.',
            'Not today reads as a question with what to do instead: ' + await w.$eval('#todayCard .check-later', e => e.textContent));
+    assert(await w.$eval('#todayCard #btnCheckLater', e => e.textContent) === 'Not today?', 'its question mark on the link, not apart from it after the padding');
     const checkDays = await ev(() => [...Array(42)].map((_, n) => n).filter(n => checkToday(PROGRAMS[0], state.programs['surf-fit'], n)).join());
     assert(checkDays === '0,14,28', 'the Surf check days are day 1 of weeks 1, 3 and 5: ' + checkDays);
     // Not today: the day's own session, the same day after a reload too, and the way back to the check
@@ -3458,6 +3520,42 @@ try {
     await m.goto(plain);
     assert(await m.evaluate(() => state.nameA === 'Sam' && state.nameB === 'Jo' && els.labelA.textContent === 'Sam' && document.getElementById('workoutNote').textContent === 'Opened from a shared link.'),
            'a link with no names leaves the names here alone');
+    // Wayne can't make it: Dave taps the badge on the link for the two of
+    // them, and it's his session (his phone's own spot), not Wayne's
+    // (with nothing done here yet, so it's a session of its own in history)
+    await m.evaluate(() => { state.nameA = 'Dave'; state.nameB = ''; state.people = 1; state.history = []; state.levels = { dave: { k: 1.2, easy: 0 }, wayne: { k: 0.8, easy: 0 } }; savePrefs(); });
+    await m.goto(link.url);
+    await m.click('#peopleBadge');
+    const justDave = await m.evaluate(() => ({ people: state.people, key: levelKey('a'), label: els.labelA.textContent, note: document.getElementById('workoutNote').textContent,
+      going: document.getElementById('goingNote').textContent }));
+    assert(justDave.people === 1 && justDave.key === 'dave' && justDave.label === 'You' && justDave.note === 'Opened from a shared link.'
+           && justDave.going.startsWith('Now for 1 person.'), "on his own, a link for two is Dave's: his name and level here: " + JSON.stringify(justDave));
+    await m.click('#peopleBadge');
+    const backTwo = await m.evaluate(() => ({ labels: [els.labelA.textContent, els.labelB.textContent].join(), keys: [levelKey('a'), levelKey('b')].join(), note: document.getElementById('workoutNote').textContent }));
+    assert(backTwo.labels === 'Wayne,Dave' && backTwo.keys === 'wayne,dave' && backTwo.note === 'Opened from a shared link, for Wayne & Dave.',
+           "and back to two, the link's names in its spots again: " + JSON.stringify(backTwo));
+    await m.click('#peopleBadge');
+    await m.evaluate(() => { startTimer(); finish(); });
+    await m.click('#finishA [data-feel="easy"]');
+    const daveDone = await m.evaluate(() => ({ names: state.history[0].names, people: state.history[0].people, levels: JSON.parse(localStorage.getItem('fit-levels-1')) }));
+    assert(daveDone.names.a === 'Dave' && daveDone.people === 1, 'his history has it as his: ' + JSON.stringify(daveDone));
+    assert(daveDone.levels.dave.easy === 1 && daveDone.levels.wayne.k === 0.8 && daveDone.levels.wayne.easy === 0,
+           "and his Too easy moves his level, not Wayne's: " + JSON.stringify(daveDone.levels));
+    // a note already there stays through a tap on the badge: a favourite
+    // with a move that's since left the library, built again
+    const rebuiltNote = await m.evaluate(() => {
+      goWelcome();
+      const w = buildWorkout(requestFromState(), 31337);
+      const frozen = freezeWorkout(w);
+      frozen.blocks[0].ids[0] = 'noSuchMoveAnyMore';
+      openFromRecord({ generated: true, seed: w.seed, request: w.request, frozen });
+      return document.getElementById('workoutNote').textContent;
+    });
+    await m.click('#peopleBadge');
+    const flippedNote = await m.evaluate(() => [document.getElementById('workoutNote').textContent, document.getElementById('goingNote').textContent]);
+    assert(rebuiltNote === 'Some of its moves have changed since it was saved, so it was built again.' && flippedNote[0] === rebuiltNote && flippedNote[1].startsWith('Now for '),
+           'a note already on the workout stays through a tap on the badge: ' + JSON.stringify(flippedNote));
+    await m.evaluate(() => goWelcome());
     await mates.close();
     // on your own a swap is for whoever does the workout: the favourite once
     // a name's in, and a link to a mate on his own phone, have it the same
@@ -3515,6 +3613,10 @@ try {
     assert(await ev(() => JSON.stringify(state.saved[0].swaps)) === swaps2 && await s.$eval('#btnSave', e => e.textContent === '★ Saved' && e.disabled), 'saved with its swaps');
     await s.click('#btnStart');                                    // Done
     await s.click('#pathLibrary');
+    // its card says its minutes and style, as Recent does, so two with one name can be told apart
+    const favMeta = await s.$eval('.workout-card:not(.history-card):has-text("☆") .card-meta', e => e.textContent.replace(/\s+/g, ' ').trim());
+    const wantMeta = await ev(() => `${state.saved[0].request.minutes} min · ${styleLabel({ intervalId: state.saved[0].request.intervalId })}`);
+    assert(favMeta === wantMeta && /^\d+ min · \S/.test(favMeta), 'a favourite\'s card has its minutes and style: ' + favMeta + ' / ' + wantMeta);
     await s.click('.workout-card:not(.history-card):has-text("☆")');
     assert(await swapsOf() === swaps2 && JSON.stringify(await moves()) === JSON.stringify(seq2), 'the favourite opens with both swaps');
     assert(await s.$eval('#btnSave', e => e.textContent === '★ Saved' && e.disabled), 'and is saved as it is');
@@ -3609,6 +3711,44 @@ try {
     assert(bells.shown.includes('8kg') && bells.shown.includes('12kg'), 'on the card: ' + bells.shown);
     assert(bells.spares.join() === '{"kb15":"12kg","kb10":"8kg"},{"kb15":"16kg"},{"kb10":"12kg"}' && bells.none === '{}' && bells.solo === 'KB swings · 24kg',
            'the spare for each bell in use, none with only two, and on your own the 24 as before: ' + JSON.stringify(bells));
+    // and the preview before Start says each one's bell, as their lap has
+    // it: an AMRAP with 8, 12, 16 and 24, and a For Time with 12, 16 and 24
+    // (one move on a bell each, and a two-weight block)
+    const lapPreview = await ev(() => {
+      const keep = JSON.stringify(state.weights), out = [];
+      const blocks = [{ make: 'alt', name: 'Swings & presses', ids: ['kbSwing15', 'kbPress10'] }, { make: 'swap', name: 'Goblet squats', ids: ['gobletSquat15', 'gobletSquat10'] }];
+      [['amrap', [8, 12, 16, 24]], ['fortime', [12, 16, 24]]].forEach(([intervalId, kb]) => {
+        state.weights = { ...state.weights, kb };
+        const f = { v: 1, name: 'Bells', intervalId, warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [], blocks };
+        openWorkout(thawWorkout(f, 99, { minutes: 12, people: 2, intervalId, spare: 1 }));
+        state.sequence.filter(x => x.amrap || x.forTime).forEach(x => {
+          const pills = [...document.querySelectorAll(`.preview-move[data-block="${x.blockIdx}"]`)].map(e => e.textContent);
+          seekTo(state.sequence.indexOf(x)); render();
+          out.push({ kb: kb.join('/'), pills, a: x.a.circuit.map(m => m.load), b: x.b.circuit.map(m => m.load), shownB: els.circuitB.textContent.replace(/\s+/g, ' ').trim() });
+        });
+      });
+      state.weights = JSON.parse(keep);
+      return out;
+    });
+    assert(lapPreview.length === 4 && lapPreview.every(x => x.b.every(l => l && x.shownB.includes(l) && x.pills.some(t => t.includes(`Dave ${l},`)))
+             && x.a.every(l => x.pills.some(t => t.includes(`(Wayne ${l},`))) && !x.pills.some(t => /· \d+kg \(/.test(t))),
+           "the preview names each one's bell in a lap for two, Dave's as on his card: " + JSON.stringify(lapPreview));
+    assert(lapPreview[1].pills.length === 1 && lapPreview[3].pills.length === 1, 'a two-weight block in a lap reads as one move, each on their own bell: ' + JSON.stringify(lapPreview.map(x => x.pills)));
+    // the two of them on the same move (a block on one): a swap for Dave
+    // leaves Wayne on it, and the sheet says he keeps it
+    const keeps = await ev(() => {
+      const f = { v: 1, name: 'Same', intervalId: 'short', warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [],
+                  blocks: [{ make: 'same', name: 'Climbers', ids: ['mountainClimberFast'] }] };
+      openWorkout(thawWorkout(f, 97, { minutes: 10, people: 2, intervalId: 'short' }));
+      const i = state.sequence.findIndex(x => x.kind === 'rest' && x.blockIdx === 0);
+      seekTo(i); render();
+      return { swapB: !els.swapB.hidden, a: state.sequence[i + 1].a.name, b: state.sequence[i + 1].b.name };
+    });
+    await s.click('#swapB');
+    const keepsSaid = await s.$eval('#swapFor', e => e.textContent);
+    assert(keeps.swapB && keeps.a === keeps.b && keepsSaid === `Just for Dave, for the rest of this workout. Wayne keeps ${keeps.a}.`,
+           'with both on the move, the sheet says Wayne keeps it: ' + keepsSaid);
+    await s.click('#swapClose');
     // a spare is never heavier than the bell the other person has for that
     // role: with two bells, or 16 and 24, a mate's press while you've got
     // the lighter bell goes bodyweight, never up to the top bell
@@ -3676,7 +3816,7 @@ try {
     assert((await s.$eval('#weightPicker', e => e.textContent)).includes('With a mate, the others are spares for when you both want a bell at once.'), 'setup says what the other bells are for');
     await sw.close();
   }
-  ok('swap a move: three like it for the gear, for both of you from the preview or one of you from a card in a rest or paused, only that person\'s moves changed, the clock where it was; kept by Save, a link (with the names), Resume and history, classics too; Leave it out from now on; the badge flips before Start only; a mate takes the spare bells');
+  ok('swap a move: three like it for the gear, for both of you from the preview or one of you from a card in a rest or paused, only that person\'s moves changed, the clock where it was; kept by Save, a link (with the names), Resume and history, classics too; Leave it out from now on; the badge flips before Start only, and on a link for two makes it yours on your own, a note kept; a mate takes the spare bells, said in the preview; Wayne keeps a move both are on; a favourite says its minutes and style');
 
   step = 'two tabs open: one saving does not wipe what the other saved';
   await p.click('#btnBack'); await p.click('#pathLibrary');
@@ -3871,17 +4011,32 @@ try {
     assert(moved.levels === mine.levels && await f.evaluate(() => localStorage.getItem('fit-levels-1')) === mine.levels,
            "and each person's level, under its own key too: " + moved.levels);
     assert(moved.programs === mine.programs, 'and the program, surfs and all: ' + moved.programs);
-    assert((await said()).startsWith('Restored: ') && await f.$('#btnPutBack'), 'it says so, and offers Put it back');
+    assert((await said()).startsWith('Restored: ') && !(await f.$('#btnPutBack')) && await f.evaluate(() => !localStorage.getItem('fit-prefs-2-before-restore')),
+           'it says so, and with nothing here before it, has nothing to put back');
     const box = (sel) => f.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.top, b.bottom, innerHeight]; });
     const onScreen = async (sel) => { const [top, bottom, ih] = await box(sel); return top >= 0 && bottom <= ih && bottom > top; };
-    assert(await onScreen('#yourData .data-note') && await onScreen('#btnPutBack'),
-           'where it can be seen, with Put back, though the sessions and favourites above it moved it down the page: '
-           + JSON.stringify([await box('#yourData .data-note'), await box('#btnPutBack')]));
+    assert(await onScreen('#yourData .data-note'),
+           'where it can be seen, though the sessions and favourites above it moved it down the page: ' + JSON.stringify(await box('#yourData .data-note')));
     assert(await f.$$eval('.workout-card:has-text("☆")', els => els.length) === mine.saved, 'the favourites are on the page');
     await (await f.$$('.workout-card:has-text("☆")'))[1].click();
     assert(await f.evaluate(() => state.workout.exerciseIds.join(',')) === idsA, 'favourite A opens on the other device with the same moves');
     await f.click('#btnBack');
     assert(await view() === 'welcomeView', 'and the gear question has been answered');
+    // a restore over what's here keeps it, to put back: from a file, the
+    // same way, onto this device with its sessions and levels gone since
+    await f.evaluate(() => { state.history = []; state.levels = {}; savePrefs(); });
+    await f.reload();
+    await f.click('#pathLibrary');
+    await f.click('#btnRestore');
+    await f.setInputFiles('#restoreFile', { name: 'FIT backup.json', mimeType: 'application/json', buffer: Buffer.from(fileText) });
+    await f.waitForSelector('#btnRestoreYes');
+    assert((await f.$eval('.restore-check', e => e.textContent)).includes(`This backup has ${mine.summary}`), 'a chosen backup file is read the same way');
+    await f.click('#btnRestoreYes');
+    assert(await f.evaluate((n) => state.history.length === n, mine.history), 'and restored');
+    assert((await said()).startsWith('Restored: ') && await f.$('#btnPutBack'), 'it says so, and offers Put it back');
+    assert(await onScreen('#yourData .data-note') && await onScreen('#btnPutBack'), 'with Put back where it can be seen: ' + JSON.stringify(await box('#btnPutBack')));
+    const undoLine = await f.$eval('#yourData .data-undo', e => e.textContent);
+    assert(/^Restored on \S+ \S+ from a backup saved \S+ \S+\. Put back what was here before$/.test(undoLine), 'saying when, and when the backup was saved: ' + undoLine);
     // Put it back undoes it, until the next restore
     await f.reload();
     await f.click('#pathLibrary');
@@ -3894,13 +4049,6 @@ try {
     assert(!(await f.$('#btnPutBack')) && (await said()).startsWith('Put back: '), 'and is used up');
     assert(await onScreen('#yourData .data-note'), 'saying so on screen');
     assert(await f.$eval('#restoreFile', e => e.accept) === '.json,application/json,text/plain', 'the file picker asks for the backup, so an iPhone opens Files, not Photos');
-    // from a file, the same way
-    await f.click('#btnRestore');
-    await f.setInputFiles('#restoreFile', { name: 'FIT backup.json', mimeType: 'application/json', buffer: Buffer.from(fileText) });
-    await f.waitForSelector('#btnRestoreYes');
-    assert((await f.$eval('.restore-check', e => e.textContent)).includes(`This backup has ${mine.summary}`), 'a chosen backup file is read the same way');
-    await f.click('#btnRestoreYes');
-    assert(await f.evaluate((n) => state.history.length === n, mine.history), 'and restored');
     await phone.close();
   }
   ok('Your data: a dated backup file, the same on the clipboard (or in a box without one), and a restore by file or paste from the first-visit question that says what it found, asks, cleans what it takes, and can be put back');

@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v20';
+const RELEASE = 'fit-v21';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -577,6 +577,7 @@ const FEEL_LABEL = { easy: 'Too easy', right: 'About right', cooked: 'Cooked' };
 // never saved over this phone's: Dave opening Wayne's link for the two of
 // them is still Dave here after. Let go as you leave it (see setView).
 let namesShown = null;           // { a, b }, or null for this phone's own
+let namesSetAside = null;        // a link's names while it's down to one (see flipPeople)
 const nameOn = (which) => (((namesShown || { a: state.nameA, b: state.nameB })[which]) || '').trim();
 // Whose level it is: the person's name, or with no name set, their spot
 // ('#a', '#b'), so it follows Wayne whichever spot he's in.
@@ -1064,12 +1065,13 @@ function chimeFor(phase) {
 // done face down, or with the phone across the room, doesn't need the
 // screen. In each rest, the next move for each person ("Next: Wayne,
 // push-ups. Dave, squats."), with the reps in an EMOM or an AMRAP when they
-// fit, and "Last round" before the last; "Halfway" through the session;
-// "One minute left" in a long AMRAP or For Time. A move that comes with no
-// rest before it (the first block after the warm-up, an EMOM's next
-// minute) is called just before it starts, and each warm-up move and
-// stretch is named as it starts. The beeps keep the 3-2-1, which has to be
-// on the second.
+// fit, and "Last round" before the last; "Halfway" in front of a rest's
+// line near the middle of the session; "One minute left" in a long AMRAP
+// or For Time. A move that comes with no rest before it (the first block
+// after the warm-up, an EMOM's next minute), or only one too short to call
+// it in (Surf Fit's 5 seconds between sprints), is called near the end of
+// the phase before, and each warm-up move and stretch is named as it
+// starts. The beeps keep the 3-2-1, which has to be on the second.
 //
 // What Safari does with it isn't written down anywhere, so this goes by
 // what others have found, and Wayne's phone has the last word:
@@ -1235,6 +1237,17 @@ function workSaid(p) {
       lines.push(`${head}. ${both(list(p.a, d), duo ? list(p.b, d) : '', ': ')}`);
       if (round && sorted(p.a, d) === sorted(p.b, d)) lines.push(`${head}. ${list(p.a, d)}. ${personName('b')} starts on ${p.b.circuit[0].name}.`);
     }
+    // or the second on a move or two of their own (a swap, or no spare
+    // bell): the list once, where they start and what's theirs ("Dave
+    // starts on Bear crawls, in place of Inchworm walkouts."), or with no
+    // room for that, where they start
+    const own = duo && p.b.circuit.length > 1 && p.b.circuit.length === p.a.circuit.length
+      && p.b.circuit.map(x => { const y = p.a.circuit.find(m => m.base === x.base); return y && (y.name === x.name ? '' : `in place of ${y.name}`); });
+    if (own && own.every(x => typeof x === 'string') && own.some(Boolean)) {
+      const start = `${head}. ${list(p.a, 0)}. ${personName('b')} starts on ${p.b.circuit[0].name}`;
+      const others = p.b.circuit.slice(1).map((x, k) => own[k + 1] && `${x.name} ${own[k + 1]}`).filter(Boolean);
+      lines.push(`${start}${own[0] ? `, ${own[0]}` : ''}${others.length ? `, with ${others.join(' and ')}` : ''}.`, `${start}.`);
+    }
     lines.push(`${head}.`);
   } else {
     for (const d of [2, 1, 0]) lines.push(both(moveSaid(p.a, d), duo ? moveSaid(p.b, d) : '', ', '));
@@ -1280,27 +1293,45 @@ function entrySaid(idx) {
   const first = p.kind === 'warmup' ? !p.warmIdx && 'Warm-up. ' : p.kind === 'cooldown' ? !p.coolIdx && 'Cool-down. ' : '';
   return p.a ? { lines: [`${first || ''}${p.a.name}.`] } : null;
 }
-// Work straight after a phase with no rest between, called as late as it
-// can be and still be said clear of its 3-2-1, as much of it as fits in
-// the time left once the phase has started.
+// A rest with no room for any of its call once the chime has had its
+// moment (Surf Fit's 5 seconds between sprints), so the work before it
+// calls what's after it. Not a Surf check's, which asks how many first.
+function restTooShort(r) {
+  const seq = state.sequence, p = seq[r], next = seq[r + 1];
+  if (!p || p.kind !== 'rest' || p.tally !== undefined || !next || next.kind !== 'work') return false;
+  const room = Math.min(p.duration - VOICE_CLEAR - VOICE_AFTER_CHIME_MS / 1000, VOICE_MOST);
+  return !callSaid(r + 1, r).some(l => sayTime(spoken(l)) <= room);
+}
+// Work straight after a phase with no rest between, or past a rest too
+// short to call it in, called as late as it can be and still be said
+// clear of its 3-2-1, as much of it as fits in the time left once the
+// phase has started.
 function aheadSaid(idx, left) {
-  const seq = state.sequence, p = seq[idx], next = seq[idx + 1];
-  if (!next || next.kind !== 'work' || p.kind === 'rest' || p.kind === 'blockrest' || sameAgain(idx + 1)) return null;
-  for (const line of callSaid(idx + 1, idx)) {
+  const seq = state.sequence, p = seq[idx];
+  if (p.kind === 'rest' || p.kind === 'blockrest') return null;
+  const w = restTooShort(idx + 1) ? idx + 2 : idx + 1, next = seq[w];
+  if (!next || next.kind !== 'work' || sameAgain(w)) return null;
+  for (const line of callSaid(w, w - 1)) {
     const t = sayTime(spoken(line));
     const at = VOICE_CLEAR + t + 0.5;
-    if (t <= VOICE_MOST && at <= left - 2) return { w: idx + 1, lines: [line], at };
+    if (t <= VOICE_MOST && at <= left - 2) return { w, lines: [line], at };
   }
   return null;
 }
-const halfDue = () => !coach.half && state.totalDuration > 120 && state.elapsedTotal >= state.totalDuration / 2;
-// The most of `lines` that fits in `room` seconds, with Halfway in front
-// when it's due and there's room for it (on its own if there are no
-// lines), said after `delayMs`. True if anything was.
-function speak(lines, room, delayMs = 0) {
-  const half = halfDue();
-  if (!lines.length && !half) return false;
-  const options = [...(half ? (lines.length ? lines.map(l => `Halfway. ${l}`) : ['Halfway.']) : []), ...lines].map(spoken);
+// Halfway, once, from the middle of the session until it's no longer
+// near it: in front of what a rest, a block rest, a warm-up move or a
+// stretch says, never on its own or in work (20 seconds into a minute's
+// test, or with a block's minute left, it says the wrong thing), never
+// with One minute left, and not in a Surf check, whose paddle hold takes
+// as long as it takes.
+const halfDue = () => !coach.half && state.totalDuration > 120 && !(state.workout && state.workout.format === 'check')
+  && state.elapsedTotal >= state.totalDuration / 2 && state.elapsedTotal <= state.totalDuration * 0.6;
+// The most of `lines` that fits in `room` seconds, said after `delayMs`,
+// with Halfway in front when `half` lets it, it's due and there's room
+// for it. True if anything was.
+function speak(lines, room, delayMs = 0, half = false) {
+  if (!lines.length) return false;
+  const options = [...(half && halfDue() ? lines.map(l => `Halfway. ${l}`) : []), ...lines].map(spoken);
   const fit = options.find(t => sayTime(t) <= Math.min(room - delayMs / 1000, VOICE_MOST));
   if (!fit) return false;
   if (fit.startsWith('Halfway')) coach.half = true;
@@ -1321,7 +1352,7 @@ function coachTick() {
     coach.ahead = aheadSaid(idx, left);
     const entry = entrySaid(idx);
     const fresh = left > p.duration - 1;            // not landed on part-way
-    if (entry && speak(entry.lines, room, fresh ? VOICE_AFTER_CHIME_MS : 0)) {
+    if (entry && speak(entry.lines, room, fresh ? VOICE_AFTER_CHIME_MS : 0, p.kind !== 'work')) {
       if (entry.w !== undefined) coach.called = entry.w;
       return;
     }
@@ -1331,7 +1362,7 @@ function coachTick() {
   const a = coach.ahead;
   if (a && left <= a.at) {
     coach.ahead = null;
-    if (coach.called !== a.w && speak(a.lines, room)) coach.called = a.w;
+    if (coach.called !== a.w && speak(a.lines, room, 0, p.kind !== 'work')) coach.called = a.w;
     return;
   }
   if (talking()) return;
@@ -1339,10 +1370,8 @@ function coachTick() {
   if ((p.amrap || p.forTime) && p.duration >= 180 && coach.minute !== idx && left <= 60 && left > 55
       && !(p.forTime && allDone(p))) {
     coach.minute = idx;
-    if (speak(['One minute left.'], room)) return;
+    speak(['One minute left.'], room);
   }
-  // Halfway on its own, when nothing else is said, and not just before a call
-  if (halfDue() && !(a && left - a.at < 2)) speak([], room);
 }
 
 // =====================================================================
@@ -1382,7 +1411,7 @@ let swReloadAfterWorkout = false;
 function setView(v) {
   if (swReloadAfterWorkout && v !== 'workout') { location.reload(); return; }
   state.view = v;
-  if (v !== 'workout') namesShown = null;     // a link's names, for its workout only
+  if (v !== 'workout') namesShown = namesSetAside = null;     // a link's names, for its workout only
   ['welcome', 'gear', 'setup', 'library', 'program', 'workout'].forEach(name => {
     els[name + 'View'].classList.toggle('active', v === name);
     document.body.classList.toggle('view-' + name, v === name);   // for the scroll fade (css)
@@ -2342,12 +2371,21 @@ function historyCard(rec) {
   return wrap;
 }
 
+// A favourite's card: with its minutes and style, as Recent has them, so
+// two with the same name (FIT picks a new style each time) can be told
+// apart. Not who for: it opens for whoever's training now.
 function savedCard(saved) {
   const wrap = document.createElement('div');
   wrap.className = 'workout-card ' + (focusClassMap[saved.focus] || 'whole');
+  const r = saved.request || {};
+  const style = styleLabel({ intervalId: Array.isArray(r.mix) && r.mix.length ? 'mix' : r.intervalId, request: r });
   wrap.innerHTML = `
     <div class="card-name">☆ ${esc(saved.name)}</div>
     <div class="card-tagline">Saved ${esc(saved.savedOn || '')}</div>
+    ${r.minutes && style ? `<div class="card-meta">
+      <span class="duration">${esc(r.minutes)} min</span>
+      <span><span class="sep">·</span> ${esc(style)}</span>
+    </div>` : ''}
     <div class="card-blurb">${esc(saved.blurb || '')}</div>`;
   wrap.addEventListener('click', () => {
     const err = openFromRecord({ ...saved, generated: true });
@@ -2461,12 +2499,21 @@ function renderPeopleBadge() {
 // the level it was built at, as a favourite does (a new mate gets the
 // plain targets). Once Start is pressed it stays as it is (the timeline
 // would change under the clock); a Surf check asks for its people first.
+// A link's two names (see namesShown) go aside for one: it's this phone's
+// own person then, so Dave doing Wayne's link for the two of them on his
+// own gets his own name, history and level, not Wayne's; back to two, the
+// link's names come back. A note already there stays (a favourite built
+// again, Link copied), but not who the link was for once it's one.
 function flipPeople() {
   if (!canFlipPeople()) return;
   state.people = state.people === 1 ? 2 : 1;
+  if (state.people === 1) { namesSetAside = namesShown; namesShown = null; }
+  else if (namesSetAside) { namesShown = namesSetAside; namesSetAside = null; }
   savePrefs();
   renderPeoplePicker();
+  const note = els.workoutNote.textContent;
   openWorkout(state.workout);
+  els.workoutNote.textContent = note.startsWith('Opened from a shared link') ? linkNote() : note;
   // and says so on the first screen, with how to go back
   noteUntilGoing(`Now for ${peopleText()}. Tap the badge again for ${state.people === 1 ? 'two' : 'one'}.`);
 }
@@ -2565,14 +2612,23 @@ function renderPreview() {
       // with each person's swaps in: one who swapped a move does another
       const swaps = swapMaps(w, i, swapKeys());
       const sA = withSwaps(ctxA, swaps.a), sB = withSwaps(ctxB, swaps.b);
+      // in a lap for two (AMRAP, For Time), B's move as B's lap has it: a
+      // spare bell, or the bodyweight version (see amrapCircuits); a
+      // two-weight block's lap has A on the first and B on the second
+      const lapB = duo && iv.lap ? amrapCircuits(b, sB, true, sA).bOf : null;
+      const ids = lapB && b.shape === 'swap' ? [b.ids[0]] : (b.ids || []);
       const both = (id) => {
-        const a = describeEx(id, sA), bx = duo ? describeEx(id, sB) : a;
-        if (bx.id !== a.id) return `${withReps(a)} for ${short('a')}, ${withReps(bx)} for ${short('b')}`;
+        const a = describeEx(id, sA);
+        const bx = !duo ? a : lapB ? lapB[b.shape === 'swap' ? b.ids[1] : id] : describeEx(id, sB);
+        if (bx.name !== a.name) return `${withReps(a)} for ${short('a')}, ${withReps(bx)} for ${short('b')}`;
+        // the same move on two bells: "KB swings (Wayne 24kg, 10 reps; Dave 16kg, 8 reps)"
+        const each = (ex) => [ex.load, ex.reps].filter(Boolean).join(', ');
+        if (bx.load !== a.load) return `${a.name} (${short('a')} ${each(a)}; ${short('b')} ${each(bx)})`;
         return bx.reps === a.reps ? withReps(a) : `${a.display || a.name} (${short('a')} ${a.reps}, ${short('b')} ${bx.reps})`;
       };
       // once each: a two-weight block's pair reads as one move
       const moves = [];
-      (b.ids || []).forEach(id => { const text = both(id); if (!moves.some(m => m.text === text)) moves.push({ text, block: i, from: id }); });
+      ids.forEach(id => { const text = both(id); if (!moves.some(m => m.text === text)) moves.push({ text, block: i, from: id }); });
       add(`Block ${i + 1}: ${b.name}`,
           `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.label}, ${iv.rounds} × ${iv.workSec}s`}`,
           moves);
@@ -4200,6 +4256,7 @@ function resumeRun() {
   // this phone's own, which stay as they are
   const own = (x) => ((x === 'a' ? state.nameA : state.nameB) || '').trim();
   namesShown = ['a', 'b'].every(x => s.names[x].trim() === own(x)) ? null : { a: s.names.a, b: s.names.b };
+  namesSetAside = null;
   renderPeoplePicker();
   savePrefs();
   state.programRun = s.programRun;
@@ -4302,9 +4359,10 @@ function shareUrlFor(w) {
 
 // Opens the workout in a share link. Returns an error message, or null.
 let linkFor = '';                // who the link was for, when it said ("Wayne & Dave")
+const linkNote = () => (linkFor && state.people === 2 ? `Opened from a shared link, for ${linkFor}.` : 'Opened from a shared link.');
 function openSharedLink(hash) {
   linkFor = '';
-  namesShown = null;
+  namesShown = namesSetAside = null;
   let payload;
   try { payload = JSON.parse(decodeShare(hash.slice(3))); }
   catch (e) { return 'That link is not a FIT workout.'; }
@@ -4346,7 +4404,7 @@ function openLinkFromHash() {
     (state.gearAsked ? els.welcomeNote : els.gearNote).textContent = err;
   } else {
     // and who for, when the link said
-    els.workoutNote.textContent = linkFor ? `Opened from a shared link, for ${linkFor}.` : 'Opened from a shared link.';
+    els.workoutNote.textContent = linkNote();
   }
 }
 
@@ -4401,13 +4459,16 @@ function dataSummary(p) {
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
 }
 const shortDate = (t) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
+// A new device has only the defaults (the Home it makes for itself).
+const nothingSaved = (p) => !p.gearAsked && !p.history.length && !p.saved.length && !Object.keys(p.programs).length && !p.checks.length;
 
 // Swap in a whole set of prefs. A restore keeps what was here first, for
-// Put it back; putting it back lets that copy go. False, with nothing
-// changed, if this device has no room for the copy.
-function replaceData(prefs, keepBefore) {
+// Put it back, with when the backup was saved (`from`); putting it back
+// lets that copy go. False, with nothing changed, if this device has no
+// room for the copy.
+function replaceData(prefs, keepBefore, from) {
   try {
-    if (keepBefore) localStorage.setItem(BEFORE_RESTORE_KEY, JSON.stringify({ at: Date.now(), prefs: currentPrefs() }));
+    if (keepBefore) localStorage.setItem(BEFORE_RESTORE_KEY, JSON.stringify({ at: Date.now(), from, prefs: currentPrefs() }));
     else localStorage.removeItem(BEFORE_RESTORE_KEY);
   } catch (e) { return false; }
   Object.assign(state, prefs);
@@ -4419,7 +4480,7 @@ function replaceData(prefs, keepBefore) {
 function dataBefore() {
   try {
     const b = JSON.parse(localStorage.getItem(BEFORE_RESTORE_KEY));
-    return b && typeof b.at === 'number' ? { at: b.at, prefs: cleanPrefs(b.prefs) } : null;
+    return b && typeof b.at === 'number' ? { at: b.at, from: typeof b.from === 'number' ? b.from : null, prefs: cleanPrefs(b.prefs) } : null;
   } catch (e) { return null; }
 }
 
@@ -4557,10 +4618,8 @@ function dataSection() {
     p1.textContent = found;
     const p2 = document.createElement('p');
     p2.className = 'picker-hint';
-    // a new device has only the defaults (the Home it makes for itself)
     const here = currentPrefs();
-    const blank = !here.gearAsked && !here.history.length && !here.saved.length && !Object.keys(here.programs).length && !here.checks.length;
-    p2.textContent = blank ? 'Nothing is saved here yet.' : `It replaces everything here now: ${dataSummary(here)}.`;
+    p2.textContent = nothingSaved(here) ? 'Nothing is saved here yet.' : `It replaces everything here now: ${dataSummary(here)}.`;
     const row = document.createElement('div');
     row.className = 'data-actions';
     const go = document.createElement('button');
@@ -4595,7 +4654,8 @@ function dataSection() {
     }
     const when = got.savedAt ? `, saved ${shortDate(got.savedAt)}` : '';
     ask(panel, `This backup has ${dataSummary(got.prefs)}${when}.`, 'Replace my data', () => {
-      if (!replaceData(got.prefs, true)) { say("There isn't room on this device to keep a copy of what's here, so nothing was changed."); return; }
+      // (with nothing here before, there's nothing to put back)
+      if (!replaceData(got.prefs, !nothingSaved(currentPrefs()), got.savedAt || undefined)) { say("There isn't room on this device to keep a copy of what's here, so nothing was changed."); return; }
       done(`Restored: ${dataSummary(state)}.`);
     });
   };
@@ -4606,7 +4666,7 @@ function dataSection() {
   if (before) {
     undo = document.createElement('div');
     undo.className = 'data-undo';
-    undo.textContent = `Restored from a backup on ${shortDate(before.at)}.`;
+    undo.textContent = `Restored on ${shortDate(before.at)}${before.from ? ` from a backup saved ${shortDate(before.from)}` : ''}.`;
     const back = linkButton('Put back what was here before', () => {
       say('');
       ask(undo, `Put back what was here before the restore: ${dataSummary(before.prefs)}.`, 'Put it back', () => {
@@ -5318,14 +5378,15 @@ function fillCheckDay(c, prog, st, day, { tagline, rerender, final }) {
   if (!final) {
     const later = programHint('');
     later.classList.add('check-later');
-    const no = linkButton('Not today', () => {
+    const no = linkButton('Not today?', () => {
       const now = state.programs[prog.id];
       if (now) { now.checkLater = dayKey(Date.now()); savePrefs(); }
       rerender();
     });
     no.id = 'btnCheckLater';
     // (doing the session is what moves it on: put off and not trained, it's back tomorrow)
-    later.append(no, `? Do ${day.name} instead, and the next check is in two weeks.`);
+    // (the question mark on the link, so the padding doesn't part it from the words)
+    later.append(no, ` Do ${day.name} instead, and the next check is in two weeks.`);
     c.append(later, surfLog(prog, st, rerender, true));
   }
 }

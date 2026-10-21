@@ -24,7 +24,7 @@
 
 // Which release this file is from, sw.js's VERSION: js/app.js won't run
 // beside a file from another one (see the check at its top).
-const WORKOUTS_RELEASE = 'fit-v20';
+const WORKOUTS_RELEASE = 'fit-v21';
 
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',
@@ -401,6 +401,8 @@ function blockSwapAlternating(name, heavyId, lightId) {
 // version. A swap block's two ids are one movement at two weights: A takes
 // the first, B the second. ctx is the context of the lap wanted (B's for
 // B's), and ctxA A's, for the gear A's lap holds, each person's swaps in.
+// bOf has B's move for each of the block's ids it stands for (two can fall
+// back to the same move, which B's lap has once), for the preview.
 // For Time: laps to finish, so the work lands around three quarters of the
 // cap for most people (three minutes of a four-minute cap), leaving the rest
 // to recover. A longer cap in a mix gets proportionally more laps.
@@ -418,12 +420,13 @@ function amrapCircuits(block, ctx, duo, ctxA = ctx) {
   const bCtx = { ...ctx, hasEquip: (g) => (ownKey(spare, g) || !aGear.has(g)) && has(g) };
   if (Object.keys(spare).length) bCtx.loads = { ...(ctx && ctx.loads), ...spare };
   const bIds = swap ? [block.ids[1]] : [...ids.slice(1), ids[0]];
-  const b = [];
+  const b = [], bOf = {};
   for (const id of bIds) {
     const ex = describeEx(id, bCtx);
+    bOf[id] = ex;
     if (!b.some(x => x.id === ex.id)) b.push(ex);   // two bells can fall back to the same move
   }
-  return { a, b };
+  return { a, b, bOf };
 }
 
 // ---------------------------------------------------------------------

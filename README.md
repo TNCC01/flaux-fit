@@ -118,7 +118,9 @@ it instead (`spareLoads` in `js/app.js`): with 8, 12, 16 and 24kg ticked
 and A on the 24 and the 16, B swings the 12 and presses the 8 rather than
 doing good mornings. A spare is only ever lighter than the bell that move
 has in A's lap, so with 16 and 24 a press B can't have the 16 for goes to
-its bodyweight version, never up to the 24. Setup says so under the bells.
+its bodyweight version, never up to the 24. Setup says so under the bells,
+and the preview before Start gives each of you your own bell ("KB swings
+(Wayne 24kg, 10 reps; Dave 12kg, 10 reps)").
 Only builds since the spare bells use them (the request says so, `spare`),
 so a favourite, a session in history, a link or one to pick up from before
 keeps the lap it had, and a classic keeps the bodyweight version.
@@ -349,7 +351,8 @@ rather than hardcoded.
   device). The file picker asks for the backup, so an iPhone opens Files
   rather than Photos. Once restored, the page goes to where it says so.
   What it replaced is kept, so **Put back
-  what was here before** undoes it until the next restore. The first-visit
+  what was here before** undoes it until the next restore (on a new
+  device there was nothing, so it isn't offered). The first-visit
   question links straight to Restore, for the home-screen app (which
   starts empty) or a new iPad
 - Wall-clock timer, wake lock (kept through a pause), and one plain sound
@@ -369,12 +372,14 @@ rather than hardcoded.
   phone has it, then British, then any English. In each rest it calls the
   next move by person ("Next: Wayne, push-ups. Dave, squats.", "Last
   round: ..." before the last), with an EMOM's reps and an AMRAP's list
-  when they fit; it calls work that has no rest before it (the first
-  block, an EMOM's next minute) just before it starts, names each warm-up
-  move and stretch, says "Halfway" once and "One minute left" in a long
-  AMRAP or For Time. The 3-2-1 stays as beeps: a line only starts if it
-  can finish clear of it, is cut off there if it runs over, and stops
-  when the phase changes, on a pause, a skip or leaving, so it is never
+  when they fit; it calls work with no rest before it (the first block,
+  an EMOM's next minute), or only a rest too short to call it in (Surf
+  Fit's 5 seconds between sprints), near the end of the phase before,
+  names each warm-up move and stretch, says "Halfway" once, in front of a
+  rest's line near the middle (never in work, or in a Surf check), and
+  "One minute left" in a long AMRAP or For Time. The 3-2-1 stays as
+  beeps: a line only starts if it can finish clear of it, is cut off
+  there if it runs over, and stops when the phase changes, on a pause, a skip or leaving, so it is never
   behind the clock or over itself. The Start tap is what lets Safari
   talk, and it follows the same sound choice as the beeps
 - Two-tap reset, and two taps on Menu once a workout is going. Tap the
@@ -418,7 +423,8 @@ rather than hardcoded.
   · Just me?") is a button until Start: a tap changes one person for two
   and back, the same moves shared out again, for when a mate turns up (or
   doesn't), and says so ("Now for 1 person. Tap the badge again for two."). Once
-  it's going it stays as it is
+  it's going it stays as it is. A link sent for two, done on your own, is
+  yours: your name, level and history, not the sender's
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
   tablet, for the same number of people, with no account and no server
