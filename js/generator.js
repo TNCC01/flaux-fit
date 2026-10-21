@@ -186,6 +186,12 @@ function mixMinimumMinutes(styles) {
   return null;
 }
 
+// Two movements that need the same item there's only one of (a bell's
+// role, the bar, the rope, the rings, the box...), which two people can't
+// do at the same moment.
+const shareSingle = (a, b) => EXERCISES[a].equipment.some(e =>
+  SINGLE_INSTANCE.includes(e) && EXERCISES[b].equipment.includes(e));
+
 // Region -> focus, for the card colour and the filter chips.
 function focusFor(regions) {
   const set = new Set(regions);
@@ -343,8 +349,6 @@ function generateWorkout(opts) {
   const idJitter = new Map(Object.keys(EXERCISES).map(id => [id, rand() * 5]));
   const used = new Set();
   const score = (id) => (used.has(id) ? 100 : 0) + (recent.has(id) ? 10 : 0) + idJitter.get(id);
-  const shareSingle = (a, b) => EXERCISES[a].equipment.some(e =>
-    SINGLE_INSTANCE.includes(e) && EXERCISES[b].equipment.includes(e));
 
   // Pick up to `want` movements for one block. Two people always work on
   // neighbouring entries of a cycle, so no neighbour pair, including the
@@ -530,4 +534,97 @@ function generateWorkout(opts) {
     // and for the recency list next time.
     exerciseIds: [...new Set(blocks.flatMap(b => b.ids))]
   };
+}
+
+/*
+  swapCandidates(block, from, opts)
+
+  Up to three moves to do instead of `from`, one of the block's ids, for
+  one person or both (see SWAPS in js/workouts.js), best first.
+
+  opts = {
+    equipment, excluded, blockedTags, recent    as for generateWorkout
+    surf      true for a Surf fitness session
+    lap       true when the block runs as a lap (AMRAP, For Time)
+    who       'a' or 'b' for one person's swap, null for both of you
+    swaps     { a, b }: each spot's swaps in this block so far (swapMaps)
+    only      a move already picked: just whether it's safe here ([it] or [])
+  }
+
+  Like for like: the same group of movements (for surf, the same job on
+  the board), topped up from the same body area when that leaves fewer
+  than three; nothing already in the block or sharing a figure with it,
+  so never the same move at the other weight; and nothing that needs gear
+  the other person could be holding at that moment, with them in either
+  spot, since the same session can come back with the two of you swapped
+  round. In a lap each of you holds your gear the whole way round, so one
+  person's swap also needs nothing the other's lap does: theirs would go
+  to its bodyweight version (see amrapCircuits), or yours would. Best
+  first: the move's own easier option (its alt names it), then
+  no jumping, the same pattern, the most body areas in common, and not
+  done lately; dictionary order after that, so it's the same three each
+  time.
+*/
+function swapCandidates(block, from, opts = {}) {
+  const ex = EXERCISES[from];
+  if (!ex || !block || !block.ids.includes(from)) return [];
+  const excluded = new Set(opts.excluded || []);
+  const blocked = new Set(opts.blockedTags || []);
+  const recent = new Set(opts.recent || []);
+  const equip = opts.equipment || {};
+  const usable = (id) => {
+    const c = EXERCISES[id];
+    return !excluded.has(id) && !c.tags.some(t => blocked.has(t)) && c.equipment.every(e => equip[e] !== false);
+  };
+  const maps = { a: { ...((opts.swaps && opts.swaps.a) || {}) }, b: { ...((opts.swaps && opts.swaps.b) || {}) } };
+  const who = opts.who === 'a' || opts.who === 'b' ? opts.who : null;
+  // what this person (or either of you) already does in the block
+  const doing = (k) => block.ids.map(id => maps[k][id] || id);
+  const taken = new Set([...block.ids, ...(who ? doing(who) : [...doing('a'), ...doing('b')])]);
+  const figures = new Set([...taken].map(id => EXERCISES[id].img));
+  // a two-weight block's ids are one movement, and a swap takes both
+  const slot = block.shape === 'swap' ? block.ids : [from];
+  const all = { hasEquip: () => true, rounds: 8 };
+  // every pairing the block makes, round by round (eight rounds hand out
+  // all of them, a two-weight block's halfway swap included)
+  const pairsOk = (A, B) => {
+    for (let r = 1; r <= 8; r++) {
+      const a = block.duo(r, { ...all, swaps: A }).a.id, b = block.duo(r, { ...all, swaps: B }).b.id;
+      if (shareSingle(a, b)) return false;
+    }
+    return true;
+  };
+  // the gear there's one of that someone's lap holds, in either spot
+  const lapGear = (m) => new Set(block.ids.map(id => m[id] || id).flatMap(id => EXERCISES[id].equipment)
+    .filter(e => SINGLE_INSTANCE.includes(e)));
+  const otherLap = opts.lap && who ? lapGear(maps[who === 'a' ? 'b' : 'a']) : new Set();
+  const safe = (id) => {
+    if (EXERCISES[id].equipment.some(e => otherLap.has(e))) return false;
+    const put = (m) => { const out = { ...m }; slot.forEach(x => { out[x] = id; }); return out; };
+    const A = who === 'b' ? maps.a : put(maps.a), B = who === 'a' ? maps.b : put(maps.b);
+    return pairsOk(A, B) && pairsOk(B, A);
+  };
+  const order = Object.keys(EXERCISES);
+  const fits = (opts.only ? [opts.only].filter(id => ownKey(EXERCISES, id)) : order)
+    .filter(id => !taken.has(id) && !figures.has(EXERCISES[id].img) && usable(id) && safe(id));
+  if (opts.only) return fits;
+  const surfJobs = opts.surf && Array.isArray(ex.surf) && ex.surf.length ? ex.surf : null;
+  const group = Object.values(GROUPS).find(g => g.patterns.includes(ex.pattern));
+  const alike = (id) => (surfJobs ? (EXERCISES[id].surf || []).some(j => surfJobs.includes(j))
+    : !!group && group.patterns.includes(EXERCISES[id].pattern));
+  const alt = (ex.alt || '').toLowerCase();
+  const rank = (id) => {
+    const c = EXERCISES[id];
+    return [alike(id) ? 0 : 1, alt.includes(c.name.toLowerCase()) ? 0 : 1, c.tags.includes('impact') ? 1 : 0,
+            c.pattern === ex.pattern ? 0 : 1, -c.regions.filter(r => ex.regions.includes(r)).length,
+            recent.has(id) ? 1 : 0, order.indexOf(id)];
+  };
+  const byRank = (a, b) => {
+    const x = rank(a), y = rank(b);
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i];
+    return 0;
+  };
+  const like = fits.filter(alike);
+  const area = like.length >= 3 ? [] : fits.filter(id => !alike(id) && EXERCISES[id].regions.includes(ex.regions[0]));
+  return [...like, ...area].sort(byRank).slice(0, 3);
 }

@@ -148,6 +148,8 @@ const st = (fn, arg) => p.evaluate(fn, arg);
 // none), before the other tab writes, and heard() waits until it has fired.
 // The app's own listener was added first, so by then it has run (and
 // written back, when it does).
+// the prefs schema this release saves (see PREFS_SCHEMA in js/app.js)
+const HERE_SCHEMA = Number(fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8').match(/^const PREFS_SCHEMA = (\d+)/m)[1]);
 const listenFor = (pg, schema) => pg.evaluate((want) => {
   window.e2eHeard = false;
   addEventListener('storage', function heard(e) {
@@ -174,7 +176,14 @@ const activeView = () => st(() => document.querySelector('.view.active').id);
 const previewText = () => p.$$eval('#previewList li', els => els.map(e => e.textContent.trim()).join('|'));
 // Rounds in the first block of the built sequence: 8 for short bursts, 4 for long efforts.
 const rounds = () => st(() => state.sequence.filter(x => x.kind === 'work' && x.blockIdx === 0).length);
-const pickInterval = async (label) => { await p.click('#pathBuild'); await p.click(`.interval-card:has-text("${label}")`); };
+// A style to choose in setup (not FIT picks, which names one too).
+const styleCard = (label) => `.interval-card:not(.fit-picks):has(.interval-name:text-is("${label}"))`;
+// Setup, and a style chosen: while FIT picks, the styles open under Choose myself.
+const pickInterval = async (label) => {
+  await p.click('#pathBuild');
+  if (await p.$('.styles-toggle[aria-expanded="false"]')) await p.click('.styles-toggle');
+  await p.click(styleCard(label));
+};
 // Exact name match: "Power Hour" also appears in Half Power's tagline.
 const card = (name) => `.workout-card:not(.history-card):has(.card-name:text-is("${name}"))`;
 const toggleAllGear = async () => { for (const g of GEAR) await p.click(`#equipmentPicker .chip:has-text("${g}")`); };
@@ -251,26 +260,164 @@ try {
       return { view: document.querySelector('.view.active').id, people: state.people, kb: loadsFor(state.weights).kb15,
                on: [...card.querySelectorAll('.chip.active')].map(c => c.textContent).join(','),
                places: !!card.querySelector('.chip[data-pick^="gear-"]'),
-               style: card.querySelector('.today-style').textContent,
+               style: card.querySelector('.today-style').textContent, how: (card.querySelector('.today-how') || {}).textContent,
                go: card.querySelector('.today-go').getBoundingClientRect().bottom, height: innerHeight };
     });
     assert(home.view === 'welcomeView' && home.people === 1 && home.kb === '12kg', 'one person and the 12kg bell: ' + JSON.stringify(home));
     assert(home.on === '20 min,1 person', 'the Today card starts on 20 minutes, one person: ' + home.on);
     assert(!home.places, 'with one place there is no "Training at" row');
-    assert(home.style.startsWith('Short bursts · General fitness'), 'one line says the style and the goal: ' + home.style);
+    assert(home.how === 'FIT picks Short bursts: go hard for 20s, rest 10s, 8 rounds a block. Choose myself',
+           "FIT picks a newcomer's style, and says how it works: " + home.how);
+    assert(home.style.startsWith('General fitness · '), 'the line under it says the goal: ' + home.style);
     assert(home.go <= home.height, `Start is on the first screen (bottom ${Math.round(home.go)} of ${home.height})`);
     await f.click('#todayCard .chip:text-is("15 min")');
     assert(await f.evaluate(() => state.minutes) === 15, 'a time chip sets the minutes');
     await f.click('#todayCard .today-go');
     const built = await f.evaluate(() => ({ view: document.querySelector('.view.active').id, people: state.people,
       min: state.workout.request.minutes, total: state.totalDuration, plan: planBlocks(15, INTERVALS.short).total,
-      badge: document.getElementById('peopleBadge').textContent }));
-    assert(built.view === 'workoutView' && built.people === 1 && built.min === 15 && built.badge === '1 person',
-           'Start builds a solo 15-minute workout: ' + JSON.stringify(built));
+      badge: document.getElementById('peopleBadge').textContent, style: state.workout.request.intervalId }));
+    assert(built.view === 'workoutView' && built.people === 1 && built.min === 15 && built.badge === '1 person' && built.style === 'short',
+           'Start builds a solo 15-minute workout in the style FIT picked: ' + JSON.stringify(built));
     assert(built.total === built.plan, `and it runs as long as a 15-minute build does: ${built.total}s, planned ${built.plan}s`);
     await fresh.close();
   }
   ok('a newcomer: just me and a 12kg bell, then 15 min and Start on the home card builds a solo session');
+
+  step = 'FIT picks the style: one card, said with how it works, a new style each session, and Choose myself for the rest';
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const f = await ctx.newPage();
+    f.on('pageerror', e => errors.push('fit picks: ' + e));
+    f.on('console', m => { if (m.type() === 'error') errors.push('fit picks: ' + m.text()); });
+    const ev = (fn, arg) => f.evaluate(fn, arg);
+    const picker = () => ev(() => {
+      const t = document.querySelector('#intervalPicker .styles-toggle');
+      return { cards: [...document.querySelectorAll('#intervalPicker .interval-card')].map(c => c.querySelector('.interval-name').textContent).join('|'),
+               active: [...document.querySelectorAll('#intervalPicker .interval-card.active')].map(c => c.querySelector('.interval-name').textContent).join('|'),
+               blurb: document.querySelector('#intervalPicker .fit-picks .interval-blurb').textContent,
+               toggle: t ? `${t.textContent}:${t.getAttribute('aria-expanded')}` : '', mix: !document.getElementById('mixPicker').hidden,
+               height: Math.round(document.getElementById('intervalPicker').getBoundingClientRect().height),
+               dim: [...document.querySelectorAll('#timePicker .chip.dim')].length, auto: state.styleAuto, style: state.intervalStyle };
+    });
+    const howLine = () => f.$eval('#todayCard .today-how', e => e.textContent).catch(() => null);
+    await f.goto(URL);
+    await f.click('#btnGearDone');
+    assert(await ev(() => state.styleAuto === true && JSON.parse(localStorage.getItem('fit-picks-1')) === true), 'a new user starts on FIT picks, kept under its own key too');
+    // setup: one card, FIT's pick and how it works, the styles closed under Choose myself
+    await f.click('#pathBuild');
+    const shut = await picker();
+    assert(shut.cards === 'FIT picks: Short bursts' && shut.active === shut.cards, 'setup shows one style card, FIT picks, chosen: ' + shut.cards);
+    assert(shut.blurb === 'Go hard for 20s, rest 10s, 8 rounds a block.', 'with how its pick works, in a sentence: ' + shut.blurb);
+    assert(shut.toggle === 'Choose myself:false' && shut.height < 260, `and Choose myself, closed: a short row, not six cards (${shut.height}px)`);
+    await f.click('#intervalPicker .styles-toggle');
+    const open = await picker();
+    assert(open.cards === 'FIT picks: Short bursts|Short bursts|Long efforts|EMOM|AMRAP|For Time|Mix' && open.active === 'FIT picks: Short bursts'
+           && open.toggle === 'Hide the styles:true', 'Choose myself opens the five styles and Mix under it, FIT picks still on: ' + JSON.stringify(open));
+    // choosing one turns FIT picks off, and the styles stay open; FIT picks turns it back on and closes them
+    await f.click(styleCard('EMOM'));
+    const chose = await picker();
+    assert(!chose.auto && chose.style === 'emom' && chose.active === 'EMOM' && chose.cards.split('|').length === 7 && chose.toggle === '',
+           'choosing EMOM: FIT picks off, the styles stay open with EMOM on: ' + JSON.stringify(chose));
+    await f.click('#btnSetupBack');
+    assert(!(await howLine()) && (await f.$eval('#todayCard .today-style', e => e.textContent)).startsWith('EMOM · General fitness · '),
+           'home says the style chosen, with no FIT line');
+    await f.click('#pathBuild');
+    assert((await picker()).cards.split('|').length === 7, 'with a style chosen, setup opens with the styles showing');
+    await f.click('#intervalPicker .fit-picks');
+    const backOn = await picker();
+    assert(backOn.auto && backOn.style === 'emom' && backOn.cards === 'FIT picks: Short bursts' && backOn.toggle === 'Choose myself:false',
+           'tapping FIT picks puts it back and closes the styles, keeping EMOM for a classic: ' + JSON.stringify(backOn));
+    // Mix's minimum time: a mix chosen dims the short times and raises the minutes; FIT picks has no floor
+    await f.click('#timePicker .chip:text-is("15 min")');
+    await f.click('#intervalPicker .styles-toggle');
+    await f.click(styleCard('Mix'));
+    const mixed = await picker();
+    assert(!mixed.auto && mixed.mix && mixed.dim > 0 && await ev(() => state.minutes === 25), 'Mix chosen at 15 min: 25 min and the shorter times dimmed: ' + JSON.stringify(mixed));
+    await f.click('#intervalPicker .fit-picks');
+    const free = await picker();
+    assert(free.auto && !free.mix && free.dim === 0 && await ev(() => state.mixOn === true), 'FIT picks again: no time is dimmed and the mix setup is hidden, kept for later: ' + JSON.stringify(free));
+    await f.click('#timePicker .chip:text-is("10 min")');
+    assert(await ev(() => state.minutes === 10) && !(await picker()).cards.includes('Mix'), 'and 10 minutes can be picked, with a single style');
+    await f.click('#timePicker .chip:text-is("20 min")');
+    await f.click('#btnSetupBack');
+    // Choose myself on the Today card opens setup at the styles
+    await f.click('#btnChooseStyle');
+    const at = await ev(() => ({ view: document.querySelector('.view.active').id,
+      top: Math.round(document.getElementById('intervalPicker').getBoundingClientRect().top), height: innerHeight }));
+    assert(at.view === 'setupView' && at.top >= 0 && at.top < at.height / 2 && (await picker()).cards.split('|').length === 7,
+           'Choose myself on home opens setup at the styles, open: ' + JSON.stringify(at));
+    await f.click('#btnSetupBack');
+    // the pick moves on with each session started, and Start builds what the line says
+    const order = [];
+    for (let i = 0; i < 6; i++) {
+      const line = await howLine();
+      await f.click('#todayCard .today-go');
+      const got = await ev(() => ({ id: state.workout.intervalId, req: state.workout.request.intervalId, label: INTERVALS[state.workout.intervalId].label }));
+      assert(line.startsWith(`FIT picks ${got.label}: `) && got.req === got.id, `the line said "${line}" and Start built ${got.id}`);
+      await f.click('#btnStart');
+      await leaveStarted(f);
+      order.push(got.id);
+    }
+    assert(order.join() === 'short,long,emom,amrap,fortime,short', 'each session a style not done lately, never the same twice running: ' + order);
+    assert(await ev(() => state.intervalStyle === 'emom'), "and what FIT picks never changes the style chosen in setup");
+    // a long session: a steadier style or a mix, and a mix only when it fits
+    await f.click('#todayCard .time-chips .chip:text-is("45 min")');
+    const long = await howLine();
+    assert(long === 'FIT picks a mix: EMOM, Short bursts and AMRAP, with a short break between each. Choose myself', 'at 45 min, a mix: ' + long);
+    await f.click('#todayCard .today-go');
+    const mixBuilt = await ev(() => ({ id: state.workout.intervalId, mix: (state.workout.mix || []).join(), total: state.totalDuration }));
+    assert(mixBuilt.id === 'mix' && mixBuilt.mix === 'emom,short,amrap' && mixBuilt.total === 45 * 60, 'and Start builds that mix, 45:00: ' + JSON.stringify(mixBuilt));
+    // shuffled, it keeps the style; saved, it comes back as it was, whatever FIT would pick by then
+    await f.click('#btnShuffle');
+    assert(await ev(() => state.workout.intervalId === 'mix'), 'Shuffle keeps the style');
+    await f.click('#btnSave');
+    const saved = await ev(() => ({ seed: state.workout.seed, ids: state.workout.exerciseIds.join() }));
+    await f.click('#btnStart'); await leaveStarted(f);
+    assert(!(await howLine()).includes('a mix'), 'with the mix just done, FIT picks something else: ' + await howLine());
+    await f.click('#pathLibrary');
+    await f.click('.workout-card:has-text("☆")');
+    assert(await ev((s) => state.workout.seed === s.seed && state.workout.exerciseIds.join() === s.ids && state.workout.intervalId === 'mix', saved),
+           'the favourite reopens as the mix it was saved as');
+    await f.click('#btnBack');
+    // a classic runs in the style chosen in setup, not FIT's pick
+    await f.click('#pathLibrary');
+    assert(await f.$eval(`${card('Power Hour')} .card-style`, e => e.textContent) === 'EMOM', 'a classic card says the style chosen in setup');
+    await f.click(card('Power Hour'));
+    assert(await ev(() => state.sequence.filter(x => x.kind === 'work' && x.blockIdx === 0).every(x => x.emom)), 'and runs as it');
+    await f.click('#btnBack');
+    // it lasts: a reload, a backup and a restore, an old backup, and a save from a tab on the last release
+    await f.reload();
+    assert(await ev(() => state.styleAuto === true), 'FIT picks survives a reload');
+    const kept = await ev(() => {
+      const text = backupText();
+      const inBackup = JSON.parse(text).prefs.styleAuto;
+      state.styleAuto = false; savePrefs();
+      replaceData(readBackup(text).prefs, true);
+      const old = (style, auto) => {
+        const o = JSON.parse(text);
+        delete o.prefs.styleAuto; o.prefs.schema = 4; o.prefs.intervalStyle = style; o.prefs.mixOn = false;
+        if (auto !== undefined) o.prefs.styleAuto = auto;
+        return readBackup(JSON.stringify(o)).prefs.styleAuto;
+      };
+      return { inBackup, restored: state.styleAuto, oldEmom: old('emom'), oldShort: old('short'), junk: old('short', 'yes') };
+    });
+    assert(kept.inBackup === true && kept.restored === true, 'a backup has it, and a restore brings it back: ' + JSON.stringify(kept));
+    assert(kept.oldEmom === false && kept.oldShort === true && kept.junk === true,
+           'a backup from before FIT picked: a style chosen is kept, the one setup started on is FIT picks, and junk goes by the style: ' + JSON.stringify(kept));
+    await ev(() => {
+      const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      delete prefs.styleAuto; prefs.schema = 4;
+      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+    });
+    await f.reload();
+    assert(await ev(() => state.styleAuto === true && state.intervalStyle === 'emom'),
+           'a save from a tab on the last release, with EMOM chosen once, leaves FIT picks on (its own key says so)');
+    await ev(() => { localStorage.removeItem('fit-picks-1'); });
+    await f.reload();
+    assert(await ev(() => state.styleAuto === false && state.intervalStyle === 'emom'), 'and with no key beside it, the style chosen before is kept');
+    await ctx.close();
+  }
+  ok('FIT picks: a new user gets one style card, with how its pick works and Choose myself; choosing one turns it off, tapping it turns it back on; no time floor; a different style each session, the one the line said, a mix only when long enough; favourites, Shuffle and the classics keep their own style; it survives a reload, a backup, an old backup and a tab on the last release');
 
   step = 'a returning phone user with a program day, two places and leave-outs still has Start on the first screen';
   {
@@ -310,6 +457,7 @@ try {
     const other = await fold();
     assert(other.go <= other.height && other.text.includes('Build a workout'), `the built workout's Start is on the first screen too (bottom ${Math.round(other.go)})`);
     assert(await r.$eval('#pathBuild', e => e.getBoundingClientRect().height >= 44), 'Change is 44px tall to tap');
+    assert(await r.$eval('#btnChooseStyle', e => e.getBoundingClientRect().height >= 44), "and so is FIT's Choose myself");
     await r.reload();
     assert((await r.$eval('#todayCard', e => e.textContent)).includes('Build a workout'), 'a reload the same day keeps the built workout');
     await r.evaluate(() => {
@@ -657,7 +805,7 @@ try {
   ok('weights: the heaviest bell and the one nearest two thirds of it fill the roles, the bar shows its load');
 
   step = 'classic under long efforts, then the timer survives a suspension';
-  await p.click('.interval-card:has-text("Long efforts")');
+  await p.click(styleCard('Long efforts'));
   await p.click('#btnSetupBack'); await p.click('#pathLibrary');
   assert(await p.$eval(`${card('Power Hour')} .card-style`, e => e.textContent) === 'Long efforts', 'the classic card says the style it will run as');
   assert(await p.$(card('Sunrise Stretch')) && !(await p.$(`${card('Sunrise Stretch')} .card-style`)), 'a stretch routine has no style to show');
@@ -694,6 +842,9 @@ try {
     const offered = () => r.$('#todayCard .today-resume');
     const view = () => ev(() => document.querySelector('.view.active').id);
     await r.goto(URL);
+    // saved before FIT picked, with AMRAP chosen: it stays AMRAP
+    assert(await ev(() => state.styleAuto === false) && !(await r.$('#todayCard .today-how'))
+           && (await r.$eval('#todayCard .today-style', e => e.textContent)).startsWith('AMRAP · '), 'a returning user who had chosen AMRAP keeps it');
     assert(!(await offered()), 'nothing to pick up to begin with');
     await r.click('#todayCard .today-go');
     assert(!(await kept()), 'opening a workout saves nothing until it starts');
@@ -832,6 +983,8 @@ try {
     step = 'a program day picks up as that day, and finishing it ticks the day off';
     await leaveStarted(r);
     await ev(() => { state.programs['surf-fit'] = { startedAt: Date.now(), done: [] }; savePrefs(); renderToday(); });
+    // day 1 offers the Surf check (see the Surf check step): Not today, for Paddle power
+    await r.click('#todayCard #btnCheckLater');
     // left on purpose, it goes back to the program and is not offered again,
     // even after the page goes (the phone locks, or the app is swiped away)
     await r.click('#todayCard .program-go'); await r.click('#btnStart');
@@ -968,8 +1121,8 @@ try {
   }
 
   step = 'iPhone sound: beeps on silent, back after a call; the wake lock outlasts a pause';
-  assert(await p.$eval('#silentToggle', e => e.hidden) && await p.$eval('#silentHint', e => e.hidden),
-         'Chromium has no audioSession, so no silent-switch setting');
+  assert(await p.$$eval('#soundPicker .chip', cs => cs.map(c => `${c.dataset.sound}:${c.textContent}`).join()) === 'music:Beeps,off:No sound',
+         'Chromium has no audioSession, so the choice is Beeps or No sound, with nothing about the silent switch');
   {
     const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
     // What the page sees of an iPhone: a touch screen, a session type to set,
@@ -1057,9 +1210,13 @@ try {
     await s.goto(URL);
     await s.click('#btnGearDone');
     await s.click('#todayCard .today-go');
-    assert(await s.$eval('#silentToggle', e => !e.hidden && e.offsetParent !== null), 'the setting shows where audioSession exists');
-    assert(await s.$eval('#silentHint', e => !e.hidden && /Spotify/.test(e.textContent)), 'with a hint that other music can pause');
-    assert(await s.$eval('#beepOnSilent', e => e.checked) && await ev(() => state.beepOnSilent), 'and it starts on');
+    const choices = await s.$$eval('#soundPicker .chip', cs => cs.map(c => `${c.dataset.sound}:${c.textContent}`).join());
+    assert(choices === 'music:Beeps over my music,silent:Beeps even on silent,off:No sound', 'all three choices where audioSession exists: ' + choices);
+    assert(await s.$eval('#soundPicker [data-sound="silent"]', e => e.offsetParent !== null && e.getAttribute('aria-pressed') === 'true')
+           && await ev(() => state.sound === 'silent'), 'a new visitor on an iPhone starts on Beeps even on silent');
+    assert(await s.$eval('#soundHint', e => !e.hidden && /Spotify/.test(e.textContent)), 'with a hint that other music pauses');
+    assert(await s.$eval('#soundSaid', e => /even on silent/.test(e.textContent) && /music will pause/.test(e.textContent)),
+           'and the line by Start says so: ' + await s.$eval('#soundSaid', e => e.textContent));
     assert(await ev(() => __audio.contexts.length === 0 && navigator.audioSession.type === 'auto'),
            'opening a workout makes no sound and leaves the session alone');
 
@@ -1113,14 +1270,15 @@ try {
     assert(await ev((h) => __audio.heard === h[0] + 1 && __audio.unheard === h[1], heardNow), 'its beeps are heard');
 
     // sound settings changed mid-session take effect straight away
-    await s.click('#muteAudio');
-    assert(await ev(() => state.running && navigator.audioSession.type === 'auto'), 'muted while running, FIT gives the session back');
-    await s.click('#muteAudio');
-    assert(await ev(() => navigator.audioSession.type === 'playback'), 'unmuted, playback again');
-    await s.click('#beepOnSilent');
-    assert(await ev(() => navigator.audioSession.type === 'auto'), '"Beep even on silent" off while running goes back to auto');
-    await s.click('#beepOnSilent');
-    assert(await ev(() => navigator.audioSession.type === 'playback'), 'and on again, playback');
+    const sound = (id) => s.click(`#soundPicker [data-sound="${id}"]`);
+    await sound('off');
+    assert(await ev(() => state.running && navigator.audioSession.type === 'auto'), 'No sound while running, FIT gives the session back');
+    await sound('silent');
+    assert(await ev(() => navigator.audioSession.type === 'playback'), 'Beeps even on silent again, playback again');
+    await sound('music');
+    assert(await ev(() => navigator.audioSession.type === 'auto'), 'Beeps over my music while running goes back to auto');
+    await sound('silent');
+    assert(await ev(() => navigator.audioSession.type === 'playback'), 'and on silent again, playback');
 
     await s.click('#btnStart');                                 // pause for a drink
     assert(await ev(() => !state.running && __locks.held === 1 && !!state.wakeLock), 'a pause keeps the wake lock');
@@ -1131,12 +1289,13 @@ try {
     assert(await ev(() => __locks.asked === 2 && __locks.held === 1 && !!state.wakeLock), 'coming back to a paused workout asks again');
     assert(await ev(() => __audio.resumes) === resumesBefore, 'but a paused workout leaves the audio (and your music) alone');
 
-    await s.click('#muteAudio');
-    assert(await ev(() => navigator.audioSession.type === 'auto'), 'muted, FIT gives the session back');
-    await s.click('#muteAudio');
-    assert(await ev(() => navigator.audioSession.type === 'playback'), 'unmuted, playback again');
-    await s.click('#beepOnSilent');
-    assert(await ev(() => !state.beepOnSilent && navigator.audioSession.type === 'auto'), 'turning the setting off goes back to auto');
+    await sound('off');
+    assert(await ev(() => navigator.audioSession.type === 'auto'), 'No sound, FIT gives the session back');
+    await sound('silent');
+    assert(await ev(() => navigator.audioSession.type === 'playback'), 'on silent again, playback again');
+    await sound('music');
+    assert(await ev(() => state.sound === 'music' && !state.beepOnSilent && !state.muteAudio && navigator.audioSession.type === 'auto'),
+           'Beeps over my music goes back to auto, and the old tick boxes follow it for a tab on an older release');
 
     await s.click('#btnBack');
     assert(await ev(() => __locks.held === 1 && document.querySelector('.view.active').id === 'workoutView'),
@@ -1149,14 +1308,30 @@ try {
 
     await s.reload();
     await s.click('#todayCard .today-go');
-    assert(await ev(() => state.beepOnSilent === false) && !(await s.$eval('#beepOnSilent', e => e.checked)), 'off survives a reload');
-    await ev(() => {
+    assert(await ev(() => state.sound === 'music') && await s.$eval('#soundPicker [data-sound="music"]', e => e.getAttribute('aria-pressed') === 'true')
+           && /over your music/.test(await s.$eval('#soundSaid', e => e.textContent)), 'Beeps over my music survives a reload');
+    // Saves from before the choice: the two tick boxes it took over from
+    const fromOld = (boxes) => ev((b) => {
       const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
-      delete prefs.beepOnSilent;
-      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
-    });
+      delete prefs.sound; delete prefs.muteAudio; delete prefs.beepOnSilent; prefs.schema = 3;
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ ...prefs, ...b }));
+    }, boxes);
+    for (const [boxes, want] of [[{ muteAudio: true, beepOnSilent: true }, 'off'], [{ muteAudio: true, beepOnSilent: false }, 'off'],
+                                 [{ muteAudio: false, beepOnSilent: false }, 'music'], [{ muteAudio: false, beepOnSilent: true }, 'silent'], [{}, 'silent']]) {
+      await fromOld(boxes);
+      await s.reload();
+      const got = await ev(() => [state.sound, state.muteAudio, state.beepOnSilent]);
+      assert(got[0] === want && got[1] === (want === 'off') && got[2] === (boxes.beepOnSilent !== false),
+             `a save from before the choice with ${JSON.stringify(boxes)} is ${want}, and keeps its tick boxes: ` + JSON.stringify(got));
+    }
+    await fromOld({ muteAudio: true });
     await s.reload();
-    assert(await ev(() => state.beepOnSilent === true), 'prefs saved before the setting existed start it on');
+    await s.click('#todayCard .today-go');
+    assert(await s.$eval('#soundPicker [data-sound="off"]', e => e.getAttribute('aria-pressed') === 'true') && await s.$eval('#voiceOn', e => e.disabled)
+           && await s.$eval('#soundSaid', e => e.textContent) === 'Sound: none.', 'Mute audio ticked comes back as No sound, the voice switch greyed out with it');
+    await sound('silent');
+    assert(await ev(() => !state.muteAudio && state.beepOnSilent) && !(await s.$eval('#voiceOn', e => e.disabled)), 'and Beeps even on silent from there');
+    await s.click('#btnBack');
     // leaving gives the session back, and a wake lock that lands after you've left is let go
     await s.click('#todayCard .today-go');
     await ev(() => { __locks.delay = 300; });
@@ -1206,12 +1381,369 @@ try {
     await m.goto(URL);
     await m.click('#btnGearDone');
     await m.click('#todayCard .today-go');
-    assert(await m.$eval('#silentToggle', e => e.hidden), 'no silent-switch setting without a touch screen');
+    assert(await m.$$eval('#soundPicker .chip', cs => cs.map(c => c.dataset.sound).join()) === 'music,off'
+           && await m.$eval('#soundPicker [data-sound="music"]', e => e.getAttribute('aria-pressed') === 'true')
+           && await m.$eval('#soundHint', e => e.hidden), 'no silent option without a touch screen: Beeps (on) or No sound');
     await m.click('#btnStart');
     assert(await m.evaluate(() => navigator.audioSession.type === 'auto'), 'and the session is left alone');
     await mac.close();
   }
-  ok('iPhone, by WebKit\'s tap rules: playback from the first beep, resumes after a call or a return, re-armed after the background even when it says running or interrupted, a scroll keeps the sound and the next tap swaps in a fresh context, a refusal is caught; mute and silent changes apply mid-session; wake lock kept through a pause, asked again on return, let go on leaving even mid-request; the sound given back on leaving, after the finish bell and after a late chime, and taken again by Start over; the setting persists and stays off a Mac');
+  ok('iPhone, by WebKit\'s tap rules: playback from the first beep, resumes after a call or a return, re-armed after the background even when it says running or interrupted, a scroll keeps the sound and the next tap swaps in a fresh context, a refusal is caught; a change of sound applies mid-session; wake lock kept through a pause, asked again on return, let go on leaving even mid-request; the sound given back on leaving, after the finish bell and after a late chime, and taken again by Start over; the choice persists, comes from the old tick boxes, and has no silent option on a Mac');
+
+  step = 'voice coach: the next move for each person at the rest, never over itself or the 3-2-1, and quiet when it should be';
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    // speechSynthesis as Safari has it: one line at a time (another while one
+    // plays is counted as an overlap), a line takes about as long as it
+    // would to say unless __speech.ms says otherwise, and cancel cuts it off.
+    // Safari's own list of voices has novelty ones in it.
+    await phone.addInitScript(() => {
+      Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 5 });
+      Object.defineProperty(navigator, 'audioSession', { configurable: true, value: { type: 'auto' } });
+      window.__speech = { said: [], cancels: 0, overlaps: 0, current: null, ms: null, voices: [
+        { name: 'Samantha', lang: 'en-US', localService: true, default: true }, { name: 'Bells', lang: 'en-AU', localService: true },
+        { name: 'Daniel', lang: 'en-GB', localService: true }, { name: 'Karen', lang: 'en-AU', localService: true }] };
+      const synth = {
+        get speaking() { return !!__speech.current; }, get pending() { return false; }, paused: false,
+        getVoices: () => __speech.voices,
+        speak(u) {
+          if (__speech.current) __speech.overlaps++;
+          const phase = state.sequence[state.currentIdx] || {};
+          // the time left in the phase as it starts, to the moment
+          const left = phase.duration - (elapsedNow() - startOf(state.currentIdx));
+          __speech.said.push({ text: u.text, voice: u.voice ? u.voice.name : null, lang: u.lang, volume: u.volume,
+                               tapped: navigator.userActivation.isActive, idx: state.currentIdx, kind: phase.kind, left });
+          __speech.current = u;
+          const ms = __speech.ms != null ? __speech.ms : 400 + u.text.length / 13 * 1000;
+          setTimeout(() => { if (__speech.current === u) { __speech.current = null; if (u.onend) u.onend({}); } }, ms);
+        },
+        cancel() {
+          __speech.cancels++;
+          const u = __speech.current;
+          __speech.current = null;
+          if (u && u.onerror) u.onerror({ error: 'interrupted' });
+        },
+        pause() {}, resume() {}, addEventListener() {}, removeEventListener() {}
+      };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: synth });
+      window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; this.volume = 1; } };
+    });
+    const v = await phone.newPage();
+    v.on('pageerror', e => errors.push('voice: ' + e));
+    v.on('console', m => { if (m.type() === 'error') errors.push('voice: ' + m.text()); });
+    const ev = (fn, arg) => v.evaluate(fn, arg);
+    const said = () => ev(() => __speech.said.filter(x => x.text.trim()).map(x => x.text));
+    const lines = () => ev(() => __speech.said.filter(x => x.text.trim()).length);
+    // Arriving at phase i, `left` seconds before its end (at its start if
+    // left is left out), and one tick there; later, the same phase further on.
+    const at = (i, left) => ev(([i, left]) => {
+      seekTo(i);
+      coach.at = -1;
+      if (left != null) state.runStartWall -= (state.sequence[i].duration - left) * 1000;
+      tickClock();
+    }, [i, left]);
+    const later = (left) => ev((left) => {
+      const i = state.currentIdx;
+      state.runStartWall = Date.now() - (startOf(i) + state.sequence[i].duration - left - state.elapsedAtResume) * 1000;
+      tickClock();
+    }, left);
+    const waitSaid = (n, why) => v.waitForFunction((n) => __speech.said.filter(x => x.text.trim()).length > n, n, { timeout: 5000 })
+      .catch(() => { throw new Error(`FAILED at "${step}": nothing said ${why}`); });
+    await v.goto(URL);
+    await v.click('#btnGearDone');
+    // a seeded two-person surf session in short bursts, without the 3D
+    // figures, whose software drawing here can hold the page's timers up
+    const built = await ev(() => {
+      state.people = 2; state.nameA = 'Wayne'; state.nameB = 'Dave'; state.showPhotos = false; savePrefs(); showSettings();
+      return buildAndOpen({ ...requestFromState(), people: 2, goal: 'surf', intervalId: 'short', mix: undefined, minutes: 20 }, 4242);
+    });
+    assert(built === null, 'a seeded surf session opens: ' + built);
+    assert(await ev(() => state.voice === true && CAN_SPEAK) && await v.$eval('#voiceOn', e => e.checked && !e.disabled && e.offsetParent !== null),
+           'the voice coach is on for a new visitor, beside the sound choice');
+    assert(/and the voice coach/.test(await v.$eval('#soundSaid', e => e.textContent)), 'and the line by Start says so');
+    assert(await ev(() => coachVoice && coachVoice.name) === 'Karen', 'it talks with the Australian voice, not the novelty one');
+    assert(await ev(() => { __speech.voices = __speech.voices.filter(x => x.lang !== 'en-AU'); pickVoice(); const n = coachVoice.name; __speech.voices.push({ name: 'Karen', lang: 'en-AU', localService: true }); pickVoice(); return n; }) === 'Daniel',
+           'with no Australian voice, the British one');
+    assert(await lines() === 0 && await ev(() => __speech.said.length === 0), 'opening a workout says nothing');
+
+    await v.click('#btnStart');
+    const first = await ev(() => __speech.said[0]);
+    assert(first && !first.text.trim() && first.volume === 0 && first.tapped, 'the Start tap has it say a silent line, which lets it talk from then on: ' + JSON.stringify(first));
+    await waitSaid(0, 'as the warm-up starts');
+    const warm = await ev(() => [__speech.said.filter(x => x.text.trim())[0], state.sequence[0].a.name]);
+    assert(warm[0].text === `Warm-up. ${warm[1]}.` && warm[0].voice === 'Karen' && warm[0].lang === 'en-AU', 'the warm-up names its first move: ' + JSON.stringify(warm));
+
+    // the rest before a round where the two of them are on different moves
+    const r = await ev(() => {
+      const i = state.sequence.findIndex((x, j) => x.kind === 'rest' && j > 0 && (state.sequence[j + 1] || {}).kind === 'work'
+        && state.sequence[j + 1].a.name !== state.sequence[j + 1].b.name && state.sequence[j + 1].round < state.sequence[j + 1].totalRounds);
+      const next = state.sequence[i + 1];
+      return { i, a: spoken(next.a.name), b: spoken(next.b.name) };
+    });
+    assert(r.i > 0, 'a rest before the two of them do different moves');
+    let n = await lines();
+    await at(r.i);
+    await waitSaid(n, 'at the rest');
+    const rest = await ev(() => __speech.said[__speech.said.length - 1]);
+    assert(rest.text.startsWith('Next: ') && rest.text.includes(`Wayne, ${r.a}`) && rest.text.includes(`Dave, ${r.b}`) && rest.kind === 'rest',
+           `the rest says the next move and both names: "${rest.text}" (${r.a} / ${r.b})`);
+    assert(rest.left - (0.4 + rest.text.length / 13) >= 3.5, 'and it starts in time to finish clear of the 3-2-1: ' + rest.left);
+    // before the last round
+    const last = await ev(() => state.sequence.findIndex((x, j) => x.kind === 'rest' && (state.sequence[j + 1] || {}).round === state.sequence[j + 1].totalRounds && state.sequence[j + 1].totalRounds > 2));
+    n = await lines();
+    await at(last);
+    await waitSaid(n, 'before the last round');
+    assert((await said()).pop().startsWith('Last round: '), 'the rest before the last round says so: ' + (await said()).pop());
+    // the block rest calls the next block
+    const br = await ev(() => state.sequence.findIndex(x => x.kind === 'blockrest'));
+    n = await lines();
+    await at(br);
+    await waitSaid(n, 'at the block rest');
+    assert((await said()).pop().startsWith('Next: '), 'the block rest says what the next block starts with');
+    // halfway through the session, said once
+    const half = await ev(() => state.sequence.findIndex((x, j) => x.kind === 'rest' && startOf(j) >= state.totalDuration / 2 && (state.sequence[j + 1] || {}).kind === 'work'));
+    n = await lines();
+    await at(half);
+    await waitSaid(n, 'at halfway');
+    assert((await said()).pop().startsWith('Halfway. Next: '), 'past halfway, the next line starts with it: ' + (await said()).pop());
+    n = await lines();
+    await at(half + 2);
+    await waitSaid(n, 'at the rest after halfway');
+    assert(!(await said()).pop().includes('Halfway'), 'and only once');
+    // a rest landed on with too little time left says nothing
+    n = await lines();
+    await at(r.i, 3.2);
+    assert(await lines() === n && await ev(() => !coach.timer), 'nothing starts with under 3.5 seconds of a phase left');
+    // a phone too busy to start a line on time drops it rather than say it late
+    await ev((i) => { seekTo(i); coach.at = -1; tickClock(); const t = Date.now(); while (Date.now() - t < 5000); }, r.i);
+    await v.waitForFunction(() => !coach.timer);
+    assert(await lines() === n, 'a line held up past when it could finish clear of the 3-2-1 is dropped, not said late');
+    // nothing said over the 3-2-1: a line still going at 3 seconds is cut off
+    await ev(() => { __speech.ms = 60000; });
+    n = await lines();
+    await at(r.i);
+    await waitSaid(n, 'with a long line');
+    let cancels = await ev(() => __speech.cancels);
+    await later(2.9);
+    assert(await ev((c) => __speech.cancels === c + 1 && !speechSynthesis.speaking, cancels), 'a line still going at the 3-2-1 is cut off');
+    // a pause, a skip and leaving each cut off what's being said
+    n = await lines();
+    await at(r.i);
+    await waitSaid(n, 'before the pause');
+    cancels = await ev(() => __speech.cancels);
+    await v.click('#btnStart');
+    assert(await ev((c) => !state.running && __speech.cancels === c + 1 && !speechSynthesis.speaking, cancels), 'Pause cuts the voice off');
+    n = await lines();
+    await v.click('#btnStart');
+    await waitSaid(n, 'on Resume');
+    assert((await said()).pop().startsWith('Next: '), 'Resume in a rest says its line again, since the pause cut it off');
+    cancels = await ev(() => __speech.cancels);
+    n = await lines();
+    await v.click('#btnSkip');
+    assert(await ev((c) => __speech.cancels >= c + 1, cancels), 'Skip cuts it off');
+    await waitSaid(n, 'after the skip');
+    const landed = await ev(() => state.sequence[state.currentIdx].kind);
+    assert(landed === 'blockrest' ? (await said()).pop().startsWith('Next: ') : (await said()).pop().startsWith('Cool-down. '),
+           `and the ${landed} it lands on says its own line: ` + (await said()).pop());
+    assert(await ev(() => __speech.overlaps) === 0, 'no line ever started over another');
+    cancels = await ev(() => __speech.cancels);
+    await leaveStarted(v);
+    assert(await ev((c) => state.view === 'welcome' && __speech.cancels === c + 1 && !speechSynthesis.speaking && !coach.timer, cancels), 'leaving the workout cuts it off');
+    await ev(() => { __speech.ms = null; });
+
+    // No sound says nothing, and neither does the voice switched off
+    await ev(() => buildAndOpen({ ...requestFromState(), people: 2, goal: 'surf', intervalId: 'short', mix: undefined, minutes: 20 }, 4242));
+    await v.click('#btnStart');
+    await v.click('#soundPicker [data-sound="off"]');
+    assert(await v.$eval('#voiceOn', e => e.disabled), 'No sound greys the voice switch out');
+    n = await lines();
+    await at(r.i);
+    await at(r.i + 2, 8);
+    assert(await lines() === n && await ev(() => !coach.timer), 'No sound: nothing is said at a rest');
+    await v.click('#soundPicker [data-sound="silent"]');
+    await v.click('#voiceOn');
+    assert(await ev(() => state.voice === false && !talking()), 'the voice switched off, which stops it');
+    assert(!/voice coach/.test(await v.$eval('#soundSaid', e => e.textContent)), 'and the line by Start leaves it out');
+    n = await lines();
+    await at(r.i);
+    await at(r.i + 2, 8);
+    assert(await lines() === n && await ev(() => !coach.timer), 'Voice off: nothing is said at a rest either');
+    await v.click('#voiceOn');
+    n = await lines();
+    await at(r.i);
+    await waitSaid(n, 'with the voice back on');
+    await leaveStarted(v);
+
+    // EMOM: the next minute's reps, called before it starts
+    await ev(() => buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'emom', mix: undefined, minutes: 20 }, 777));
+    await v.click('#btnStart');
+    const em = await ev(() => {
+      const i = state.sequence.findIndex((x, j) => x.emom && (state.sequence[j + 1] || {}).emom && state.sequence[j + 1].blockIdx === x.blockIdx && !sameAgain(j + 1));
+      const next = state.sequence[i + 1];
+      return { i, a: [spoken(next.a.name), next.a.reps.split(' ')[0].replace(/s$/, '')], b: [spoken(next.b.name), next.b.reps.split(' ')[0].replace(/s$/, '')], reps: next.a.reps };
+    });
+    assert(em.i >= 0 && /\d/.test(em.reps), 'an EMOM minute with another after it: ' + JSON.stringify(em));
+    await at(em.i, 30);
+    const aheadAt = await ev(() => coach.ahead && coach.ahead.at);
+    assert(aheadAt > 3.5 && aheadAt < 20, 'the next minute is called a few seconds before it starts: ' + aheadAt);
+    n = await lines();
+    await later(aheadAt - 0.1);
+    await waitSaid(n, 'before the next EMOM minute');
+    const emLine = (await said()).pop();
+    assert(emLine.startsWith('Next: ') || emLine.startsWith('Last round: '), 'the call before an EMOM minute: ' + emLine);
+    assert([em.a, em.b].every(([name, count]) => emLine.includes(name) && emLine.includes(count)),
+           `with each person's move and count: "${emLine}" (${em.a} / ${em.b})`);
+    await leaveStarted(v);
+    // a minute on the same moves as the one before goes unsaid, before it or
+    // as it starts; the last round, and the next change, are still called
+    const again = await ev(() => {
+      const f = { v: 1, name: 'Again', intervalId: 'emom', warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [],
+                  blocks: [{ make: 'same', name: 'Climbers', ids: ['mountainClimberFast'] }, { make: 'same', name: 'Bridges', ids: ['singleLegBridge'] }] };
+      openWorkout(thawWorkout(f, 98, { minutes: 20, people: 2, intervalId: 'emom' }));
+      const seq = state.sequence, work = seq.map((x, k) => k).filter(k => seq[k].kind === 'work');
+      const first = work[0], second = work[1], last = work.find(k => seq[k].blockIdx === 0 && seq[k].round === seq[k].totalRounds);
+      const nextBlock = work.find(k => seq[k].blockIdx === 1);
+      return { rounds: seq[first].totalRounds, ahead: aheadSaid(first, seq[first].duration), entry: entrySaid(second),
+               lastAhead: aheadSaid(last - 1, seq[last - 1].duration), lastEntry: !!entrySaid(last), newBlock: !!entrySaid(nextBlock) || !!entrySaid(nextBlock - 1) };
+    });
+    assert(again.rounds > 2 && again.ahead === null && again.entry === null && again.lastAhead && again.lastAhead.lines[0].startsWith('Last round: ') && again.newBlock,
+           'the same moves again go unsaid, the last round and a new block are called: ' + JSON.stringify(again));
+
+    // AMRAP: the block rest reads out the list, and one minute left
+    await ev(() => { state.people = 1; return buildAndOpen({ ...requestFromState(), people: 1, goal: undefined, intervalId: 'amrap', mix: undefined, minutes: 20 }, 99); });
+    await v.click('#btnStart');
+    const am = await ev(() => {
+      const i = state.sequence.findIndex((x, j) => x.kind === 'blockrest' && (state.sequence[j + 1] || {}).amrap);
+      return { i, w: i + 1, first: spoken(state.sequence[i + 1].a.circuit[0].name), min: Math.round(state.sequence[i + 1].duration / 60) };
+    });
+    n = await lines();
+    await at(am.i);
+    await waitSaid(n, 'before an AMRAP');
+    const amLine = (await said()).pop();
+    assert(amLine.startsWith(`Next: AMRAP, ${am.min} minutes. `) && amLine.includes(am.first), 'the block rest reads out the AMRAP: ' + amLine);
+    await at(am.w, 100);
+    n = await lines();
+    await later(59.5);
+    await waitSaid(n, 'with a minute to go');
+    assert((await said()).pop() === 'One minute left.', 'one minute left in the AMRAP, on its own: ' + (await said()).pop());
+    await leaveStarted(v);
+    // Halfway only leads what a rest (or a warm-up move or stretch) says:
+    // never in work, where it would sound like half the minute or block had
+    // gone, never with One minute left, and not at all in a Surf check
+    // (a session walked through on the clock, `step` seconds a tick, and what's said)
+    const walk = (step) => ev(async (step) => {
+      __speech.ms = 5;
+      const from = __speech.said.length;
+      const settle = async () => { for (let k = 0; k < 200 && (coach.timer || __speech.current); k++) await new Promise(r => setTimeout(r, 10)); };
+      for (let i = 0; i < state.sequence.length; i++) {
+        const d = state.sequence[i].duration;
+        for (let left = d - 1.5; left > 3; left -= step) {
+          state.runStartWall = Date.now() - (startOf(i) + d - left - state.elapsedAtResume) * 1000;
+          tickClock();
+          await settle();
+        }
+      }
+      __speech.ms = null;
+      return __speech.said.slice(from).filter(x => x.text.trim()).map(x => ({ text: x.text, kind: x.kind, idx: x.idx, left: x.left }));
+    }, step);
+    await ev(() => { state.people = 2; savePrefs(); return buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'fortime', mix: undefined, minutes: 20 }, 4242); });
+    await v.click('#btnStart');
+    const ft = await walk(2.5);
+    const ftHalf = ft.filter(x => x.text.includes('Halfway'));
+    assert(ft.some(x => x.text === 'One minute left.') && ft.filter(x => x.kind === 'work').length > 0, 'a For Time for two, walked through, says its lines: ' + JSON.stringify(ft.map(x => x.text)).slice(0, 300));
+    assert(ftHalf.length === 1 && ftHalf.every(x => x.kind !== 'work' && x.text.startsWith('Halfway. ') && !x.text.includes('One minute')),
+           'Halfway once, in front of a rest\'s line, never in a For Time block: ' + JSON.stringify(ftHalf));
+    await leaveStarted(v);
+    // Dave on a move of his own in a lap (swapped in the rest before): the
+    // call still has the moves, and where he starts
+    const lapSwap = await ev(() => {
+      buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'fortime', mix: undefined, minutes: 20 }, 4242);
+      const w = state.workout;
+      const r = state.sequence.findIndex((x, j) => x.kind === 'blockrest' && (state.sequence[j + 1] || {}).forTime && state.sequence[j + 1].b.circuit.length > 1);
+      const bi = state.sequence[r + 1].blockIdx, from = state.sequence[r + 1].b.circuit[0].base;
+      const to = swapCandidates(w.blocks[bi], from, swapOpts(w, bi, 'b'))[0];
+      openWorkout(swapped(w, [{ block: bi, from, to, who: 'dave' }]));
+      const room = Math.min(state.sequence[r].duration - VOICE_CLEAR - VOICE_AFTER_CHIME_MS / 1000, VOICE_MOST);
+      return { r, to: to && spoken(EXERCISES[to].name), first: spoken(state.sequence[r + 1].a.circuit[0].name),
+               line: callSaid(r + 1, r).map(spoken).find(t => sayTime(t) <= room) };
+    });
+    assert(lapSwap.r > 0 && lapSwap.to && lapSwap.line.includes(lapSwap.first) && lapSwap.line.includes(`Dave starts on ${lapSwap.to}`),
+           'after a swap of his own in a lap, the rest still calls the moves, and where Dave starts: ' + JSON.stringify(lapSwap));
+    await ev(() => { state.programRun = null; openWorkout(SURF_CHECK); });
+    await v.click('#btnStart');
+    const sc = await walk(2.5);
+    assert(sc.length > 3 && !sc.some(x => x.text.includes('Halfway')), 'and never in a Surf check: ' + JSON.stringify(sc.map(x => `${x.kind}: ${x.text}`)));
+    await leaveStarted(v);
+    // Surf Fit's 25s on, 5s off: the 5 seconds between sprints can't fit a
+    // call, so each sprint is called near the end of the one before, clear
+    // of its 3-2-1, and doesn't say itself again after Go
+    await ev(() => buildAndOpen({ ...requestFromState(), people: 2, goal: 'surf', intervalId: 'short', mix: undefined, minutes: 20, workRest: { short: [25, 5] } }, 4242));
+    await v.click('#btnStart');
+    const sprints = await walk(0.5);
+    const late = await ev(() => state.sequence.map((x, i) => i).filter(i => state.sequence[i].kind === 'work' && restTooShort(i - 1) && !sameAgain(i)));
+    const calledAhead = late.filter(i => sprints.some(x => x.idx === i - 2 && x.kind === 'work' && /^(Next|Last round): /.test(x.text) && x.left - (0.4 + x.text.length / 13) >= 3.5));
+    // (a sprint's own line would be as it starts; the one before calls it in its last few seconds)
+    const saidAtGo = sprints.filter(x => late.includes(x.idx) && x.left > 20);
+    assert(late.length >= 10 && calledAhead.length === late.length && !saidAtGo.length,
+           'each sprint after a 5s rest is called in the one before, and says nothing after Go: ' + JSON.stringify({ late, calledAhead, saidAtGo }));
+    assert(sprints.some(x => x.text.startsWith('Last round: ')), 'the last round called ahead too, as the last round');
+    await leaveStarted(v);
+
+    // what it says, said well: weights, seconds, sides, and no symbols, for every exercise
+    const words = await ev(() => [spoken('KB swings · 16kg'), spoken('Plank, 40s each side'), spoken('Next: EMOM, 1 min. Wayne, 12.5kg'),
+                                 spoken('90/90 hip, left'), spoken('Neck & shoulder rolls'), spoken('Cobra / upward dog')]);
+    assert(words.join('|') === 'kettlebell swings, 16 kilo|Plank, 40 seconds each side|Next: EMOM, 1 minute. Wayne, 12.5 kilo|90 90 hip, left|Neck and shoulder rolls|Cobra, upward dog',
+           'said as you would say it: ' + words.join(' | '));
+    const counts = await ev(() => [['10 reps', ''], ['1 rep', ''], ['40s', ''], ['20s each side', ''], ['8 each side', '16kg'], ['5 each way', ''], ['1 lap', ''], ['', '12kg']]
+      .map(([reps, load]) => spoken(moveSaid({ name: 'KB swings', reps, load }, 2))));
+    assert(counts.join('|') === '10 kettlebell swings|1 kettlebell swings|40 seconds of kettlebell swings|20 seconds of kettlebell swings each side|8 kettlebell swings each side, 16 kilo|5 kettlebell swings each way|1 lap of kettlebell swings|kettlebell swings, 12 kilo',
+           'the count first, so a list of them still reads: ' + counts.join(' | '));
+    const odd = await ev(() => Object.keys(EXERCISES).flatMap(id => [{ reps: true }, { reps: true, lap: true }, {}].map(ctx => {
+      const ex = describeEx(id, { ...ctx, loads: { kb15: '16kg', kb10: '12kg', bar: '20kg bar', dbHeavy: '12.5kg', dbLight: '7.5kg' } });
+      return spoken(moveSaid(ex, 2));
+    })).filter(t => /[\/·&]|\dkg|\d+s\b|\bKB\b|undefined/.test(t)));
+    assert(!odd.length, 'every exercise, its reps and its weight said without symbols: ' + odd.slice(0, 5).join(' | '));
+
+    // the choice and the voice switch persist, through a backup, and past a tab on an older release
+    await v.click('#todayCard .today-go');
+    await v.click('#soundPicker [data-sound="music"]');
+    await v.click('#voiceOn');
+    await v.reload();
+    assert(await ev(() => state.sound === 'music' && state.voice === false && !state.muteAudio && !state.beepOnSilent), 'Beeps over my music and the voice off survive a reload');
+    const backup = await ev(() => JSON.parse(backupText()).prefs);
+    assert(backup.sound === 'music' && backup.voice === false && backup.muteAudio === false && backup.beepOnSilent === false, 'a backup has both, and the old tick boxes for an older release');
+    const back = await ev(() => {
+      const text = backupText();
+      setSound('off'); state.voice = true; savePrefs();
+      replaceData(readBackup(text).prefs, true);
+      return [state.sound, state.voice, document.querySelector('#soundPicker [aria-pressed="true"]').dataset.sound, document.getElementById('voiceOn').checked];
+    });
+    assert(back.join() === 'music,false,music,false', 'and a restore brings them back, on screen too: ' + back);
+    const oldBackup = await ev(() => {
+      const o = JSON.parse(backupText());
+      delete o.prefs.sound; delete o.prefs.voice; o.prefs.schema = 3; o.prefs.muteAudio = true;
+      const b = readBackup(JSON.stringify(o));
+      return [b.prefs.sound, b.prefs.voice];
+    });
+    assert(oldBackup.join() === 'off,true', "a backup from before the choice: Mute audio is No sound, and the voice its default: " + oldBackup);
+    // a tab on the last release knows neither, and saves without them
+    await ev(() => {
+      const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      delete prefs.sound; delete prefs.voice; prefs.schema = 3; prefs.muteAudio = false; prefs.beepOnSilent = false;
+      localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
+    });
+    await v.reload();
+    assert(await ev(() => state.sound === 'music' && state.voice === false), "after a save from a tab on the last release, the choice comes from its tick boxes and the voice from its own key");
+    await ev(() => {
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ ...JSON.parse(localStorage.getItem('fit-prefs-2')), schema: 4, voice: 'loud', sound: 'blaring' }));
+      localStorage.setItem('fit-voice-1', '"loud"');
+    });
+    await v.reload();
+    assert(await ev(() => state.voice === true && state.sound === 'music'), 'a voice or sound that is not one of its own goes back to the default, and the tick boxes');
+    note(`at a rest: "${rest.text}"; before an EMOM minute: "${emLine}"; before an AMRAP: "${amLine}"`);
+    await phone.close();
+  }
+  ok('voice coach: on for a new visitor in an Australian voice, primed by the Start tap, names the warm-up, calls both people\'s next move at each rest, Last round, the next block, Halfway once in front of a rest\'s line (never in work or a Surf check), an EMOM\'s reps ahead of the minute, a sprint past a 5s rest called in the one before, an AMRAP\'s list (with a mate\'s own move) and one minute left on its own; never under 3.5 seconds, cut off at the 3-2-1, on pause, skip and leave, never over itself; silent with No sound or the voice off; spoken words for every exercise; the choice and the switch persist, back up and survive a tab on the last release');
 
   step = 'the card shows the exercise as a 3D figure; drag turns it, a tap opens the full view';
   // the full viewer is checked by move-check; here it's the app's side of the tap
@@ -1343,7 +1875,12 @@ try {
   assert(/^(\d+ reps|\d+s? each side|\d+s|.+)$/.test(shown) && shown.length > 0, `reps on the card, got "${shown}"`);
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'EMOM', 'the timer says EMOM');
   assert(/Minute/.test(await p.$eval('#roundDots', e => e.textContent)), 'counts minutes, not rounds');
-  assert((await p.$eval('#roundDots', e => e.textContent)).includes("Do the reps, then rest till the minute's up"), 'and says how an EMOM works');
+  assert((await p.$eval('#roundDots .round-hint', e => e.textContent)) === 'Do the reps, then rest till the next minute.', 'and the first block says how an EMOM works');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work' && x.blockIdx === 0 && x.round === 4)); render(); });
+  assert(await p.$('#roundDots .round-hint'), 'through every minute of it');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work' && x.blockIdx === 1)); render(); });
+  assert(!(await p.$('#roundDots .round-hint')) && /Minute 1/.test(await p.$eval('#roundDots', e => e.textContent)), 'and once is enough: block 2 just counts the minutes');
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
   assert((await p.$eval('#upcoming', e => e.textContent)).includes(' · '), 'up next names the reps');
   const [repsPx, namePx] = await st(() => ['repsA', 'exerciseA'].map(id => parseFloat(getComputedStyle(document.getElementById(id)).fontSize)));
   assert(repsPx >= namePx, `the reps are as big as the name (${repsPx}px, name ${namePx}px)`);
@@ -1362,6 +1899,16 @@ try {
   await p.click('#btnStart');
   const blk = await st(() => { const i = state.sequence.findIndex(x => x.amrap); seekTo(i); render(); return state.sequence[i].blockIdx; });
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'AMRAP', 'the timer says AMRAP');
+  const amrapSaid = await st((b) => {
+    const said = () => document.getElementById('roundDots').textContent;
+    const first = said();
+    seekTo(state.sequence.findIndex(x => x.amrap && x.blockIdx > b)); render();
+    const later = said();
+    seekTo(state.sequence.findIndex(x => x.amrap && x.blockIdx === b)); render();
+    return { first, later };
+  }, blk);
+  assert(amrapSaid.first === 'As many rounds as you can in 4 minutes, tapping +1 after each.' && amrapSaid.later === 'As many rounds as you can in 4 min',
+         'the first AMRAP says how it works, the next just what it is: ' + JSON.stringify(amrapSaid));
   const shows = (id) => p.$eval(id, e => getComputedStyle(e).display !== 'none');
   assert(await shows('#circuitA') && await shows('#counterA'), 'the lap and the counter show');
   await p.click('#counterA .count-more'); await p.click('#counterA .count-more'); await p.click('#counterA .count-less');
@@ -1417,7 +1964,7 @@ try {
          'skipped with 60% of it left: a block skipped, and its row says so: ' + JSON.stringify(agree.early));
   ok(`AMRAP: ${amrap.blocks} four-minute laps, the counter keeps score and history saves it; skipped blocks read "–", show no Last time, and the lap goes after; Start over counts from 0; a skip's row and the summary agree`);
 
-  step = 'For Time: rounds of a lap against a cap, Done logs the time';
+  step = 'For Time: rounds of a lap against a cap, counted for you, the last one logs the time';
   await leaveStarted(); await pickInterval('For Time');
   await p.click('#btnBuild');
   const ft = await st(() => {
@@ -1432,9 +1979,38 @@ try {
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'For time', 'the timer says For time');
   assert(await p.$eval('#timeDisplay', e => e.textContent) === '1:10', 'and counts up: ' + await p.$eval('#timeDisplay', e => e.textContent));
   assert(/rounds of/i.test(await p.$eval('#circuitA', e => e.textContent)), 'the card says how many rounds');
+  assert(await p.$eval('#roundDots', e => e.textContent) === 'Race through the rounds, tapping +1 after each, in 4 minutes at most.', 'the first For Time says how it works');
+  // FIT counts the rounds: +1 after each, the last one is Done and logs the time
+  const ftRounds = await st(() => state.sequence[state.currentIdx].a.lapRounds);
+  const count = (w = 'A') => p.evaluate((w) => {
+    const c = document.getElementById('counter' + w);
+    return { now: c.querySelector('.count-now').textContent.trim(), more: (c.querySelector('.count-more') || {}).textContent,
+             less: !!(c.querySelector('.count-less[data-step="-1"]') || {}).disabled };
+  }, w);
+  const first = await count();
+  assert(first.now === `Round 1 of ${ftRounds}` && first.more === '+1 round' && first.less, 'it starts on round 1, with +1 round and nothing to take off: ' + JSON.stringify(first));
+  const bFirst = await st(() => state.people === 2) ? await count('B') : null;
   await p.click('#counterA .count-more');
-  assert(await p.evaluate((b) => state.history[0].scores[b].a === 70, ftBlk), 'Done logs 1:10');
+  assert((await count()).now === `Round 2 of ${ftRounds}`, '+1 round moves it on to round 2');
+  assert(await st((b) => JSON.parse(localStorage.getItem('fit-run-1')).laps[b].a === 1, ftBlk), 'and a reload would keep the count');
+  await p.click('#counterA .count-less');
+  assert((await count()).now === `Round 1 of ${ftRounds}`, '− takes a tap back');
+  for (let i = 1; i < ftRounds; i++) await p.click('#counterA .count-more');
+  const lastRound = await count();
+  assert(lastRound.now === `Round ${ftRounds} of ${ftRounds}` && lastRound.more === 'Done', 'on the last round the button is Done: ' + JSON.stringify(lastRound));
+  assert(await p.evaluate((b) => !(state.history[0].scores && state.history[0].scores[b] && state.history[0].scores[b].a), ftBlk), 'no time yet');
+  if (bFirst) assert(JSON.stringify(await count('B')) === JSON.stringify(bFirst), "the other person's count is their own");
+  await p.click('#counterA .count-more');
+  assert(await p.evaluate((b) => state.history[0].scores[b].a === 70, ftBlk), 'Done on the last round logs 1:10');
   assert((await p.$eval('#counterA', e => e.textContent)).includes('1:10'), 'the card shows the time');
+  await p.click('#counterA .count-less');
+  const undone = await count();
+  assert(undone.now === `Round ${ftRounds} of ${ftRounds}` && undone.more === 'Done' && await p.evaluate((b) => !state.history[0].scores[b].a, ftBlk),
+         'the undo takes the time off and goes back to the last round: ' + JSON.stringify(undone));
+  await p.click('#counterA .count-more');
+  assert(await p.evaluate((b) => state.history[0].scores[b].a === 70, ftBlk), 'and Done logs it again');
+  assert(await st(() => JSON.stringify(cleanRun({ ...JSON.parse(localStorage.getItem('fit-run-1')), laps: { 0: { a: -1 }, 1: { a: 2.5 }, x: { a: 1 }, 2: { a: 2, b: 1 } } }).laps)) === '{"2":{"a":2,"b":1}}',
+         'a saved count that is not a whole number of rounds is let go');
   if (await st(() => state.people === 1)) {
     assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Rest', 'once done, the rest of the cap is rest');
   }
@@ -1445,7 +2021,7 @@ try {
          'and reads "–", not capped: ' + await st(() => scoreLine(state.history[0])));
   await p.click('#btnStart');                                   // pause
   await st(() => { state.intervalStyle = 'short'; savePrefs(); });
-  ok('For Time: the clock counts up, Done logs the time to history and the cap turns to rest; a skipped block reads "–"');
+  ok('For Time: the first block says how it works, the clock counts up, FIT counts the rounds (+1, − and Done on the last), Done logs the time to history and the cap turns to rest, the undo goes back to the last round; a skipped block reads "–"');
 
   step = 'history keeps who trained, so a score stays with its person after a rename';
   await leaveStarted(); await pickInterval('AMRAP');
@@ -1477,14 +2053,14 @@ try {
   assert(aLast.includes('Last time 0') && bLast.includes('Last time 3'), `swapped, Dave's 3 follows him to B: "${aLast}" / "${bLast}"`);
   await p.click('#btnBack');
   await p.click('#pathBuild'); await p.fill('#nameA', ''); await p.fill('#nameB', '');
-  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click(styleCard('Short bursts'));
   await p.click('#btnBuild'); await p.click('#btnStart');
   ok('history keeps the names: a rename leaves the score with Dave, a new name gets no "Last time", and a swap follows the person');
 
   step = 'the finish screen says what was done, and each person says how it was';
   await leaveStarted();
   await p.click('#pathBuild'); await p.fill('#nameA', 'Wayne'); await p.fill('#nameB', 'Dave');
-  await p.click('.interval-card:has-text("EMOM")');
+  await p.click(styleCard('EMOM'));
   await p.click('#btnBuild');
   assert(await st(() => state.people === 2 && state.workout.request.repScales === undefined && !Object.keys(state.levels).length),
          'before anyone has said, a build carries no levels');
@@ -1633,14 +2209,14 @@ try {
   await st(() => { state.saved.shift(); savePrefs(); });
   await p.click('#btnBack');
   await p.click('#pathBuild'); await p.fill('#nameA', ''); await p.fill('#nameB', '');
-  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click(styleCard('Short bursts'));
   await p.click('#btnBuild'); await p.click('#btnStart');
   ok("finish: the minutes, the blocks and any skipped; How was that? once each, kept with the session and taken back with a second tap; two Too easy raise Wayne's EMOM reps above Dave's on the same moves, said on the card; favourites, swaps, new mates and links keep each person's own reps");
 
   step = 'Mix: EMOM, short bursts and AMRAP in exactly 30 minutes';
   await leaveStarted(); await p.click('#pathBuild');
   await p.click('#timePicker .chip:text-is("30 min")');
-  await p.click('.interval-card:has-text("Two or three styles")');
+  await p.click(styleCard('Mix'));
   // start from nothing, then tap the styles in order
   for (const id of await st(() => state.mixStyles.slice())) {
     await p.click(`.mix-chip:has-text("${await p.evaluate(i => INTERVALS[i].label, id)}")`);
@@ -1663,10 +2239,32 @@ try {
   await st(() => { seekTo(state.sequence.findIndex(x => x.changeover)); render(); });
   assert(await p.$eval('#phaseLabel', e => e.textContent) === 'Change over', 'the changeover says so');
   assert((await p.$eval('#roundDots', e => e.textContent)).includes('Short bursts'), 'and explains the next style');
+  // the AMRAP's changeover with its own minutes, the same as the block after it says
+  const amrapOver = await st(() => {
+    const i = state.sequence.findIndex((x, k) => x.changeover && state.sequence.slice(k).find(y => y.kind === 'work').amrap);
+    seekTo(i); render();
+    const am = state.sequence.slice(i).find(y => y.kind === 'work');
+    return { dots: document.getElementById('roundDots').textContent, min: am.duration / 60,
+             preview: [...document.querySelectorAll('#previewList li')].map(e => e.textContent).find(t => t.includes('Next up, AMRAP')) || '' };
+  });
+  assert(amrapOver.dots.includes(`AMRAP: As many rounds as you can in ${amrapOver.min} minutes`) && !amrapOver.dots.includes('Four minutes')
+         && amrapOver.preview.includes(`Next up, AMRAP: As many rounds as you can in ${amrapOver.min} minutes`), 'the AMRAP changeover says its real minutes: ' + JSON.stringify(amrapOver));
+  // each section says how its style works as it starts, and only then
+  const sectionSaid = await st(() => state.sequence.filter(x => x.kind === 'work').map(x => {
+    seekTo(state.sequence.indexOf(x)); render();
+    const how = document.querySelector('#roundDots .round-hint, #roundDots .round-how');
+    return `${x.blockIdx}:${how ? how.textContent : ''}`;
+  }).filter((x, i, all) => x !== all[i - 1]));
+  const firsts = await st(() => state.workout.sections.map(x => x.start));
+  const howSaid = sectionSaid.filter(x => !/^\d+:$/.test(x));
+  assert(howSaid.length === 3 && howSaid.every((x, i) => x.startsWith(`${firsts[i]}:`))
+         && howSaid[0].endsWith(':Do the reps, then rest till the next minute.') && howSaid[1].endsWith(':Go hard for 20s, rest 10s, 8 rounds a block.')
+         && /^\d+:As many rounds as you can in \d+ minutes, tapping \+1 after each\.$/.test(howSaid[2]),
+         "the first block of each section says how its style works, the others don't: " + sectionSaid.join(' | '));
   await p.click('#btnBack');
   assert((await p.$eval('#todayCard .today-style', e => e.textContent)).startsWith('Mix: EMOM, Short bursts, AMRAP · '), 'the home card names the mix');
   await p.click('#pathBuild');
-  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click(styleCard('Short bursts'));
   assert(await st(() => !state.mixOn), 'picking a single style turns the mix off');
   await p.click('#timePicker .chip:text-is("20 min")');
   await p.click('#btnBuild');
@@ -1676,7 +2274,7 @@ try {
   await p.click('#btnBack'); await p.click('#pathBuild');
   assert(await st(() => state.minutes === 20 && !state.mixOn), 'starting from one style at 20 minutes');
   const dimmed = (sel) => p.$$eval(`${sel} .chip.dim`, els => els.map(e => e.textContent).join(','));
-  await p.click('.interval-card:has-text("Two or three styles")');
+  await p.click(styleCard('Mix'));
   assert(await st(() => mixMinimumMinutes(state.mixStyles)) === 25, 'EMOM, short bursts and AMRAP need 25 minutes');
   assert(await st(() => state.minutes) === 25, 'turning Mix on raises 20 minutes to the 25 it needs');
   assert(await dimmed('#timePicker') === '10 min,15 min,20 min', 'the shorter times are dimmed: ' + await dimmed('#timePicker'));
@@ -1708,7 +2306,7 @@ try {
   assert(refused.top >= 0 && refused.bottom < refused.h + 1 && refused.gap >= 0 && refused.gap < 60,
          `and the reason is on screen just under the button: ${JSON.stringify(refused)}`);
   await st(() => { state.excluded = []; savePrefs(); });
-  await p.click('.interval-card:has-text("Short bursts")');
+  await p.click(styleCard('Short bursts'));
   assert(await dimmed('#timePicker') === '' && await p.$eval('#timeHint', e => e.hidden), 'one style: every time is on offer again');
   await p.click('#timePicker .chip:text-is("20 min")');
   await p.click('#btnBuild');
@@ -1745,6 +2343,10 @@ try {
   await p.click('#programBody button:has-text("Start Surf Fit")');
   assert((await p.$eval('#programBody', e => e.textContent)).includes('Day 1'), 'day 1 of the program');
   assert((await p.$$('.program-dot')).length === 7, 'the week strip has seven days');
+  // day 1 is a Surf check (see the Surf check steps): Not today, for its Paddle power
+  assert((await p.$eval('.program-today .card-name', e => e.textContent)) === 'Surf check', 'day 1 offers the Surf check');
+  await p.click('.program-today #btnCheckLater');
+  assert((await p.$eval('.program-today .card-name', e => e.textContent)) === 'Paddle power', 'and Not today has Paddle power on the card');
   // home now leads with today's session, and can set it aside for the day
   await p.click('#btnProgramBack');
   const homeDay = await p.$eval('#todayCard', e => e.textContent);
@@ -1847,17 +2449,32 @@ try {
   const after = await p.$eval('#programBody', e => e.textContent);
   assert(after.includes("Today's done") && after.includes('Pop-ups & legs'), 'day 1 ticked, day 2 next');
   assert((await p.$eval('.program-dot.now i', e => e.textContent)) === 'Next', "with today's done, the next day in the strip says Next, not Today");
+  // a surf after today's session: logged beside the program, so day 2 is still next
+  assert(await p.$('#programBody .program-card button:text-is("I surfed today")'), "a surf can be logged on the Today's done card too");
   await p.click('#programBody button:has-text("Do the next one now anyway")');
   await p.click('#programBody button:has-text("I surfed today")');
-  const prog = await st(() => state.programs['surf-fit'].done.map(d => `${d.n}${d.surfed ? 's' : ''}`).join(','));
-  assert(prog === '0,1s', 'a surf counts as day 2: ' + prog);
-  assert((await p.$eval('.program-progress', e => e.textContent)).includes('Day 3'), 'on to day 3');
+  const prog = await st(() => ({ done: state.programs['surf-fit'].done.map(d => `${d.n}${d.surfed ? 's' : ''}`).join(','),
+    surfs: state.programs['surf-fit'].surfs.length, marks: [...document.querySelectorAll('.program-dot i')].map(e => e.textContent).join(','),
+    progress: document.querySelector('.program-progress').textContent.replace(/\s+/g, ' ').trim() }));
+  assert(prog.done === '0' && prog.surfs === 1, 'a surf is logged beside the program and uses no day up: ' + JSON.stringify(prog));
+  assert(prog.progress.includes('Day 2 of 42') && prog.progress.includes('1 surf this week') && !prog.marks.includes('Surf'),
+         'still day 2, with the surf counted for the week and no Surf in the strip: ' + JSON.stringify(prog));
+  assert((await p.$eval('.program-today .card-name', e => e.textContent)) === 'Pop-ups & legs'
+         && (await p.$eval('.program-today .surf-log', e => e.textContent)).includes("Today's session is optional now"),
+         "and Pop-ups & legs is still on offer, said to be optional");
+  // how the paddle-out felt, in one tap, on the surf
+  await p.click('.program-today .paddle-chips .chip[data-paddle="cooked"]');
+  assert(await st(() => state.programs['surf-fit'].surfs[0].paddle === 'cooked'
+                        && JSON.parse(localStorage.getItem('fit-prefs-2')).programs['surf-fit'].surfs[0].paddle === 'cooked'),
+         'Cooked is kept with the surf, and saved');
+  assert((await p.$eval('.paddle-felt', e => e.textContent)) === 'Paddle-outs lately: Cooked'
+         && await p.$('.program-today .paddle-chips .chip.active[data-paddle="cooked"]'), 'the Programs screen says so, and the chip shows it picked');
   await p.click('#btnProgramBack');
   const doneLine = await p.$eval('#todayCard .today-line', e => e.textContent);
-  assert(doneLine.includes("today's done") && doneLine.includes('Next up: Mobility'), 'home says today is done and what is next: ' + doneLine);
+  assert(doneLine.includes("today's done") && doneLine.includes('Next up: Pop-ups & legs'), 'home says today is done and what is next: ' + doneLine);
   assert(await p.$('#todayCard .today-go'), 'with a built workout still one tap away');
   await p.click('#pathBuild'); await p.click('#btnBuild');     // the next step starts from a workout
-  ok("Programs: today's session leads the home card; who and where change on the day card; Surf Fit day 1 builds lighter for week 1; skipping through without Start ticks nothing, a real finish does and Done goes back to the program; a surf counts as a day");
+  ok("Programs: today's session leads the home card; who and where change on the day card; Surf Fit day 1 builds lighter for week 1; skipping through without Start ticks nothing, a real finish does and Done goes back to the program; a surf sits beside the program, with how the paddle-out felt");
 
   step = 'Programs: leave-outs carry over, a short Engine day still runs, a surf can be undone';
   await p.click('#btnBack');
@@ -1865,8 +2482,13 @@ try {
   await p.click('#tagPicker .chip:text-is("No jumping")');
   assert(await st(() => state.blockedTags.join(',')) === 'impact', 'no jumping is on in Build a workout');
   await p.click('#btnSetupBack');
-  // days 1 to 3 done yesterday, so day 4 (Engine) is today's, on the home card
-  await st(() => { const d = state.programs['surf-fit'].done; d.push({ n: 2, at: Date.now() }); d.forEach(x => { x.at -= 86400000; }); savePrefs(); renderToday(); });
+  // days 1 to 3 done yesterday (and the surf), so day 4 (Engine) is today's, on the home card
+  await st(() => {
+    const pr = state.programs['surf-fit'];
+    pr.done.push({ n: 1, at: Date.now() }, { n: 2, at: Date.now() });
+    [...pr.done, ...pr.surfs].forEach(x => { x.at -= 86400000; });
+    savePrefs(); renderToday();
+  });
   const engineHome = await p.$eval('#todayCard', e => e.textContent);
   assert(engineHome.includes('Week 1, Day 4') && engineHome.includes('Engine'), 'home leads with the Engine day: ' + engineHome.slice(0, 80));
   assert((await p.$eval('#todayCard .program-out', e => e.textContent)) === 'Left out, as in Build a workout: no jumping. Change',
@@ -1904,29 +2526,634 @@ try {
   await st(() => { state.blockedTags = ['impact']; savePrefs(); });
   await p.click('#btnBack');
   // "I surfed today" by mistake, then Undo, on the program screen and on home
+  const surfState = () => st(() => { const pr = state.programs['surf-fit']; return `${pr.done.length}:${pr.surfs.length}`; });
   await p.click('.program-today button:has-text("I surfed today")');
-  assert(await st(() => state.programs['surf-fit'].done.length === 4) && (await p.$eval('#programBody', e => e.textContent)).includes("Today's done"), 'a surf logged');
-  await p.click('#programNote .link-btn:text-is("Undo")');
-  assert(await st(() => state.programs['surf-fit'].done.length === 3) && await p.$('.program-today') && (await p.$eval('#programNote', e => e.textContent)) === '',
-         'Undo takes it back, and the Engine day is today again');
+  assert(await surfState() === '3:2' && (await p.$eval('.program-today .card-name', e => e.textContent)) === 'Engine'
+         && await p.$('.program-today .surf-log'), 'a surf logged, and the Engine day is still today');
+  await p.click('.program-today .surf-log .link-btn:text-is("Undo")');
+  assert(await surfState() === '3:1' && await p.$('.program-today button:text-is("I surfed today")') && !(await p.$('.surf-log')),
+         'Undo takes it back');
   // Undo only ever takes back today's surf: not one from another day
   await p.click('.program-today button:has-text("I surfed today")');
-  await st(() => { const d = state.programs['surf-fit'].done; d[d.length - 1].at -= 86400000; savePrefs(); });
-  await p.click('#programNote .link-btn:text-is("Undo")');
-  assert(await st(() => state.programs['surf-fit'].done.length === 4 && state.programs['surf-fit'].done[3].surfed),
-         'Undo leaves a surf from yesterday alone');
-  await st(() => { state.programs['surf-fit'].done.pop(); savePrefs(); renderProgram(); });
+  await st(() => { const x = state.programs['surf-fit'].surfs; x[x.length - 1].at -= 86400000; savePrefs(); });
+  await p.click('.program-today .surf-log .link-btn:text-is("Undo")');
+  assert(await surfState() === '3:2', 'Undo leaves a surf from yesterday alone');
+  await st(() => { state.programs['surf-fit'].surfs.pop(); savePrefs(); renderProgram(); });
   await p.click('#btnProgramBack');
   await p.click('#todayCard button:has-text("I surfed today")');
-  assert((await p.$eval('#todayCard .today-line', e => e.textContent)).includes("today's done"), 'from home too');
-  await p.click('#welcomeNote .link-btn:text-is("Undo")');
-  assert(await st(() => state.programs['surf-fit'].done.length === 3) && (await p.$eval('#todayCard', e => e.textContent)).includes('Engine'),
-         'and Undo on home brings the Engine day back');
-  // tidy up: nothing left out, and today done (a surf), so home offers a built workout again
+  assert(await surfState() === '3:2' && await p.$('#todayCard .surf-log') && await p.$('#todayCard .program-go'),
+         "from home too, which still has the Engine day's Start");
+  await p.click('#todayCard .surf-log .link-btn:text-is("Undo")');
+  assert(await surfState() === '3:1' && (await p.$eval('#todayCard', e => e.textContent)).includes('Engine') && await p.$('#todayCard button:text-is("I surfed today")'),
+         'and Undo on home takes it back');
+  // tidy up: nothing left out, and today's Engine done, so home offers a built workout again
   await st(() => { state.blockedTags = []; savePrefs(); renderToday(); });
   assert(!(await p.$('#todayCard .program-out')), 'with nothing left out, no line');
-  await p.click('#todayCard button:has-text("I surfed today")');
+  await st(() => { state.programs['surf-fit'].done.push({ n: 3, at: Date.now() }); savePrefs(); renderToday(); });
   ok(`Programs: No jumping reaches the program day and says so on both cards; Engine at 10 min is an EMOM, at 25 the mix; Pop-ups & legs had ${jumpsOn} jumping moves in ten builds without the leave-out, none with it; a surf can be undone`);
+
+  // Surf Fit around real life, on a phone of its own: a device with a
+  // program `done` days in, the last `ago` days back, and these surfs
+  {
+    const DAY = 86400000;
+    const life = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const w = await life.newPage();
+    w.on('pageerror', e => errors.push('surf week: ' + e));
+    w.on('console', m => { if (m.type() === 'error') errors.push('surf week: ' + m.text()); });
+    const ev = (fn, arg) => w.evaluate(fn, arg);
+    const device = async (done, ago, extra = {}) => {
+      await w.goto(URL + 'e2e-blank.html');
+      await w.evaluate(({ done, ago, extra, DAY }) => {
+        const now = Date.now();
+        localStorage.clear();
+        localStorage.setItem('fit-prefs-2', JSON.stringify({ schema: 5, gearAsked: true, people: 1, nameA: 'Wayne',
+          programs: { 'surf-fit': { startedAt: now - 70 * DAY, done: [...Array(done)].map((_, n) => ({ n, at: now - (ago + done - 1 - n) * DAY })), ...extra } } }));
+      }, { done, ago, extra, DAY });
+      await w.goto(URL);
+    };
+    const pr = () => ev(() => state.programs['surf-fit']);
+    // a session running, run out to its end, then Done
+    const runOut = async () => {
+      await ev(() => { state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now(); });
+      await w.waitForFunction(() => isFinished(), null, { timeout: 10000 });
+      await w.click('#btnStart');
+    };
+    const finish = async () => { await w.click('#btnStart'); await runOut(); };
+
+    step = 'Surf Fit: a surf from before stays the day it took, a surf now leaves the land session next';
+    // saved before surfs sat beside the program: day 2 was a surf, so Mobility is next, as it always was
+    await device(0, 0, { done: [{ n: 0, at: Date.now() - 3 * DAY }, { n: 1, at: Date.now() - 2 * DAY, surfed: true }] });
+    const old = await ev(() => ({ card: document.querySelector('#todayCard .card-tagline').textContent, name: document.querySelector('#todayCard .card-name').textContent }));
+    assert(old.card === 'Surf Fit · Week 1, Day 3' && old.name === 'Mobility', 'an old surf still counts as the day it took: ' + JSON.stringify(old));
+    await w.click('#pathProgram');
+    const oldDot = await w.$eval('.program-dot:nth-child(2)', e => ({ mark: e.querySelector('i').textContent, label: e.getAttribute('aria-label') }));
+    assert(oldDot.mark === 'Surf' && oldDot.label === 'Day 2, Pop-ups & legs, surfed', 'and is marked Surf in the strip: ' + JSON.stringify(oldDot));
+    assert(await ev(() => state.programs['surf-fit'].surfs.length === 0), 'nothing is moved out of it');
+    // one logged this morning on a release before, in the day's place: it's
+    // today's surf here too, not offered again, and Undo takes it back as then
+    await device(0, 0, { done: [{ n: 0, at: Date.now() - 2 * DAY }, { n: 1, at: Date.now() - 60000, surfed: true }] });
+    await w.click('#pathProgram');
+    const morning = await ev(() => ({ log: (document.querySelector('#programBody .surf-log') || {}).textContent, again: [...document.querySelectorAll('#programBody button')].some(b => b.textContent === 'I surfed today') }));
+    assert(morning.log === 'Surf logged for today. Undo' && !morning.again, "a surf this morning on the release before is today's surf: " + JSON.stringify(morning));
+    await w.click('#programBody .surf-log .link-btn:text-is("Undo")');
+    assert(await ev(() => state.programs['surf-fit'].done.length === 1 && JSON.parse(localStorage.getItem('fit-prefs-2')).programs['surf-fit'].done.length === 1)
+           && await w.$('#programBody button:text-is("I surfed today")'), 'and its Undo takes it back, as the release before did');
+    // three days done, the last yesterday: a surf today is logged beside them
+    await device(3, 1);
+    assert(await w.$eval('#todayCard .card-name', e => e.textContent) === 'Engine', 'day 4, Engine, is today');
+    await w.click('#todayCard button:text-is("I surfed today")');
+    await w.reload();
+    const after = await ev(() => ({ day: document.querySelector('#todayCard .card-name').textContent, go: !!document.querySelector('#todayCard .program-go'),
+      optional: document.querySelector('#todayCard .surf-log').textContent, done: state.programs['surf-fit'].done.length, surfs: state.programs['surf-fit'].surfs.length }));
+    assert(after.day === 'Engine' && after.go && after.done === 3 && after.surfs === 1 && after.optional.includes('optional now'),
+           'after a reload the Engine day is still next, with its Start, said to be optional: ' + JSON.stringify(after));
+    await w.click('#pathProgram');
+    const row = await w.$eval('.program-progress', e => e.textContent.replace(/\s+/g, ' ').trim());
+    assert(row.includes('Day 4 of 42') && row.includes('4 days in a row') && row.includes('1 surf this week'),
+           'the surf counts for the streak and the week: ' + row);
+    // the paddle-out, rated, changed, and the last six shown oldest first
+    await w.click('.program-today .paddle-chips .chip[data-paddle="ok"]');
+    await w.click('.program-today .paddle-chips .chip[data-paddle="easy"]');
+    assert((await pr()).surfs[0].paddle === 'easy' && (await w.$$('.program-today .paddle-chips .chip.active')).length === 1, 'one rating a surf, the last tap');
+    await ev((DAY) => {
+      const now = Date.now();
+      state.programs['surf-fit'].surfs.unshift(...['cooked', 'cooked', 'cooked', 'ok', null, 'ok', 'ok'].map((f, i) => ({ at: now - (30 - 3 * i) * DAY, ...(f ? { paddle: f } : {}) })));
+      savePrefs(); renderProgram();
+    }, DAY);
+    const felt = await w.$eval('.paddle-felt', e => ({ text: e.textContent, label: e.getAttribute('aria-label') }));
+    assert(felt.text === 'Paddle-outs lately: Cooked → Cooked → OK → OK → OK → Easy'
+           && felt.label === 'Paddle-outs lately, oldest first: Cooked, Cooked, OK, OK, OK, Easy', 'the last six said, oldest first: ' + JSON.stringify(felt));
+    // what's stored is checked: junk surfs and ratings, and an easing that makes no sense, are let go
+    const cleaned = await ev(() => {
+      const p = JSON.parse(JSON.stringify(currentPrefs()));
+      p.programs['surf-fit'].surfs.push(null, { at: 'soon' }, { at: 5, paddle: 'epic' }, { at: 6, paddle: 'ok', board: 'mal' });
+      p.programs['surf-fit'].ease = { n: 3, steps: 9, days: 40 };
+      p.programs['surf-fit'].done.push({ n: 3, at: 7, water: 'jetski' });
+      const c = cleanPrefs(JSON.parse(JSON.stringify(p))).programs['surf-fit'];
+      const bare = cleanPrefs({ programs: { 'surf-fit': { startedAt: 1, done: [] } } }).programs['surf-fit'];
+      return { tail: JSON.stringify(c.surfs.slice(-2)), n: c.surfs.length, was: p.programs['surf-fit'].surfs.length, ease: 'ease' in c,
+               water: 'water' in c.done[c.done.length - 1], bare: JSON.stringify(bare.surfs),
+               ok: cleanPrefs({ programs: { 'surf-fit': { done: [], ease: { n: 21, steps: 2, days: 30 } } } }).programs['surf-fit'].ease };
+    });
+    assert(cleaned.tail === '[{"at":5},{"at":6,"paddle":"ok","board":"mal"}]' && cleaned.n === cleaned.was - 2 && !cleaned.ease && !cleaned.water && cleaned.bare === '[]'
+           && JSON.stringify(cleaned.ok) === '{"n":21,"steps":2,"days":30}', 'surfs, ratings and the easing are checked when read: ' + JSON.stringify(cleaned));
+    ok('Surf Fit: an old surf is still the day it took (Mobility next, Surf in the strip); a surf now leaves Engine next after a reload, counts for the streak and the week; Easy, OK or Cooked kept with it, the last six shown oldest first; junk let go');
+
+    step = 'Surf Fit: back after time off, two sessions ease you in, then full load';
+    // three weeks in, then 11 days away: week 4, day 22, Paddle power
+    await device(21, 11);
+    const home = await ev(() => ({ timing: document.querySelector('#todayCard .day-timing').textContent, line: document.querySelector('#todayCard .ease-line').textContent,
+      tag: document.querySelector('#todayCard .card-tagline').textContent }));
+    assert(home.tag === 'Surf Fit · Week 4, Day 22' && home.timing === '35s on, 25s off today, easing back in'
+           && home.line === "Welcome back. After 11 days off, this session and the next are a bit lighter (week 2's reps and timing) to ease you back in.",
+           'home says why, and the split is lighter: ' + JSON.stringify(home));
+    await w.click('#todayCard .program-go');
+    const eased = await ev(() => ({ scale: state.lastRequest.repScale, wr: JSON.stringify(state.lastRequest.workRest), n: state.programRun.n,
+      title: document.getElementById('workoutTitle').textContent, where: programRunLabel().where }));
+    assert(eased.scale === 0.9 && eased.wr === '{"long":[35,25]}' && eased.n === 21 && eased.title === 'Paddle power' && eased.where === 'Surf Fit · Week 4, Day 22',
+           "Start builds week 2's reps and split, still week 4 day 22: " + JSON.stringify(eased));
+    // a session left part-way and picked up again is the same eased session
+    await w.click('#btnStart');
+    await w.reload();
+    await w.click('#btnResumeRun');
+    assert(await ev(() => state.workout.request.repScale === 0.9 && JSON.stringify(state.workout.request.workRest) === '{"long":[35,25]}'),
+           'picked up after a reload, it is still the lighter one');
+    await finish();                                        // it comes back paused: Start, and on to the end
+    assert(JSON.stringify((await pr()).ease) === '{"n":21,"steps":1,"days":11}' && (await pr()).done.length === 22, 'the easing is kept as the time off ends');
+    // the next day, the second: Pop-ups & legs, still lighter, and it says when full load is back
+    const nextDay = () => ev((DAY) => { state.programs['surf-fit'].done.forEach(x => { x.at -= DAY; }); savePrefs(); }, DAY);
+    await nextDay();
+    await w.reload();
+    await w.click('#pathProgram');
+    assert((await w.$eval('.program-today .ease-line', e => e.textContent)) === "Still easing back in: this one's a bit lighter too (week 2's reps and timing). Then it's back to week 4.",
+           'the next session says it is the last eased one');
+    await w.click('.program-today .program-go');
+    assert(await ev(() => state.lastRequest.repScale === 0.9 && state.programRun.n === 22), 'and builds at 90%');
+    await finish();
+    // then Mobility (no reps to ease) and Engine at full load, after a reload too: it doesn't come round again
+    await nextDay();
+    await ev((DAY) => { state.programs['surf-fit'].done.push({ n: 23, at: Date.now() - DAY }); savePrefs(); }, DAY);
+    await w.reload();
+    assert(!(await w.$('#todayCard .ease-line')) && (await w.$eval('#todayCard .card-name', e => e.textContent)) === 'Engine', 'Engine has no easing line');
+    await w.click('#todayCard .program-go');
+    assert(await ev(() => state.lastRequest.repScale === 1), 'and builds at week 4\'s full 100%');
+    // a month away eases further, to week 1; ten days doesn't at all
+    await device(21, 30);
+    assert((await w.$eval('#todayCard .ease-line', e => e.textContent)).startsWith("Welcome back. After 30 days off") && (await w.$eval('#todayCard .day-timing', e => e.textContent)) === '30s on, 30s off today, easing back in',
+           "a month away goes back to week 1's load");
+    await w.click('#todayCard .program-go');
+    assert(await ev(() => state.lastRequest.repScale === 0.8), 'at 80%');
+    await device(21, 10);
+    assert(!(await w.$('#todayCard .ease-line')) && (await w.$eval('#todayCard .day-timing', e => e.textContent)) === '40s on, 20s off this week', 'ten days away carries straight on');
+    // a surf ends the time off, but the land sessions after it still ease in
+    await device(21, 12);
+    await w.click('#todayCard button:text-is("I surfed today")');
+    assert(JSON.stringify((await pr()).ease) === '{"n":21,"steps":1,"days":12}'
+           && (await w.$eval('#todayCard .ease-line', e => e.textContent)).startsWith('Welcome back. After 12 days off'), 'a surf first keeps the easing for the land sessions');
+    ok("Surf Fit: 11 days off at week 4 says why on the card and builds week 2's 90% and 35s on, 25s off for two sessions (a resumed one too), then full load, once; a month off goes to week 1, ten days carries on, a surf first keeps it");
+
+    step = 'Surf Fit: a flat-day paddle in place of a paddle day, and Undo';
+    await device(0, 0);
+    await w.click('#todayCard #btnCheckLater');             // day 1's Surf check, not today
+    const water = await ev(() => {
+      const d = document.querySelector('#todayCard .water-alt');
+      return d && { open: d.open, summary: d.querySelector('summary').textContent, sessions: [...d.querySelectorAll('.water-session')].map(s => s.querySelectorAll('li').length),
+                    safety: d.querySelector('.water-safety').textContent };
+    });
+    assert(water && !water.open && water.summary === 'Near the water? Paddle it instead' && water.sessions.join() === '3,3,3'
+           && /mate/.test(water.safety) && /inside the break/.test(water.safety) && /dizzy/.test(water.safety),
+           'Paddle power has the flat-day paddles, closed, three lines each, with the safety line: ' + JSON.stringify(water));
+    await w.click('#pathProgram');
+    await w.click('.program-today .water-alt summary');
+    await w.click('.program-today .time-chips .chip:text-is("15 min")');      // the card redraws
+    assert(await w.$eval('.program-today .water-alt', e => e.open), 'it stays open as the card redraws');
+    await w.click('.program-today .water-alt button[data-water="sprint-paddles"]');
+    // the note says so where it can be seen, though it sits above the card
+    assert(await w.waitForFunction(() => { const r = document.getElementById('programNote').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }, null, { timeout: 3000 }).then(() => true, () => false),
+           'the Ticked off line, with its Undo, is on screen');
+    const ticked = await ev(() => ({ done: JSON.stringify(state.programs['surf-fit'].done.map(d => ({ n: d.n, water: d.water }))),
+      card: document.querySelector('#programBody .program-card .card-blurb').textContent, mark: document.querySelector('.program-dot i').textContent,
+      label: document.querySelector('.program-dot').getAttribute('aria-label'), note: document.getElementById('programNote').textContent }));
+    assert(ticked.done === '[{"n":0,"water":"sprint-paddles"}]' && ticked.card.startsWith('A paddle counts. Next up: Pop-ups & legs')
+           && ticked.mark === 'Water' && ticked.label === 'Day 1, Paddle power, paddled' && ticked.note === 'Ticked off: Sprint paddles. Undo',
+           'ticking Sprint paddles off is day 1 done, marked Water: ' + JSON.stringify(ticked));
+    await w.click('#programNote .link-btn:text-is("Undo")');
+    assert(await ev(() => state.programs['surf-fit'].done.length === 0) && (await w.$eval('.program-today .card-name', e => e.textContent)) === 'Paddle power',
+           'Undo takes it back to Paddle power');
+    // from home, which then says the paddle counts; and only on the paddle days
+    await w.click('#btnProgramBack');
+    await w.click('#todayCard .water-alt summary');
+    await w.click('#todayCard .water-alt button[data-water="paddle-engine"]');
+    assert(await w.waitForFunction(() => { const r = document.getElementById('welcomeNote').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.height > 0; }, null, { timeout: 3000 }).then(() => true, () => false)
+           && (await w.$eval('#welcomeNote', e => e.textContent)) === 'Ticked off: Paddle engine. Undo', 'on home too, the line is on screen: ' + await w.$eval('#welcomeNote', e => e.textContent));
+    assert((await w.$eval('#todayCard .today-line', e => e.textContent)) === "Surf Fit: today's done (a paddle counts). Next up: Pop-ups & legs.", 'home says the paddle counts');
+    assert(!(await w.$('#todayCard .water-alt')), 'no flat-day paddles on the home card once today is done');
+    await ev(() => { state.programs['surf-fit'].done[0].at -= 86400000; savePrefs(); renderToday(); });
+    assert(!(await w.$('#todayCard .water-alt')) && (await w.$eval('#todayCard .card-name', e => e.textContent)) === 'Pop-ups & legs', 'Pop-ups & legs has none');
+    await ev(() => { state.programs['surf-fit'].done.push(...[1, 2, 3].map(n => ({ n, at: Date.now() - 86400000 }))); savePrefs(); renderToday(); });
+    assert((await w.$eval('#todayCard .card-name', e => e.textContent)) === 'Paddle & shoulders' && await w.$('#todayCard .water-alt'), 'Paddle & shoulders has them too');
+    ok('Surf Fit: on a paddle day, a closed "Near the water?" with three paddles of three lines and a safety line; ticking one off is the day done, marked Water, and Undo takes it back; Pop-ups & legs has none');
+    step = 'Surf check: day 1, 15 and 29 offer it in the day\'s place, with Not today for the session';
+    // a device with Surf Fit just started, Wayne and Dave training
+    const checkDevice = async (prefs) => {
+      await w.goto(URL + 'e2e-blank.html');
+      await w.evaluate((prefs) => { localStorage.clear(); localStorage.setItem('fit-prefs-2', JSON.stringify({ schema: 6, gearAsked: true, ...prefs })); }, prefs);
+      await w.goto(URL);
+    };
+    await checkDevice({ people: 2, nameA: 'Wayne', nameB: 'Dave', programs: { 'surf-fit': { startedAt: Date.now() - 60000, done: [] } } });
+    const homeCard = () => ev(() => {
+      const q = (sel) => document.querySelector(`#todayCard ${sel}`);
+      return { tag: q('.card-tagline').textContent, name: q('.card-name').textContent, blurb: q('.card-blurb').textContent.replace(/\s+/g, ' ').trim(),
+               go: (q('.program-go') || {}).textContent, later: !!q('#btnCheckLater'), back: !!q('#btnCheckBack'), names: !!q('.check-names'), water: !!q('.water-alt') };
+    });
+    const c1 = await homeCard();
+    assert(c1.tag === 'Surf Fit · Week 1, Day 1' && c1.name === 'Surf check' && c1.go === 'Start the Surf check' && c1.later && !c1.names && !c1.water
+           && c1.blurb.includes('in place of Paddle power') && c1.blurb.includes('Pop-ups in a minute, push-ups in a minute, then a paddle hold') && c1.blurb.includes('About 10 minutes'),
+           'home leads with the Surf check on day 1, in place of Paddle power, with Not today: ' + JSON.stringify(c1));
+    assert(await w.$eval('#todayCard .check-later', e => e.textContent) === 'Not today? Do Paddle power instead, and the next check is in two weeks.',
+           'Not today reads as a question with what to do instead: ' + await w.$eval('#todayCard .check-later', e => e.textContent));
+    assert(await w.$eval('#todayCard #btnCheckLater', e => e.textContent) === 'Not today?', 'its question mark on the link, not apart from it after the padding');
+    const checkDays = await ev(() => [...Array(42)].map((_, n) => n).filter(n => checkToday(PROGRAMS[0], state.programs['surf-fit'], n)).join());
+    assert(checkDays === '0,14,28', 'the Surf check days are day 1 of weeks 1, 3 and 5: ' + checkDays);
+    // Not today: the day's own session, the same day after a reload too, and the way back to the check
+    await w.click('#todayCard #btnCheckLater');
+    const c2 = await homeCard();
+    assert(c2.name === 'Paddle power' && c2.go === "Start today's session" && c2.back && c2.water, 'Not today has Paddle power on the card, with a way back: ' + JSON.stringify(c2));
+    await w.reload();
+    assert((await homeCard()).name === 'Paddle power' && (await ev(() => state.programs['surf-fit'].checkLater)) === (await ev(() => dayKey(Date.now()))),
+           'and it lasts the day, kept with the program');
+    await w.click('#todayCard #btnCheckBack');
+    assert((await homeCard()).name === 'Surf check' && !(await ev(() => 'checkLater' in state.programs['surf-fit'])), 'Do the Surf check brings it back');
+    // put off yesterday, it's offered again today
+    await ev((DAY) => { state.programs['surf-fit'].checkLater = dayKey(Date.now() - DAY); savePrefs(); }, DAY);
+    await w.reload();
+    assert((await homeCard()).name === 'Surf check' && !(await ev(() => 'checkLater' in state.programs['surf-fit'])), 'a Not today from yesterday has gone');
+    // a name missing, with two of you: the names go in on the card
+    await ev(() => { state.nameB = ''; savePrefs(); renderToday(); });
+    assert((await homeCard()).names, 'with a name missing, the card asks for the names the results are kept under');
+    await w.fill('#todayCard .check-names input[data-name="b"]', 'Dave');
+    assert(await ev(() => state.nameB === 'Dave' && document.getElementById('nameB').value === 'Dave' && JSON.parse(localStorage.getItem('fit-prefs-2')).nameB === 'Dave'),
+           'and are kept, the same as in setup');
+    // No floor work leaves it out: all three tests are on the floor
+    await ev(() => { state.blockedTags = ['floor']; savePrefs(); renderToday(); });
+    const noFloor = await homeCard();
+    assert(noFloor.name === 'Paddle power' && !noFloor.back && !noFloor.later, 'with No floor work the day is its own session, and no check is mentioned: ' + JSON.stringify(noFloor));
+    await ev(() => { state.blockedTags = []; savePrefs(); renderToday(); });
+    ok('Surf check: on day 1 (and only days 1, 15 and 29) home leads with it in place of Paddle power; Not today has the session for the day, after a reload too, with the way back; asks for a missing name; left out with No floor work');
+
+    step = 'Surf check: three tests with their standards, a count for each person in the rest after, a paddle hold timed with Done';
+    await w.click('#pathProgram');
+    assert((await w.$eval('.program-today .card-name', e => e.textContent)) === 'Surf check', 'the Programs screen offers it too');
+    await w.click('.program-today .program-go');
+    const opened = await ev(() => ({
+      title: document.getElementById('workoutTitle').textContent, run: JSON.stringify(state.programRun),
+      kinds: state.sequence.map(x => (x.check ? `${x.kind}:${x.check}${x.tally !== undefined ? '?' : ''}` : x.kind)).filter((k, i, a) => k !== a[i - 1]).join(' '),
+      total: state.totalDuration, share: getComputedStyle(document.getElementById('btnShare')).display,
+      preview: [...document.querySelectorAll('#previewList li')].map(li => li.textContent.replace(/\s+/g, ' ').trim())
+    }));
+    assert(opened.title === 'Surf check' && opened.run === '{"id":"surf-fit","n":0,"check":true}', 'it opens as the Surf check, on day 1: ' + JSON.stringify(opened));
+    assert(opened.kinds === 'warmup rest:popups work:popups rest:pushups? work:pushups rest:paddle? work:paddle cooldown',
+           'a warm-up, then each test with a rest before it (the count for the last one goes in there), and a cool-down: ' + opened.kinds);
+    assert(opened.total === 710 && opened.share === 'none', 'eleven minutes fifty at the most (the paddle hold runs to 3:00), and no Share: ' + opened.total);
+    assert(opened.preview[0].startsWith('How it works') && opened.preview.some(t => t.startsWith('Test 1: Pop-ups in a minute') && t.includes('Each landing counts'))
+           && opened.preview.some(t => t.startsWith('Test 3: Paddle hold, up to 3 min') && t.includes('Tap Done when your chest touches down')),
+           'the preview says how each test is done: ' + JSON.stringify(opened.preview));
+    // the clock moved on to a phase, as if run there
+    const jumpTo = (pred, plus = 2) => ev(({ pred, plus }) => {
+      const i = state.sequence.findIndex(new Function('x', `return ${pred}`));
+      state.elapsedAtResume = startOf(i) + plus; state.runStartWall = Date.now(); tickClock();
+      return i;
+    }, { pred, plus });
+    await w.click('#btnStart');
+    await jumpTo("x.kind === 'rest' && x.check === 'popups'");
+    const ready = await ev(() => ({ label: document.getElementById('phaseLabel').textContent, block: document.getElementById('blockName').textContent,
+      dots: document.getElementById('roundDots').textContent.replace(/\s+/g, ' ').trim(), a: document.getElementById('exerciseA').textContent, skip: document.getElementById('btnSkip').textContent }));
+    assert(ready.label === 'Get ready' && ready.block === 'Get ready: Pop-ups in a minute' && ready.dots.startsWith('Test 1 of 3') && ready.dots.includes('Each landing counts')
+           && ready.a === 'Pop-ups in a minute' && ready.skip === 'Skip rest', 'it gets ready for the first test and says how it is done: ' + JSON.stringify(ready));
+    await jumpTo("x.kind === 'work' && x.check === 'popups'");
+    const test1 = await ev(() => ({ label: document.getElementById('phaseLabel').textContent, reps: document.getElementById('repsA').textContent,
+      counter: !document.getElementById('counterA').hidden, skip: document.getElementById('btnSkip').textContent, time: document.getElementById('timeDisplay').textContent }));
+    assert(test1.label === 'Work' && test1.reps === 'As many as you can' && !test1.counter && test1.skip === 'Skip test' && /^0:5[78]$/.test(test1.time),
+           'a minute of pop-ups counts down, nothing to tap meanwhile: ' + JSON.stringify(test1));
+    // the rest after: how many, for each person by name
+    await jumpTo('x.tally === 0');
+    const tally = await ev(() => ({ a: document.getElementById('exerciseA').textContent, b: document.getElementById('exerciseB').textContent,
+      resting: document.getElementById('workoutView').classList.contains('resting'), up: document.querySelector('#upcoming strong').textContent,
+      labels: [document.getElementById('labelA').textContent, document.getElementById('labelB').textContent].join(),
+      now: document.querySelector('#counterA .count-now').textContent.replace(/\s+/g, ' ').trim(), less: document.querySelector('#counterA .count-less').disabled }));
+    assert(tally.a === 'How many pop-ups?' && tally.b === 'How many pop-ups?' && tally.labels === 'Wayne,Dave' && tally.now === '0 pop-ups' && tally.less && !tally.resting
+           && tally.up === 'Push-ups in a minute · As many as you can', 'the rest after asks each of them how many, with what is next under it: ' + JSON.stringify(tally));
+    for (const k of ['5', '5', '1', '1']) await w.click(`#counterA button[data-step="${k}"]`);
+    for (const k of ['5', '1', '1', '1', '-1']) await w.click(`#counterB button[data-step="${k}"]`);
+    assert(await ev(() => JSON.stringify(state.scores[0])) === '{"a":12,"b":7}', 'Wayne puts in 12, Dave 7 (one taken back)');
+    // the voice asks too, then says what's next
+    const said = await ev(() => entrySaid(state.currentIdx).lines[0]);
+    assert(said === 'How many pop-ups? Next: Push-ups in a minute, As many as you can.', 'the voice coach asks how many, then calls the next test: ' + said);
+    // the phone locks and the page goes: the counts come back with it
+    await w.reload();
+    const resumeText = await w.$eval('#todayCard .today-resume .resume-text', e => e.textContent);
+    assert(resumeText === 'Resume Surf check from 4:20, the rest before test 2', 'home offers it by name, and where: ' + resumeText);
+    await w.click('#btnResumeRun');
+    const resumed = await ev(() => ({ scores: JSON.stringify(state.scores[0]), run: JSON.stringify(state.programRun), title: document.getElementById('workoutTitle').textContent,
+      now: document.querySelector('#counterB .count-now b').textContent }));
+    assert(resumed.scores === '{"a":12,"b":7}' && resumed.run === '{"id":"surf-fit","n":0,"check":true}' && resumed.title === 'Surf check' && resumed.now === '7',
+           'picked up after a reload, the counts and the day are kept: ' + JSON.stringify(resumed));
+    await w.click('#btnStart');
+    await jumpTo('x.tally === 1');
+    for (let k = 0; k < 4; k++) await w.click('#counterA button[data-step="5"]');
+    for (const k of ['5', '5', '1', '1', '1']) await w.click(`#counterB button[data-step="${k}"]`);
+    // the paddle hold counts up, and each taps Done as their chest touches down (paused
+    // there, so the second the tap lands on is the one asked for)
+    const holdAt = (sec) => ev((sec) => {
+      const i = state.sequence.findIndex(x => x.hold);
+      if (!state.running) startTimer();
+      state.elapsedAtResume = startOf(i) + sec; state.runStartWall = Date.now(); tickClock(); pauseTimer();
+    }, sec);
+    await holdAt(70);
+    const hold = await ev(() => ({ label: document.getElementById('phaseLabel').textContent, time: document.getElementById('timeDisplay').textContent,
+      done: document.querySelector('#counterA button[data-step="done"]').textContent, reps: document.getElementById('repsA').textContent }));
+    assert(hold.label === 'Hold' && hold.time === '1:10' && hold.done === 'Done' && hold.reps === 'As long as you can', 'the paddle hold counts up, with Done for each: ' + JSON.stringify(hold));
+    await w.click('#counterA button[data-step="done"]');
+    assert((await w.$eval('#counterA .count-now', e => e.textContent.replace(/\s+/g, ' ').trim())) === '1:10 held', 'Wayne held 1:10');
+    // a mis-tap taken back, then Dave goes on to 1:25
+    await w.click('#counterB button[data-step="done"]');
+    await w.click('#counterB button[data-step="undo"]');
+    await holdAt(85);
+    await w.click('#counterB button[data-step="done"]');
+    assert(await ev(() => JSON.stringify(state.scores[2]) === '{"a":70,"b":85}' && document.getElementById('phaseLabel').textContent === 'Done'), 'both done: 1:10 and 1:25');
+    await w.click('#btnStart');                              // and going again
+    await w.waitForFunction(() => state.sequence[state.currentIdx].kind === 'cooldown', null, { timeout: 8000 });
+    assert(await ev(() => state.skippedSec >= 90 && JSON.stringify(state.scores[2]) === '{"a":70,"b":85}'), 'a moment later it goes on to the cool-down, and the time left on the hold is not counted as done');
+    await runOut();
+    ok('Surf check: a warm-up, a get-ready with how the first test is done, a minute of pop-ups, then each person puts in how many (−, +1, +5), kept over a reload; push-ups the same; the paddle hold counts up with Done for each, an undo, and on to the cool-down once both are done');
+
+    step = 'Surf check: the finish screen and the Programs screen say how each of you went, kept per person';
+    // runOut pressed Done: back on the Programs screen, with the check day ticked off
+    const prog1 = await ev(() => ({ view: document.querySelector('.view.active').id, done: JSON.stringify(state.programs['surf-fit'].done.map(d => ({ n: d.n, check: d.check }))),
+      mark: document.querySelector('.program-dot i').textContent, label: document.querySelector('.program-dot').getAttribute('aria-label'),
+      today: document.querySelector('#programBody .program-card .card-blurb').textContent }));
+    assert(prog1.view === 'programView' && prog1.done === '[{"n":0,"check":true}]' && prog1.mark === 'Check' && prog1.label === 'Day 1, Paddle power, Surf check done'
+           && prog1.today.startsWith('Surf check done. Next up: Pop-ups & legs'), 'the check is day 1 done, marked Check in the strip: ' + JSON.stringify(prog1));
+    const kept1 = await ev(() => ({ mem: JSON.stringify(state.checks), stored: JSON.stringify(JSON.parse(localStorage.getItem('fit-prefs-2')).checks),
+      own: localStorage.getItem('fit-checks-1'), history: state.history.length, entry: state.history[0] && `${state.history[0].name}|${state.history[0].program.day}|${state.history[0].intervalId}` }));
+    const c1at = JSON.parse(kept1.mem)[0].at;
+    assert(kept1.mem === `[{"at":${c1at},"n":0,"results":{"wayne":{"name":"Wayne","popups":12,"pushups":20,"paddle":70},"dave":{"name":"Dave","popups":7,"pushups":13,"paddle":85}}}]`
+           && kept1.stored === kept1.mem && kept1.own === kept1.mem, 'the results are kept per person by name, in the prefs and under their own key: ' + kept1.mem);
+    assert(kept1.entry === 'Surf check|Surf check|check', 'and the session is in the history as the Surf check: ' + kept1.entry);
+    const results = () => ev(() => {
+      const box = document.querySelector('.check-results');
+      return box && { people: [...box.querySelectorAll(':scope > .check-person')].map(p => [...p.querySelectorAll('.check-line')].map(l => l.textContent).join(' | ')
+        + ' @ ' + p.querySelector('.check-who b').textContent), earlier: !!box.querySelector('.check-earlier'), text: box.textContent };
+    });
+    const r1 = await results();
+    assert(r1 && r1.people.join(' / ') === 'Pop-ups in a minute: 12 | Push-ups in a minute: 20 | Paddle hold: 1:10 @ Wayne / Pop-ups in a minute: 7 | Push-ups in a minute: 13 | Paddle hold: 1:25 @ Dave'
+           && !r1.earlier, 'the Programs screen shows each of their results: ' + JSON.stringify(r1));
+    await w.reload();
+    await w.click('#pathProgram');
+    assert(JSON.stringify(await results()) === JSON.stringify(r1), 'and after a reload');
+    // the finish screen, opened again from the history: the first check, so the numbers to beat
+    await ev(() => { openFromRecord(state.history[0]); });
+    assert(await ev(() => state.workout.format === 'check' && !state.programRun), 'a check in the history opens again, outside the program');
+    await ev(() => { state.checks = []; savePrefs(); });    // as if it were the first (put back below)
+    await w.click('#btnStart');
+    await ev(() => { state.scores = { 0: { a: 12, b: 7 }, 1: { a: 20, b: 13 }, 2: { a: 70, b: 85 } }; });
+    await ev(() => { state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now(); });
+    await w.waitForFunction(() => isFinished(), null, { timeout: 10000 });
+    const fin1 = await ev(() => ({ top: document.getElementById('blockName').textContent, lines: [...document.querySelectorAll('#roundDots .finish-line')].map(e => e.textContent),
+      a: [...document.querySelectorAll('#finishA .check-result')].map(r => [r.querySelector('.check-label').textContent, r.querySelector('.count-now').textContent.replace(/\s+/g, ' ').trim(),
+        r.querySelector('.check-change').textContent].join(' | ')), feel: !!document.querySelector('.feel-ask'),
+      n: state.checks.length, named: JSON.stringify(state.checks[0] && Object.keys(state.checks[0].results)), noN: state.checks[0] && !('n' in state.checks[0]) }));
+    assert(fin1.top === 'Surf check done. Nice work.' && /^\d+ min done · 3 of 3 tests$/.test(fin1.lines[0]) && !fin1.feel,
+           'the finish screen says the check is done, the tests, and asks nobody how it felt: ' + JSON.stringify(fin1));
+    assert(fin1.a.join(' / ') === 'Pop-ups in a minute | 12 pop-ups | Your first one: the number to beat. / Push-ups in a minute | 20 push-ups | Your first one: the number to beat. / Paddle hold | 1:10 held | Your first one: the number to beat.',
+           "each person's results, the first time the numbers to beat: " + JSON.stringify(fin1.a));
+    assert(fin1.n === 1 && fin1.named === '["wayne","dave"]' && fin1.noN, 'kept, with no program day: ' + JSON.stringify(fin1));
+    // a count put in late, or fixed, on the finish screen is kept at once; all of one person's taken back, they're let go
+    await w.click('#finishB .check-count[data-test="0"] button[data-step="1"]');
+    assert(await ev(() => state.checks[0].results.dave.popups === 8 && JSON.parse(localStorage.getItem('fit-checks-1'))[0].results.dave.popups === 8),
+           "Dave's 8th pop-up, put in on the finish screen, is kept");
+    await ev((at) => {
+      const was = state.checks.pop();
+      state.checks = [{ at, n: 0, results: { ...was.results } }];      // the first check, as it was, with Dave's 8
+      state.checkAt = null; savePrefs();
+    }, c1at);
+    await w.click('#btnStart');
+    ok('Surf check: kept per person by name, in the prefs and their own key, apart from the history; day 1 marked Check; the Programs screen has each line, after a reload too; the finish screen has the numbers to beat and takes a late count');
+
+    step = 'Surf check: two weeks on, "3 more than last time", matched by name with the two of them swapped round';
+    // days 2 to 14 done, the check two weeks ago: day 15 is the next check, Dave in the first spot now
+    await ev((DAY) => {
+      const pr = state.programs['surf-fit'];
+      pr.done[0].at -= 14 * DAY; state.checks[0].at -= 14 * DAY; pr.startedAt -= 15 * DAY;
+      for (let n = 1; n < 14; n++) pr.done.push({ n, at: Date.now() - (14 - n) * DAY });
+      state.nameA = 'Dave'; state.nameB = 'Wayne'; state.people = 2;
+      savePrefs();
+    }, DAY);
+    await w.goto(URL);
+    const c15 = await homeCard();
+    assert(c15.tag === 'Surf Fit · Week 3, Day 15' && c15.name === 'Surf check', 'day 15 offers the second check: ' + JSON.stringify(c15));
+    await w.click('#todayCard .program-go');
+    await w.click('#btnStart');
+    await jumpTo('x.tally === 0');
+    const lastTime = await ev(() => [document.querySelector('#counterA .count-now span'), document.querySelector('#counterB .count-now span')].map(e => e && e.textContent).join());
+    assert(lastTime === 'Last time 8,Last time 12', "each sees their own last time, by name, though they've swapped spots: " + lastTime);
+    for (const k of ['5', '1', '1', '1', '1']) await w.click(`#counterA button[data-step="${k}"]`);
+    for (const k of ['5', '5', '5']) await w.click(`#counterB button[data-step="${k}"]`);
+    await jumpTo('x.tally === 1');
+    for (const k of ['5', '5', '1', '1', '1']) await w.click(`#counterA button[data-step="${k}"]`);
+    for (const k of ['5', '5', '5', '1', '1', '1']) await w.click(`#counterB button[data-step="${k}"]`);
+    // Dave drops at a minute; Wayne is still going when the hold runs out, so he held all 3:00
+    await holdAt(60);
+    await w.click('#counterA button[data-step="done"]');
+    await w.click('#btnStart');
+    await jumpTo("x.kind === 'cooldown'", 1);
+    assert(await ev(() => JSON.stringify(state.scores[2])) === '{"a":60,"b":180}', 'still going at the end of the hold is the whole 3:00');
+    await ev(() => { state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now(); });
+    await w.waitForFunction(() => isFinished(), null, { timeout: 10000 });
+    const fin2 = await ev(() => ({ a: [...document.querySelectorAll('#finishA .check-change')].map(e => e.textContent), b: [...document.querySelectorAll('#finishB .check-change')].map(e => e.textContent),
+      line: document.querySelectorAll('#roundDots .finish-line')[1].textContent }));
+    assert(fin2.b.join(' | ') === '3 more than last time | 2 fewer than last time | 1:50 longer than last time' && fin2.a.join(' | ') === '1 more than last time | Same as last time | 25s shorter than last time',
+           'the finish screen says how each went against their own last time: ' + JSON.stringify(fin2));
+    assert(fin2.line === 'Day 15 of 42 done. Next: Pop-ups & legs', 'and where the program is up to: ' + fin2.line);
+    await w.click('#btnStart');
+    const r2 = await results();
+    assert(r2.people.join(' / ') === 'Pop-ups in a minute: 12, 15 | Push-ups in a minute: 20, 18 | Paddle hold: 1:10, 3:00 @ Wayne / Pop-ups in a minute: 8, 9 | Push-ups in a minute: 13, 13 | Paddle hold: 1:25, 1:00 @ Dave',
+           'the Programs screen has both checks, oldest first, for each by name: ' + JSON.stringify(r2.people));
+    // day 29 is the third
+    await ev((DAY) => { const pr = state.programs['surf-fit']; for (let n = 15; n < 28; n++) pr.done.push({ n, at: Date.now() - DAY }); savePrefs(); renderToday(); }, DAY);
+    assert((await homeCard()).name === 'Surf check' && (await homeCard()).tag === 'Surf Fit · Week 5, Day 29', 'and day 29 the third');
+    ok('Surf check: on day 15 each sees their own last time, by name, with Dave and Wayne swapped; a hold still going at its end is the full 3:00; the finish screen says "3 more than last time", "2 fewer", "1:50 longer", "Same as last time"; the Programs screen has "Pop-ups in a minute: 12, 15"; day 29 is the third');
+
+    step = 'Surf check: one last check after six weeks, then starting again keeps the results, by date';
+    await ev((DAY) => { const pr = state.programs['surf-fit']; for (let n = 28; n < 42; n++) pr.done.push({ n, at: Date.now() - DAY, ...(n === 28 ? { check: true } : {}) }); savePrefs(); renderToday(); }, DAY);
+    await w.click('#btnProgramBack');
+    assert((await w.$eval('#pathProgramGo', e => e.textContent)) === 'Surf Fit · the last Surf check →', 'the Programs card on home says the last check is to do');
+    await w.click('#pathProgram');
+    const fin = await ev(() => ({ cards: [...document.querySelectorAll('#programBody .card-name')].map(e => e.textContent), go: (document.querySelector('.program-today .program-go') || {}).textContent,
+      later: !!document.querySelector('#btnCheckLater') }));
+    assert(fin.cards.slice(0, 3).join() === '6 weeks done,The last Surf check,Surf check results' && fin.go === 'Start the last Surf check' && !fin.later,
+           'six weeks done offers one last check: ' + JSON.stringify(fin));
+    await w.click('.program-today .program-go');
+    assert(await ev(() => JSON.stringify(state.programRun) === '{"id":"surf-fit","n":42,"check":true}' && programRunLabel().where === 'Surf Fit · after 6 weeks'), 'it runs as the check after the end');
+    await w.click('#btnStart');
+    await ev(() => { state.scores = { 0: { a: 11, b: 17 }, 1: { a: 15, b: 22 }, 2: { a: 75, b: 150 } }; state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now(); });
+    await w.waitForFunction(() => isFinished(), null, { timeout: 10000 });
+    assert(await ev(() => document.querySelectorAll('#roundDots .finish-line')[1].textContent === 'The last Surf check of Surf Fit.'
+                          && state.programs['surf-fit'].done.length === 42 && state.checks.length === 3 && state.checks[2].n === 42), 'it ticks no day off, and is kept as the last');
+    await w.click('#btnStart');
+    assert((await ev(() => [...document.querySelectorAll('#programBody .card-name')].map(e => e.textContent).join())) === '6 weeks done,Surf check results', 'done, it is not offered again');
+    await w.click('#btnProgramBack');
+    assert((await w.$eval('#pathProgramGo', e => e.textContent)) === 'Surf Fit · all 6 weeks done →', 'nor on home');
+    await w.click('#pathProgram');
+    assert((await results()).people[0] === 'Pop-ups in a minute: 12, 15, 17 | Push-ups in a minute: 20, 18, 22 | Paddle hold: 1:10, 3:00, 2:30 @ Wayne', 'Wayne\'s three checks');
+    // starting again: day 1's check comes round, and the results so far are kept, earlier, by date
+    await w.click('#programBody .card-remove:has-text("Start the program again")');
+    await w.click('#programBody .card-remove:has-text("Tap again")');
+    const again = await ev(() => {
+      const box = document.querySelector('.check-results');
+      const old = box.querySelector('.check-earlier');
+      return { today: document.querySelector('.program-today .card-name').textContent, kept: state.checks.length, open: old.open, summary: old.querySelector('summary').textContent,
+               now: box.querySelectorAll(':scope > .check-person').length, none: box.querySelector(':scope > .program-hint').textContent,
+               lines: [...old.querySelectorAll('.check-line')].map(e => e.textContent), when: shortDate(state.checks[0].at) };
+    });
+    assert(again.today === 'Surf check' && again.kept === 3 && again.now === 0 && !again.open && again.summary === 'Earlier, before you started again'
+           && again.none.startsWith('None yet since you started again'), 'started again: the check on day 1, and the results kept, closed away: ' + JSON.stringify(again));
+    assert(again.lines[0] === `${again.when}: 12 pop-ups, 20 push-ups and a 1:10 paddle hold` && again.lines.length === 6, 'each by its date: ' + JSON.stringify(again.lines));
+    ok('Surf check: after day 42, one last check (no day ticked off, offered until done); starting the program again keeps every result, closed away as earlier, by date');
+
+    step = 'Surf check: the results are checked when read, a name takes in its results from before it had one, and a backup carries them';
+    const junkChecks = await ev(() => {
+      const c = cleanPrefs({ checks: [null, 'x', { at: 'soon', results: { wayne: { popups: 9 } } }, { at: 5, results: null },
+        { at: 7, n: 'two', results: { wayne: { name: 7, popups: -1, pushups: 'ten', paddle: 9999 }, dave: { name: 'Dave', popups: 8.5, pushups: 12, board: 'mal' } } },
+        { at: 6, n: 14, results: { ['x'.repeat(31)]: { popups: 3 }, '': { popups: 3 }, wayne: { name: 'Wayne', popups: 10 } } },
+        { at: 8, results: JSON.parse('{"__proto__": {"popups": 4}, "dave": {"name": "Dave", "paddle": 60}}') }] }).checks;
+      return JSON.stringify(c);
+    });
+    assert(junkChecks === '[{"at":6,"n":14,"results":{"wayne":{"name":"Wayne","popups":10}}},{"at":7,"results":{"dave":{"name":"Dave","pushups":12}}},{"at":8,"results":{"dave":{"name":"Dave","paddle":60}}}]',
+           'results that are not whole numbers in range, names too long, and entries with no time are let go, oldest first: ' + junkChecks);
+    assert(await ev(() => JSON.stringify(cleanPrefs({}).checks) === '[]' && JSON.stringify(cleanPrefs({ programs: { 'surf-fit': { done: [{ n: 0, at: 1, check: 'yes' }], checkLater: 'someday' } } }).programs['surf-fit']) === '{"done":[{"n":0,"at":1}],"surfs":[]}'),
+           'no checks from before they were kept, and a check flag or Not today that makes no sense is let go');
+    // Wayne on his own, no name, then with Dave and their names in: his results come with his name
+    const adopt = await ev(() => {
+      const keep = { checks: JSON.parse(JSON.stringify(state.checks)), people: state.people, a: state.nameA, b: state.nameB, run: state.programRun };
+      state.checks = [{ at: 1, results: { '#a': { name: '', popups: 6 } } }];
+      state.people = 2; state.nameA = 'Wayne'; state.nameB = 'Dave'; state.programRun = null;
+      const last = lastCheck('a', 'popups');
+      Object.assign(state, { workout: SURF_CHECK, scores: { 0: { a: 9, b: 7 } }, checkAt: null });
+      recordCheck();
+      const out = { last, checks: JSON.stringify(state.checks.map(c => Object.keys(c.results))) };
+      Object.assign(state, { checks: keep.checks, people: keep.people, nameA: keep.a, nameB: keep.b, programRun: keep.run, workout: null, scores: {}, checkAt: null });
+      savePrefs();
+      return out;
+    });
+    assert(adopt.last === 6 && adopt.checks === '[["wayne"],["wayne","dave"]]', "a check with names takes in the first spot's results from before it had one: " + JSON.stringify(adopt));
+    // a backup to another device: the results come too, and show there
+    const backup = await ev(() => backupText());
+    assert(JSON.parse(backup).prefs.checks.length === 3, 'the backup has the checks');
+    const other = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const o = await other.newPage();
+    o.on('pageerror', e => errors.push('check restore: ' + e));
+    o.on('console', m => { if (m.type() === 'error') errors.push('check restore: ' + m.text()); });
+    await o.goto(URL);
+    await o.click('#btnGearRestore');
+    await o.fill('#restoreText', backup);
+    await o.click('#btnRestoreText');
+    assert((await o.$eval('.restore-check .restore-found', e => e.textContent)).includes('3 Surf checks'), 'Restore says the backup has 3 Surf checks');
+    await o.click('#btnRestoreYes');
+    const there = await o.evaluate(() => ({ checks: JSON.stringify(state.checks), own: localStorage.getItem('fit-checks-1') }));
+    assert(there.checks === JSON.stringify(JSON.parse(backup).prefs.checks) && there.own === there.checks, 'restored, under their own key too');
+    await o.click('#btnLibraryBack');
+    await o.click('#pathProgram');
+    assert((await o.$eval('.check-results', e => e.textContent)).includes('Earlier, before you started again'), 'and on its Programs screen');
+    await other.close();
+    ok('Surf check: junk results, names and times are let go; a name takes in its spot\'s results from before; a backup carries the checks to another device, which says so before it restores');
+    await life.close();
+  }
+
+  step = 'Surf Fit: a tab still on the last release keeps the surfs, how they felt and the easing';
+  {
+    // the last release's files, from origin/main where git has them; with
+    // no git here (or on main itself) this release's, which says so
+    const lastSrc = {};
+    const fromMain = (file) => {
+      if (!(file in lastSrc)) {
+        try { lastSrc[file] = execFileSync('git', ['show', `origin/main:${file}`], { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }); }
+        catch (e) { lastSrc[file] = null; }
+      }
+      return lastSrc[file];
+    };
+    const here = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8').match(/^const RELEASE = '([^']+)'/m)[1];
+    const lastApp = fromMain('js/app.js');
+    const lastRelease = lastApp && (String(lastApp).match(/^const RELEASE = '([^']+)'/m) || [])[1];
+    // with no git, the old tab runs this release, so it saves at this schema
+    const lastSchema = lastApp ? Number((String(lastApp).match(/^const PREFS_SCHEMA = (\d+)/m) || [])[1]) || 5 : HERE_SCHEMA;
+    const both = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+    const watch = (pg, who) => {
+      pg.on('pageerror', e => errors.push(`${who}: ${e}`));
+      pg.on('console', m => { if (m.type() === 'error') errors.push(`${who}: ${m.text()}`); });
+    };
+    // this release: three days done, a surf yesterday that was OK, an easing noted, and a Cooked surf today
+    const mine = await both.newPage(); watch(mine, 'this release');
+    await mine.goto(URL + 'e2e-blank.html');
+    await mine.evaluate(() => {
+      const now = Date.now(), DAY = 86400000;
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ schema: 5, gearAsked: true, people: 1, nameA: 'Wayne',
+        programs: { 'surf-fit': { startedAt: now - 9 * DAY, done: [0, 1, 2].map(n => ({ n, at: now - (3 - n) * DAY })),
+                                  surfs: [{ at: now - DAY, paddle: 'ok' }], ease: { n: 3, steps: 1, days: 12 } } } }));
+    });
+    await mine.goto(URL);
+    await mine.click('#todayCard button:text-is("I surfed today")');
+    await mine.click('#todayCard .paddle-chips .chip[data-paddle="cooked"]');
+    // the last release opens beside it, and finishes today's session there
+    const old = await both.newPage(); watch(old, 'last release');
+    await old.route('**/*', (route) => {
+      const rel = route.request().url().slice(URL.length).split('?')[0] || 'index.html';
+      const body = fromMain(rel);
+      return body == null ? route.continue() : route.fulfill({ body, contentType: TYPES[path.extname(rel)] || 'application/octet-stream' });
+    });
+    await old.goto(URL);
+    const oldRelease = await old.evaluate(() => RELEASE);
+    assert(oldRelease === (lastRelease || here), 'the old tab runs the last release: ' + oldRelease);
+    await listenFor(mine, lastSchema);
+    await old.evaluate(() => { state.programRun = { id: 'surf-fit', n: state.programs['surf-fit'].done.length }; completeProgramDay(); });
+    await heard(mine);
+    const kept = () => mine.evaluate(() => {
+      const pr = state.programs['surf-fit'], stored = JSON.parse(localStorage.getItem('fit-prefs-2')).programs['surf-fit'];
+      const pick = (x) => JSON.stringify({ done: x.done.length, felt: x.surfs.map(s => s.paddle).join(), ease: x.ease });
+      return { mem: pick(pr), stored: pick(stored) };
+    });
+    const k1 = await kept();
+    assert(k1.mem === '{"done":4,"felt":"ok,cooked","ease":{"n":3,"steps":1,"days":12}}' && k1.stored === k1.mem,
+           "the last release's save keeps both surfs, how they felt and the easing, here and in storage: " + JSON.stringify(k1));
+    // and the other way: a change here reaches it, and its next save keeps it
+    await mine.click('#pathProgram');
+    await listenFor(old, HERE_SCHEMA);
+    await mine.click('.program-card .paddle-chips .chip[data-paddle="easy"]');
+    await heard(old);
+    await listenFor(mine, lastSchema);
+    await old.evaluate(() => { state.minutes = 30; savePrefs(); });
+    await heard(mine);
+    const k2 = await kept();
+    assert(k2.mem === '{"done":4,"felt":"ok,easy","ease":{"n":3,"steps":1,"days":12}}' && k2.stored === k2.mem,
+           'a rating changed here survives its next save: ' + JSON.stringify(k2));
+    ok(`Surf Fit: a tab on ${lastRelease && lastRelease !== here ? `the last release (${lastRelease})` : 'this release (no other here to try)'} saving beside this one keeps the surfs, how they felt and the easing, both ways`);
+
+    step = 'Surf check: a tab still on the last release keeps the results, and a day the check took';
+    // a check two weeks ago, and today a check day done here
+    await listenFor(old, HERE_SCHEMA);
+    await mine.evaluate(() => {
+      state.checks.push({ at: Date.now() - 2 * 86400000, n: 0, results: { wayne: { name: 'Wayne', popups: 9, pushups: 15, paddle: 70 } } });
+      state.programs['surf-fit'].done.push({ n: 4, at: Date.now(), check: true });
+      savePrefs();
+    });
+    await heard(old);
+    // the last release saves what it heard, knowing nothing of the checks
+    await listenFor(mine, lastSchema);
+    await old.evaluate(() => { state.minutes = 25; savePrefs(); });
+    await heard(mine);
+    const checksKept = () => mine.evaluate(() => {
+      const stored = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      const day = (pr) => JSON.stringify(pr.done.find(d => d.n === 4));
+      return { mem: JSON.stringify(state.checks), stored: JSON.stringify(stored.checks), own: localStorage.getItem('fit-checks-1'),
+               day: day(state.programs['surf-fit']), storedDay: day(stored.programs['surf-fit']) };
+    });
+    const k3 = await checksKept();
+    assert(JSON.parse(k3.mem).length === 1 && k3.mem.includes('"popups":9') && k3.stored === k3.mem && k3.own === k3.mem,
+           "the last release's save leaves the Surf checks here, and they're written back: " + JSON.stringify(k3));
+    assert(JSON.parse(k3.day).check === true && k3.storedDay === k3.day, 'and the day the check took is still marked so: ' + k3.day);
+    // with no tab of this release open, its save can't lose them either: the next tab finds them under their own key
+    await mine.close();
+    await old.evaluate(() => { state.minutes = 30; savePrefs(); });
+    // (with no git the old tab is this release, which keeps them itself)
+    if (lastApp) assert(await old.evaluate(() => !('checks' in JSON.parse(localStorage.getItem('fit-prefs-2')))), 'the last release saved without them');
+    const next = await both.newPage(); watch(next, 'this release, later');
+    await next.goto(URL);
+    assert(await next.evaluate((m) => JSON.stringify(state.checks) === m && state.minutes === 30, k3.mem), 'a tab of this release opened after has them again');
+    await next.click('#pathProgram');
+    assert((await next.$eval('.check-results', e => e.textContent)).includes('Pop-ups in a minute: 9'), 'and on its Programs screen');
+    await both.close();
+    ok(`Surf check: a tab on ${lastRelease && lastRelease !== here ? `the last release (${lastRelease})` : 'this release (no other here to try)'} saving beside this one keeps the results and the day the check took, and with none of this release open the next one finds them`);
+  }
 
   step = 'history: program days by name, 200 kept, two taps to clear';
   await p.click('#pathLibrary');
@@ -2099,6 +3326,498 @@ try {
   note(`link is ${shareUrl.length} characters`);
   ok('share link rebuilds the same workout on a fresh device for as many people as it was sent for, says the minutes, style and people, and Share stays once started; a first visit by link asks the gear question on the way home; classics and bad links handled');
 
+  step = 'swap a move: for both of you before Start, for one of you in a rest, kept by Save, a link, Resume and history; Leave it out from now on';
+  {
+    const sw = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await sw.addInitScript(() => {
+      if (location.protocol === 'about:' || localStorage.getItem('fit-prefs-2')) return;
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ gearAsked: true, people: 2, nameA: 'Wayne', nameB: 'Dave', minutes: 20, styleAuto: false,
+        intervalStyle: 'short', equipment: { kettlebells: true }, weights: { kb: [8, 12, 16, 24], db: [], bar: 10 } }));
+    });
+    const s = await sw.newPage();
+    s.on('pageerror', e => errors.push('swap: ' + e));
+    s.on('console', m => { if (m.type() === 'error') errors.push('swap: ' + m.text()); });
+    const ev = (fn, arg) => s.evaluate(fn, arg);
+    // every phase as the timer hands it out, who does what in the work
+    const moves = (pg = s) => pg.evaluate(() => state.sequence.map(x => (x.kind === 'work' ? `${x.blockIdx}.${x.round || 0}:${x.a.id}/${x.b ? x.b.id : '-'}` : x.kind)));
+    const swapsOf = (pg = s) => pg.evaluate(() => JSON.stringify(state.workout.swaps || []));
+    const sheet = () => ev(() => ({ open: !document.getElementById('swapSheet').hidden, title: document.getElementById('swapTitle').textContent,
+      for: document.getElementById('swapFor').textContent, cards: [...document.querySelectorAll('#swapList .swap-card')].map(e => e.dataset.to),
+      thumbs: [...document.querySelectorAll('#swapList .next-thumb')].map(e => e.dataset.move), running: state.running,
+      leave: document.getElementById('swapLeaveText').textContent, back: document.getElementById('swapBack').hidden ? null : document.getElementById('swapBack').textContent }));
+    const nameOf = (id) => ev((i) => EXERCISES[i].name, id);
+    await s.goto(URL);
+    await s.click('#todayCard .today-go');
+    for (let i = 0; i < 15 && !(await ev(() => state.workout.blocks.some(b => b.shape === 'cycle'))); i++) await s.click('#btnShuffle');
+    const c = await ev(() => state.workout.blocks.findIndex(b => b.shape === 'cycle'));
+    assert(c >= 0, 'a workout with a block the two of you go round');
+    assert(await s.$eval('#previewHint', e => e.offsetParent !== null && e.textContent) === 'Tap a move to swap it for one like it.', 'the preview says a move can be swapped');
+    const pills = await s.$$eval(`.preview-move[data-block="${c}"]`, els => els.map(e => e.dataset.from));
+    assert(pills.length === 4 && JSON.stringify(pills) === await ev((c) => JSON.stringify(state.workout.blocks[c].ids), c), 'each of the block\'s moves is a button: ' + pills);
+    // before Start, from the preview: for both of you
+    const seq0 = await moves(), blocks0 = await ev(() => JSON.stringify(state.workout.blocks.map(b => b.ids)));
+    const from1 = pills[1];
+    await s.click(`.preview-move[data-block="${c}"][data-from="${from1}"]`);
+    const sh1 = await sheet();
+    assert(sh1.open && sh1.title === `Instead of ${await nameOf(from1)}` && sh1.for === 'For both of you, in this workout.'
+           && sh1.cards.length >= 1 && sh1.cards.length <= 3 && sh1.thumbs.join() === sh1.cards.join() && sh1.back === null,
+           'a tap on a move opens up to three like it, each with its figure, for both of you: ' + JSON.stringify(sh1));
+    assert(sh1.leave === `Leave ${await nameOf(from1)} out from now on`, 'with the leave-out tick: ' + sh1.leave);
+    const to1 = sh1.cards[0];
+    await s.click(`.swap-card[data-to="${to1}"]`);
+    const seq1 = await moves();
+    const want1 = seq0.map(x => (x.startsWith(`${c}.`) ? x.replace(new RegExp(`\\b${from1}\\b`, 'g'), to1) : x));
+    assert(!(await sheet()).open && JSON.stringify(seq1) === JSON.stringify(want1), 'picked: both of you do it wherever the block had the move, nothing else changes');
+    assert(await swapsOf() === JSON.stringify([{ block: c, from: from1, to: to1 }]), 'and the workout keeps it: ' + await swapsOf());
+    const pillText = await s.$$eval(`.preview-move[data-block="${c}"]`, els => els.map(e => e.textContent).join('|'));
+    assert(pillText.includes(await nameOf(to1)) && !pillText.includes(await nameOf(from1)), 'the preview shows it: ' + pillText);
+    // the people badge, before Start: 1 person, the same moves, and back
+    assert(await s.$eval('#peopleBadge', e => !e.disabled && e.classList.contains('can-flip') && e.textContent === 'Wayne & Dave'), 'before Start the badge is a button');
+    // that says in words what a tap does (not the swap sign the moves have)
+    const badgeSays = () => s.$eval('#peopleBadge', e => [e.dataset.flip, getComputedStyle(e, '::after').content].join(' | '));
+    assert((await badgeSays()).startsWith('Just me? | ') && !(await badgeSays()).includes('⇄'), 'with two, it offers just one of you: ' + await badgeSays());
+    await s.click('#peopleBadge');
+    const solo = await ev(() => ({ people: state.people, badge: document.getElementById('peopleBadge').textContent, noB: document.getElementById('personB').offsetParent === null,
+      oneEach: state.sequence.every(x => x.kind !== 'work' || !x.b), blocks: JSON.stringify(state.workout.blocks.map(b => b.ids)), swaps: JSON.stringify(state.workout.swaps),
+      stored: JSON.parse(localStorage.getItem('fit-prefs-2')).people, started: state.started, setup: document.querySelector('#peoplePicker .chip.active').dataset.people }));
+    assert(solo.people === 1 && solo.badge === '1 person' && solo.noB && solo.oneEach && solo.stored === 1 && solo.setup === '1' && !solo.started,
+           'a tap on it before Start: the same workout for one person: ' + JSON.stringify(solo));
+    assert(solo.blocks === blocks0 && solo.swaps === await swapsOf(), 'the same moves, the swap kept');
+    const flipNote = () => s.$eval('#goingNote', e => (e.offsetParent !== null ? e.textContent : ''));
+    assert(await flipNote() === "Now for 1 person. Tap the badge again for two. Tap Start when you're ready." && (await badgeSays()).startsWith('Add a mate | '),
+           'it says on the first screen what happened and how to go back, and the badge now offers a mate: ' + await flipNote() + ' / ' + await badgeSays());
+    await s.click('#peopleBadge');
+    assert(await ev(() => state.people === 2 && document.getElementById('peopleBadge').textContent === 'Wayne & Dave') && JSON.stringify(await moves()) === JSON.stringify(seq1),
+           'and again for two, shared out as before');
+    assert(await flipNote() === "Now for Wayne & Dave. Tap the badge again for one. Tap Start when you're ready.", 'and says so: ' + await flipNote());
+    // once started the badge is locked
+    await s.click('#btnStart');
+    assert(await s.$eval('#peopleBadge', e => e.disabled && !e.classList.contains('can-flip') && !e.dataset.flip), 'once Start is pressed the badge is just a badge');
+    await s.click('#peopleBadge', { force: true });
+    assert(await ev(() => state.people === 2 && state.started), 'and a tap on it changes nothing');
+    // in a rest, Swap on Dave's card: his next move, just for him
+    const at = await ev((c) => {
+      const i = state.sequence.findIndex(x => x.kind === 'rest' && x.blockIdx === c && x.round === 1);
+      state.elapsedAtResume = startOf(i) + 1; state.runStartWall = Date.now(); tickClock();
+      const n = state.sequence[i + 1];
+      return { i, len: state.sequence.length, total: state.totalDuration, running: state.running, swapA: !els.swapA.hidden, swapB: !els.swapB.hidden,
+               b: { base: n.b.base, id: n.b.id, name: n.b.name }, a: n.a.id, aBase: n.a.base, cardB: els.exerciseB.textContent };
+    }, c);
+    assert(at.running && at.swapA && at.swapB && at.cardB.startsWith(at.b.name), 'a rest shows Swap on each card, beside the move coming up: ' + JSON.stringify(at));
+    const seqRest = await moves();
+    await s.click('#swapB');
+    const sh2 = await sheet();
+    assert(sh2.open && !sh2.running && sh2.title === `Instead of ${at.b.name}`, 'Swap pauses the clock and offers moves like Dave\'s next one: ' + JSON.stringify(sh2));
+    // (Wayne goes round the block too: he's on another move now, and comes to Dave's later)
+    assert(at.aBase !== at.b.base && sh2.for === `Just for Dave, for the rest of this workout. Wayne still does ${at.b.name} when it comes round.`, 'and says it is just for him: ' + sh2.for);
+    const toB = sh2.cards[0];
+    await s.click(`.swap-card[data-to="${toB}"]`);
+    const seq2 = await moves();
+    const after2 = await ev(() => ({ len: state.sequence.length, idx: state.currentIdx, total: state.totalDuration, elapsed: state.elapsedTotal, running: state.running,
+      cardA: els.exerciseA.textContent, cardB: els.exerciseB.textContent, note: els.goingNote.textContent }));
+    assert(after2.len === at.len && after2.idx === at.i && after2.total === at.total && !after2.running, 'the clock stays where it was, paused: ' + JSON.stringify(after2));
+    const cut = (x) => x.split(':')[1].split('/');
+    const onlyDave = seq2.every((x, i) => {
+      if (x === seqRest[i]) return !(x.startsWith(`${c}.`) && cut(x)[1] === at.b.id);
+      const [a0, b0] = cut(seqRest[i]), [a1, b1] = cut(x);
+      return x.startsWith(`${c}.`) && a1 === a0 && b0 === at.b.id && b1 === toB;
+    });
+    assert(onlyDave, 'only Dave\'s moves change, and only where his block had that move: Wayne\'s stay as they were');
+    assert(after2.cardB.startsWith(await nameOf(toB)) && after2.cardA === (await ev(() => els.exerciseA.textContent)) && after2.note === `Swapped in ${await nameOf(toB)} for Dave. Tap Resume when you're ready.`,
+           'his card shows it, with a note: ' + JSON.stringify(after2));
+    const swaps2 = await swapsOf();
+    assert(swaps2 === JSON.stringify([{ block: c, from: from1, to: to1 }, { block: c, from: at.b.base, to: toB, who: 'dave' }]), 'kept by name: ' + swaps2);
+    assert(await ev(() => JSON.stringify(JSON.parse(localStorage.getItem('fit-prefs-2')).history[0].swaps)) === swaps2, 'and the session in history has it');
+    // paused in work, Swap is there; running in work, it isn't
+    const inWork = await ev(() => {
+      seekTo(state.currentIdx + 1); render();
+      const paused = !els.swapA.hidden;
+      startTimer(); const running = !els.swapA.hidden; pauseTimer();
+      seekTo(state.currentIdx - 1); render();
+      return { paused, running };
+    });
+    assert(inWork.paused && !inWork.running, 'paused mid-round Swap is on the card; going, it is not: ' + JSON.stringify(inWork));
+    // Leave it out from now on
+    await s.click('#swapA');
+    const leaveId = await s.$eval('#swapLeave', e => e.dataset.id);
+    await s.check('#swapLeave');
+    assert(await ev((id) => state.excluded.includes(id) && JSON.parse(localStorage.getItem('fit-prefs-2')).excluded.includes(id), leaveId), 'the tick puts it on the leave-out list');
+    const builds = await ev((id) => {
+      // (with nothing done lately, which would push it back anyway)
+      const uses = (seed) => { const w = buildWorkout(requestFromState(), seed, { recent: [] }); return !w.error && w.blocks.some(b => b.ids.includes(id)); };
+      const was = state.excluded.slice();
+      state.excluded = was.filter(x => x !== id);
+      const seeds = []; for (let seed = 1; seed <= 300 && seeds.length < 5; seed++) if (uses(seed)) seeds.push(seed);
+      state.excluded = was;
+      return { before: seeds.length, after: seeds.filter(uses).length };
+    }, leaveId);
+    assert(builds.before > 0 && builds.after === 0, 'builds from now on leave it out: ' + JSON.stringify(builds));
+    await s.uncheck('#swapLeave');
+    assert(await ev((id) => !state.excluded.includes(id), leaveId), 'and taking the tick off brings it back');
+    await s.click('#swapClose');
+    assert(!(await sheet()).open && JSON.stringify(await moves()) === JSON.stringify(seq2), 'Close changes nothing');
+    // Resume after a reload has the swaps
+    await ev(() => window.dispatchEvent(new Event('pagehide')));
+    assert(await ev(() => JSON.stringify(JSON.parse(localStorage.getItem('fit-run-1')).swaps)) === swaps2, 'the session to pick up keeps the swaps');
+    await s.reload();
+    await s.click('#btnResumeRun');
+    assert(await swapsOf() === swaps2 && JSON.stringify(await moves()) === JSON.stringify(seq2) && await ev(() => state.currentIdx) === at.i,
+           'Resume picks it up with both swaps, at the same rest');
+    assert((await s.$eval('#exerciseB', e => e.textContent)).startsWith(await nameOf(toB)), 'and Dave\'s card still shows his');
+    // a link has the swaps and the names
+    const link = await ev(() => ({ url: shareUrlFor(state.workout), text: shareText(state.workout) }));
+    assert(link.text.endsWith(' · Wayne & Dave'), 'the share text says who: ' + link.text);
+    const mates = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const m = await mates.newPage();
+    m.on('pageerror', e => errors.push('mate: ' + e));
+    await m.goto(link.url);
+    const there = await m.evaluate(() => ({ a: state.nameA, b: state.nameB, people: state.people, badge: document.getElementById('peopleBadge').textContent,
+      note: document.getElementById('workoutNote').textContent, labels: [els.labelA.textContent, els.labelB.textContent],
+      stored: [JSON.parse(localStorage.getItem('fit-prefs-2')).nameA, JSON.parse(localStorage.getItem('fit-prefs-2')).nameB] }));
+    assert(there.people === 2 && there.badge === 'Wayne & Dave' && there.labels.join() === 'Wayne,Dave',
+           'a link opens on the other phone with the names it was sent with, in the same spots: ' + JSON.stringify(there));
+    assert(there.a === '' && there.b === '' && there.stored.join() === ',', "for that workout only: the phone's own names (none here) aren't changed: " + JSON.stringify(there));
+    assert(there.note === 'Opened from a shared link, for Wayne & Dave.', 'and says who it is for: ' + there.note);
+    assert(await swapsOf(m) === swaps2 && JSON.stringify(await moves(m)) === JSON.stringify(seq2), 'with both swaps: the same moves for each of them');
+    // Dave's own phone, on his own with his level: the link's two on the
+    // cards, in its order, so they match Wayne's; and once he's home it's
+    // still Dave's phone, with his level for his next build on his own
+    await m.evaluate(() => { state.gearAsked = true; state.nameA = 'Dave'; state.nameB = ''; state.people = 1; state.levels = { dave: { k: 1.2, easy: 0 } }; savePrefs(); });
+    await m.goto(link.url);
+    const daves = await m.evaluate(() => ({ labels: [els.labelA.textContent, els.labelB.textContent].join(), people: state.people, keys: [levelKey('a'), levelKey('b')].join() }));
+    assert(daves.labels === 'Wayne,Dave' && daves.people === 2 && daves.keys === 'wayne,dave' && JSON.stringify(await moves(m)) === JSON.stringify(seq2),
+           "on Dave's phone the cards line up with Wayne's: " + JSON.stringify(daves));
+    await m.evaluate(() => goWelcome());
+    const home = await m.evaluate(() => {
+      const p = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      state.people = 1; savePrefs();
+      return { a: state.nameA, b: state.nameB, stored: [p.nameA, p.nameB].join(), key: levelKey('a'), scales: JSON.stringify(personalScales()), today: document.getElementById('todayCard').textContent.includes('Wayne') };
+    });
+    assert(home.a === 'Dave' && home.b === '' && home.stored === 'Dave,' && home.key === 'dave' && home.scales === '{"dave":1.2}' && !home.today,
+           "and home again, Dave's phone is still his, his level on his next build: " + JSON.stringify(home));
+    // a phone with the two of them the other way round shows the link's order, and keeps its own
+    await m.evaluate(() => { state.nameA = 'Dave'; state.nameB = 'Wayne'; state.people = 1; savePrefs(); });
+    await m.goto(link.url);
+    assert(await m.evaluate(() => state.nameA === 'Dave' && state.nameB === 'Wayne' && state.people === 2 && els.labelA.textContent === 'Wayne')
+           && JSON.stringify(await moves(m)) === JSON.stringify(seq2), "Dave's phone set the other way round lines up with Wayne's, its own names as they were");
+    // left part-way and picked up again: the same two on the cards, and the phone's names still its own
+    await m.evaluate(() => { startTimer(); pauseTimer(); window.dispatchEvent(new Event('pagehide')); });
+    await m.reload();
+    await m.click('#btnResumeRun');
+    assert(await m.evaluate(() => els.labelA.textContent === 'Wayne' && els.labelB.textContent === 'Dave' && state.nameA === 'Dave' && state.nameB === 'Wayne'
+                            && JSON.parse(localStorage.getItem('fit-prefs-2')).nameA === 'Dave'), 'picked up again, it has the link\'s names on the cards and the phone keeps its own');
+    await m.evaluate(() => { clearRun(); goWelcome(); });
+    // a link with one name: that one on the cards, and a phone with both named keeps both
+    const one = await ev(() => { const n = state.nameB; state.nameB = ''; const u = shareUrlFor(state.workout); state.nameB = n; return u; });
+    await m.goto(one);
+    const oneThere = await m.evaluate(() => ({ labels: [els.labelA.textContent, els.labelB.textContent].join(), names: [state.nameA, state.nameB].join(),
+      stored: [JSON.parse(localStorage.getItem('fit-prefs-2')).nameA, JSON.parse(localStorage.getItem('fit-prefs-2')).nameB].join(), note: document.getElementById('workoutNote').textContent }));
+    assert(oneThere.labels === 'Wayne,Person B' && oneThere.names === 'Dave,Wayne' && oneThere.stored === 'Dave,Wayne' && oneThere.note === 'Opened from a shared link, for Wayne & Person B.',
+           'a link with one name leaves both names here as they are: ' + JSON.stringify(oneThere));
+    // and a link with nobody named leaves a phone's names as they are
+    const plain = await ev(() => { const n = [state.nameA, state.nameB]; state.nameA = state.nameB = ''; const u = shareUrlFor(state.workout); state.nameA = n[0]; state.nameB = n[1]; return u; });
+    await m.evaluate(() => { state.nameA = 'Sam'; state.nameB = 'Jo'; savePrefs(); });
+    await m.goto(plain);
+    assert(await m.evaluate(() => state.nameA === 'Sam' && state.nameB === 'Jo' && els.labelA.textContent === 'Sam' && document.getElementById('workoutNote').textContent === 'Opened from a shared link.'),
+           'a link with no names leaves the names here alone');
+    // Wayne can't make it: Dave taps the badge on the link for the two of
+    // them, and it's his session (his phone's own spot), not Wayne's
+    // (with nothing done here yet, so it's a session of its own in history)
+    await m.evaluate(() => { state.nameA = 'Dave'; state.nameB = ''; state.people = 1; state.history = []; state.levels = { dave: { k: 1.2, easy: 0 }, wayne: { k: 0.8, easy: 0 } }; savePrefs(); });
+    await m.goto(link.url);
+    await m.click('#peopleBadge');
+    const justDave = await m.evaluate(() => ({ people: state.people, key: levelKey('a'), label: els.labelA.textContent, note: document.getElementById('workoutNote').textContent,
+      going: document.getElementById('goingNote').textContent }));
+    assert(justDave.people === 1 && justDave.key === 'dave' && justDave.label === 'You' && justDave.note === 'Opened from a shared link.'
+           && justDave.going.startsWith('Now for 1 person.'), "on his own, a link for two is Dave's: his name and level here: " + JSON.stringify(justDave));
+    await m.click('#peopleBadge');
+    const backTwo = await m.evaluate(() => ({ labels: [els.labelA.textContent, els.labelB.textContent].join(), keys: [levelKey('a'), levelKey('b')].join(), note: document.getElementById('workoutNote').textContent }));
+    assert(backTwo.labels === 'Wayne,Dave' && backTwo.keys === 'wayne,dave' && backTwo.note === 'Opened from a shared link, for Wayne & Dave.',
+           "and back to two, the link's names in its spots again: " + JSON.stringify(backTwo));
+    await m.click('#peopleBadge');
+    await m.evaluate(() => { startTimer(); finish(); });
+    await m.click('#finishA [data-feel="easy"]');
+    const daveDone = await m.evaluate(() => ({ names: state.history[0].names, people: state.history[0].people, levels: JSON.parse(localStorage.getItem('fit-levels-1')) }));
+    assert(daveDone.names.a === 'Dave' && daveDone.people === 1, 'his history has it as his: ' + JSON.stringify(daveDone));
+    assert(daveDone.levels.dave.easy === 1 && daveDone.levels.wayne.k === 0.8 && daveDone.levels.wayne.easy === 0,
+           "and his Too easy moves his level, not Wayne's: " + JSON.stringify(daveDone.levels));
+    // a note already there stays through a tap on the badge: a favourite
+    // with a move that's since left the library, built again
+    const rebuiltNote = await m.evaluate(() => {
+      goWelcome();
+      const w = buildWorkout(requestFromState(), 31337);
+      const frozen = freezeWorkout(w);
+      frozen.blocks[0].ids[0] = 'noSuchMoveAnyMore';
+      openFromRecord({ generated: true, seed: w.seed, request: w.request, frozen });
+      return document.getElementById('workoutNote').textContent;
+    });
+    await m.click('#peopleBadge');
+    const flippedNote = await m.evaluate(() => [document.getElementById('workoutNote').textContent, document.getElementById('goingNote').textContent]);
+    assert(rebuiltNote === 'Some of its moves have changed since it was saved, so it was built again.' && flippedNote[0] === rebuiltNote && flippedNote[1].startsWith('Now for '),
+           'a note already on the workout stays through a tap on the badge: ' + JSON.stringify(flippedNote));
+    await m.evaluate(() => goWelcome());
+    await mates.close();
+    // on your own a swap is for whoever does the workout: the favourite once
+    // a name's in, and a link to a mate on his own phone, have it the same
+    {
+      const one = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const mate = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const prefs = (nameA) => JSON.stringify({ gearAsked: true, people: 1, nameA, nameB: '', minutes: 20, styleAuto: false, intervalStyle: 'short' });
+      await one.addInitScript((x) => { if (location.protocol !== 'about:' && !localStorage.getItem('fit-prefs-2')) localStorage.setItem('fit-prefs-2', x); }, prefs(''));
+      await mate.addInitScript((x) => { if (location.protocol !== 'about:' && !localStorage.getItem('fit-prefs-2')) localStorage.setItem('fit-prefs-2', x); }, prefs('Dave'));
+      const o = await one.newPage(), d = await mate.newPage();
+      o.on('pageerror', e => errors.push('solo swap: ' + e));
+      d.on('pageerror', e => errors.push('solo mate: ' + e));
+      await o.goto(URL);
+      await o.click('#todayCard .today-go');
+      // (the first move with something like it for the gear)
+      let said = '', to = null;
+      for (const from of await o.$$eval('.preview-move', els => els.map(e => e.dataset.from))) {
+        await o.click(`.preview-move[data-from="${from}"]`);
+        said = await o.$eval('#swapFor', e => e.textContent);
+        to = await o.evaluate(() => (document.querySelector('.swap-card') || {}).dataset?.to || null);
+        if (to) break;
+        await o.click('#swapClose');
+      }
+      await o.click(`.swap-card[data-to="${to}"]`);
+      const soloSwaps = await swapsOf(o), soloMoves = await moves(o);
+      assert(said === 'For this workout.' && JSON.parse(soloSwaps).length && JSON.parse(soloSwaps).every(x => !('who' in x)) && soloMoves.some(x => x.includes(`:${to}/`)),
+             'on your own, a swap is kept for whoever does it, not by name or spot: ' + said + ' ' + soloSwaps);
+      await o.click('#btnSave');
+      await o.evaluate(() => { goWelcome(); state.nameA = 'Wayne'; savePrefs(); });
+      await o.click('#pathLibrary');
+      await o.click('.workout-card:not(.history-card):has-text("☆")');
+      assert(await swapsOf(o) === soloSwaps && JSON.stringify(await moves(o)) === JSON.stringify(soloMoves) && await o.$eval('#btnSave', e => e.textContent === '★ Saved'),
+             'the favourite, opened once his name is in, still has the swap');
+      const url = await o.evaluate(() => shareUrlFor(state.workout));
+      await d.goto(url);
+      assert(await d.evaluate(() => state.nameA === 'Dave' && state.people === 1) && await swapsOf(d) === soloSwaps && JSON.stringify(await moves(d)) === JSON.stringify(soloMoves),
+             'and a link to a mate on his own, with his own name, opens with the same moves');
+      // the same on a card in a rest, on your own
+      await o.click('#btnStart');
+      const cardSays = await o.evaluate(() => {
+        const i = state.sequence.findIndex(x => x.kind === 'rest' && x.tally === undefined);
+        state.elapsedAtResume = startOf(i) + 1; state.runStartWall = Date.now(); tickClock();
+        return !els.swapA.hidden;
+      });
+      await o.click('#swapA');
+      const restSaid = await o.$eval('#swapFor', e => e.textContent);
+      await o.click('.swap-card >> nth=0');
+      assert(cardSays && restSaid === 'For the rest of this workout.' && JSON.parse(await swapsOf(o)).every(x => !('who' in x)), 'and from the card in a rest: ' + restSaid + ' ' + await swapsOf(o));
+      await one.close(); await mate.close();
+    }
+    // finished: Save keeps the swaps, and the favourite opens with them
+    await ev(() => finish());
+    assert(await s.$eval('#btnSave', e => e.offsetParent !== null && e.textContent === '☆ Save as favourite'), 'Save on the finish screen');
+    await s.click('#btnSave');
+    assert(await ev(() => JSON.stringify(state.saved[0].swaps)) === swaps2 && await s.$eval('#btnSave', e => e.textContent === '★ Saved' && e.disabled), 'saved with its swaps');
+    await s.click('#btnStart');                                    // Done
+    await s.click('#pathLibrary');
+    // its card says its minutes and style, as Recent does, so two with one name can be told apart
+    const favMeta = await s.$eval('.workout-card:not(.history-card):has-text("☆") .card-meta', e => e.textContent.replace(/\s+/g, ' ').trim());
+    const wantMeta = await ev(() => `${state.saved[0].request.minutes} min · ${styleLabel({ intervalId: state.saved[0].request.intervalId })}`);
+    assert(favMeta === wantMeta && /^\d+ min · \S/.test(favMeta), 'a favourite\'s card has its minutes and style: ' + favMeta + ' / ' + wantMeta);
+    await s.click('.workout-card:not(.history-card):has-text("☆")');
+    assert(await swapsOf() === swaps2 && JSON.stringify(await moves()) === JSON.stringify(seq2), 'the favourite opens with both swaps');
+    assert(await s.$eval('#btnSave', e => e.textContent === '★ Saved' && e.disabled), 'and is saved as it is');
+    // swapped again before Start, Save offers to keep that in the favourite too
+    const other = (await s.$$eval(`.preview-move[data-block="${c}"]`, els => els.map(e => e.dataset.from))).find(id => id !== from1 && id !== at.b.base);
+    await s.click(`.preview-move[data-block="${c}"][data-from="${other}"]`);
+    await s.click('.swap-card >> nth=0');
+    assert(await s.$eval('#btnSave', e => e.textContent === '☆ Save with the swaps' && !e.disabled), 'a favourite swapped since says Save with the swaps: ' + await s.$eval('#btnSave', e => e.textContent));
+    await s.click('#btnSave');
+    assert(await ev(() => state.saved[0].swaps.length === 3 && state.saved.length === 1) && await s.$eval('#btnSave', e => e.textContent === '★ Saved'), 'and keeps it in the same favourite');
+    // the session in history opens as it was done, with its two swaps
+    await s.click('#btnBack'); await s.click('#pathLibrary');
+    await s.click('.history-card >> nth=0');
+    assert(await swapsOf() === swaps2 && JSON.stringify(await moves()) === JSON.stringify(seq2), 'the session in history opens with the swaps it was done with');
+    // a tab still on the last release, saving beside this one, keeps the
+    // swaps on the favourites and sessions, and opens one as it was built
+    {
+      const main = (file) => { try { return execFileSync('git', ['show', `origin/main:${file}`], { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return null; } };
+      const lastApp = main('js/app.js');
+      const lastSchema = lastApp ? Number((String(lastApp).match(/^const PREFS_SCHEMA = (\d+)/m) || [])[1]) || HERE_SCHEMA : HERE_SCHEMA;
+      const store = await ev(() => localStorage.getItem('fit-prefs-2'));
+      const two = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+      const mine = await two.newPage(), old = await two.newPage();
+      [[mine, 'this release'], [old, 'last release']].forEach(([pg, who]) => {
+        pg.on('pageerror', e => errors.push(`${who}: ${e}`));
+        pg.on('console', m => { if (m.type() === 'error') errors.push(`${who}: ${m.text()}`); });
+      });
+      await mine.goto(URL + 'e2e-blank.html');
+      await mine.evaluate((x) => localStorage.setItem('fit-prefs-2', x), store);
+      await mine.goto(URL);
+      const files = {};
+      await old.route('**/*', (route) => {
+        const rel = route.request().url().slice(URL.length).split('?')[0] || 'index.html';
+        if (!(rel in files)) files[rel] = main(rel);
+        return files[rel] == null ? route.continue() : route.fulfill({ body: files[rel], contentType: TYPES[path.extname(rel)] || 'application/octet-stream' });
+      });
+      await old.goto(URL);
+      const lastRelease = lastApp && (String(lastApp).match(/^const RELEASE = '([^']+)'/m) || [])[1];
+      assert(!lastRelease || await old.evaluate(() => RELEASE) === lastRelease, 'the old tab runs the last release');
+      await listenFor(mine, lastSchema);
+      await old.evaluate(() => { state.minutes = 25; savePrefs(); });
+      await heard(mine);
+      const swapsIn = (prefs) => JSON.stringify([prefs.saved.map(x => x.swaps || null), prefs.history.map(h => h.swaps || null)]);
+      const was = swapsIn(JSON.parse(store));
+      const kept = await mine.evaluate(() => ({ mem: { saved: state.saved, history: state.history }, stored: JSON.parse(localStorage.getItem('fit-prefs-2')) }));
+      assert(JSON.parse(was)[0][0].length === 3 && swapsIn(kept.mem) === was && swapsIn(kept.stored) === was,
+             "a save from a tab on the last release keeps every swap, here and in storage: " + swapsIn(kept.stored));
+      assert(await old.evaluate(() => openFromRecord({ ...state.saved[0], generated: true }) === null && state.view === 'workout'), 'and the favourite opens there, as built');
+      await two.close();
+    }
+    // a backup carries them, and swaps that are the wrong shape are dropped as the prefs are read
+    const checked = await ev(() => {
+      const back = readBackup(backupText()).prefs;
+      const junk = cleanPrefs({ history: [{ key: 'gen:5', at: 1, swaps: [{ block: 'x' }, { block: 0, from: 'crunch', to: 'deadBug', who: 'wayne' }] }, { key: 'gen:6', at: 2, swaps: 'no' }],
+                                saved: [{ seed: 5, request: {}, swaps: [null] }] });
+      return { backup: JSON.stringify([back.saved[0].swaps, back.history[0].swaps]), live: JSON.stringify([state.saved[0].swaps, state.history[0].swaps]),
+               junk: JSON.stringify([junk.history.map(h => h.swaps), 'swaps' in junk.saved[0]]) };
+    });
+    assert(checked.backup === checked.live, 'a backup keeps the swaps: ' + checked.backup);
+    assert(checked.junk === '[[[{"block":0,"from":"crunch","to":"deadBug","who":"wayne"}],null],false]', 'swaps that are the wrong shape are dropped: ' + checked.junk);
+    // a classic: swapped, run, and back from history the same
+    await s.click('#btnBack'); await s.click('#pathLibrary');
+    await s.click(`.workout-card:not(.history-card):has(.card-name:text-is("Quick Spark"))`);
+    const qFrom = await s.$eval('.preview-move', e => e.dataset.from);
+    await s.click('.preview-move');
+    await s.click('.swap-card >> nth=0');
+    const qSwaps = await swapsOf(), qMoves = await moves();
+    assert(JSON.parse(qSwaps)[0].from === qFrom && await ev(() => !CLASSICS[0].swaps), 'a classic swaps too, and the library\'s copy is left alone');
+    await s.click('#btnStart'); await leaveStarted(s);
+    await s.click('#pathLibrary');
+    await s.click('.history-card >> nth=0');
+    assert(await ev(() => state.workout.id) === 'quick-spark' && await swapsOf() === qSwaps && JSON.stringify(await moves()) === JSON.stringify(qMoves),
+           'and comes back from history with it');
+    // the bells: with 8, 12, 16 and 24, in an AMRAP for two, a mate takes the spare bells rather than going bodyweight
+    const bells = await ev(() => {
+      const f = { v: 1, name: 'Bells', intervalId: 'amrap', warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [],
+                  blocks: [{ make: 'alt', name: 'Swings & presses', ids: ['kbSwing15', 'kbPress10'] }] };
+      // (a build since the spare bells says so, see SPARE_BELLS)
+      const old = thawWorkout(f, 99, { minutes: 6, people: 2, intervalId: 'amrap' });
+      const oldLap = buildSequence(old, 2).find(x => x.amrap).b.circuit.map(x => x.display).join(' | ');
+      openWorkout(thawWorkout(f, 99, { minutes: 6, people: 2, intervalId: 'amrap', spare: 1 }));
+      const i = state.sequence.findIndex(x => x.amrap);
+      seekTo(i); render();
+      const lap = (w) => state.sequence[i][w].circuit.map(x => x.display).join(' | ');
+      const spares = [['kb15', 'kb10'], ['kb15'], ['kb10']].map(t => JSON.stringify(spareLoads({ kb: [8, 12, 16, 24] }, t)));
+      return { a: lap('a'), b: lap('b'), oldLap, shown: els.circuitB.textContent.replace(/\s+/g, ' ').trim(), spares, none: JSON.stringify(spareLoads({ kb: [16, 24] }, ['kb15', 'kb10'])),
+               solo: describeEx('kbSwing15', buildCtx(null)).display };
+    });
+    assert(bells.a === 'KB swings · 24kg | Single-arm KB press · 16kg' && bells.b === 'Single-arm KB press · 8kg | KB swings · 12kg',
+           'an AMRAP for two: you on the 24 and the 16, your mate on the 8 and the 12: ' + JSON.stringify(bells));
+    assert(bells.oldLap.split(' | ').every(n => !/kg/.test(n)), 'one built before the spare bells keeps the mate\'s bodyweight lap it had: ' + bells.oldLap);
+    assert(bells.shown.includes('8kg') && bells.shown.includes('12kg'), 'on the card: ' + bells.shown);
+    assert(bells.spares.join() === '{"kb15":"12kg","kb10":"8kg"},{"kb15":"16kg"},{"kb10":"12kg"}' && bells.none === '{}' && bells.solo === 'KB swings · 24kg',
+           'the spare for each bell in use, none with only two, and on your own the 24 as before: ' + JSON.stringify(bells));
+    // and the preview before Start says each one's bell, as their lap has
+    // it: an AMRAP with 8, 12, 16 and 24, and a For Time with 12, 16 and 24
+    // (one move on a bell each, and a two-weight block)
+    const lapPreview = await ev(() => {
+      const keep = JSON.stringify(state.weights), out = [];
+      const blocks = [{ make: 'alt', name: 'Swings & presses', ids: ['kbSwing15', 'kbPress10'] }, { make: 'swap', name: 'Goblet squats', ids: ['gobletSquat15', 'gobletSquat10'] }];
+      [['amrap', [8, 12, 16, 24]], ['fortime', [12, 16, 24]]].forEach(([intervalId, kb]) => {
+        state.weights = { ...state.weights, kb };
+        const f = { v: 1, name: 'Bells', intervalId, warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [], blocks };
+        openWorkout(thawWorkout(f, 99, { minutes: 12, people: 2, intervalId, spare: 1 }));
+        state.sequence.filter(x => x.amrap || x.forTime).forEach(x => {
+          const pills = [...document.querySelectorAll(`.preview-move[data-block="${x.blockIdx}"]`)].map(e => e.textContent);
+          seekTo(state.sequence.indexOf(x)); render();
+          out.push({ kb: kb.join('/'), pills, a: x.a.circuit.map(m => m.load), b: x.b.circuit.map(m => m.load), shownB: els.circuitB.textContent.replace(/\s+/g, ' ').trim() });
+        });
+      });
+      state.weights = JSON.parse(keep);
+      return out;
+    });
+    assert(lapPreview.length === 4 && lapPreview.every(x => x.b.every(l => l && x.shownB.includes(l) && x.pills.some(t => t.includes(`Dave ${l},`)))
+             && x.a.every(l => x.pills.some(t => t.includes(`(Wayne ${l},`))) && !x.pills.some(t => /· \d+kg \(/.test(t))),
+           "the preview names each one's bell in a lap for two, Dave's as on his card: " + JSON.stringify(lapPreview));
+    assert(lapPreview[1].pills.length === 1 && lapPreview[3].pills.length === 1, 'a two-weight block in a lap reads as one move, each on their own bell: ' + JSON.stringify(lapPreview.map(x => x.pills)));
+    // the two of them on the same move (a block on one): a swap for Dave
+    // leaves Wayne on it, and the sheet says he keeps it
+    const keeps = await ev(() => {
+      const f = { v: 1, name: 'Same', intervalId: 'short', warmupSec: 60, cooldownSec: 60, blockRestSec: 30, notes: [],
+                  blocks: [{ make: 'same', name: 'Climbers', ids: ['mountainClimberFast'] }] };
+      openWorkout(thawWorkout(f, 97, { minutes: 10, people: 2, intervalId: 'short' }));
+      const i = state.sequence.findIndex(x => x.kind === 'rest' && x.blockIdx === 0);
+      seekTo(i); render();
+      return { swapB: !els.swapB.hidden, a: state.sequence[i + 1].a.name, b: state.sequence[i + 1].b.name };
+    });
+    await s.click('#swapB');
+    const keepsSaid = await s.$eval('#swapFor', e => e.textContent);
+    assert(keeps.swapB && keeps.a === keeps.b && keepsSaid === `Just for Dave, for the rest of this workout. Wayne keeps ${keeps.a}.`,
+           'with both on the move, the sheet says Wayne keeps it: ' + keepsSaid);
+    await s.click('#swapClose');
+    // a spare is never heavier than the bell the other person has for that
+    // role: with two bells, or 16 and 24, a mate's press while you've got
+    // the lighter bell goes bodyweight, never up to the top bell
+    const capped = await ev(() => {
+      const sets = [[10, 15], [12, 16], [16, 24], [16, 20, 24], [8, 12, 16, 24], [8, 16, 24], [12]];
+      const bad = [];
+      sets.forEach(kb => [['kb15', 'kb10'], ['kb15'], ['kb10']].forEach(t => {
+        const top = Math.max(...kb), light = lighterOf(kb), out = spareLoads({ kb }, t);
+        const kg = (x) => (x === undefined ? null : parseInt(x, 10));
+        if (kg(out.kb15) !== null && kg(out.kb15) >= top) bad.push([kb, t, out]);
+        if (kg(out.kb10) !== null && (light === null || kg(out.kb10) >= light)) bad.push([kb, t, out]);
+        if (Object.keys(out).some(r => !t.includes(r))) bad.push([kb, t, out]);
+      }));
+      const one = (kb, t) => JSON.stringify(spareLoads({ kb }, t));
+      return { bad, light: [one([10, 15], ['kb10']), one([16, 24], ['kb10']), one([16, 20, 24], ['kb10']), one([12, 16], ['kb10'])].join(),
+               heavy: [one([10, 15], ['kb15']), one([16, 24], ['kb15']), one([16, 20, 24], ['kb15', 'kb10'])].join() };
+    });
+    assert(!capped.bad.length && capped.light === '{},{},{},{}' && capped.heavy === '{"kb15":"10kg"},{"kb15":"16kg"},{"kb15":"20kg"}',
+           'a spare is only ever lighter than the bell the other lap has for it, and a lighter-bell move with none lighter goes bodyweight: ' + JSON.stringify(capped));
+    const built = await ev(() => {
+      const seen = new Set(); let clash = 0;
+      const kg = (lap) => lap.filter(x => EXERCISES[x.id].equipment.some(e => e === 'kb15' || e === 'kb10')).map(x => x.load);
+      for (let seed = 1; seed <= 200; seed++) {
+        const w = buildWorkout({ ...requestFromState(), intervalId: 'amrap', mix: undefined }, seed);
+        if (w.error) continue;
+        buildSequence(w, 2).filter(x => x.amrap).forEach(x => {
+          const a = kg(x.a.circuit), b = kg(x.b.circuit);
+          if (a.some(l => b.includes(l))) clash++;
+          b.forEach(l => seen.add(l));
+        });
+      }
+      return { seen: [...seen].sort().join(), clash };
+    });
+    assert((built.seen.includes('8kg') || built.seen.includes('12kg')) && !built.clash, 'built AMRAPs for two use the lighter bells too, and never one bell for both: ' + JSON.stringify(built));
+    // and across built AMRAPs and For Times for two with 16 and 24, or 16,
+    // 20 and 24: a mate's lighter-bell move is never on a bell heavier than
+    // the 16, and a heavier-bell one never on the 24 while it's in the other lap
+    const sweep = await ev(() => {
+      const keep = JSON.stringify(state.weights), out = { over: [], runs: 0 };
+      [[16, 24], [16, 20, 24]].forEach(kb => {
+        state.weights = { ...state.weights, kb };
+        const light = lighterOf(kb), top = Math.max(...kb);
+        for (let seed = 1; seed <= 120; seed++) {
+          ['amrap', 'fortime'].forEach(intervalId => {
+            const w = buildWorkout({ ...requestFromState(), intervalId, mix: undefined }, seed);
+            if (w.error) return;
+            buildSequence(w, 2).filter(x => x.amrap || x.forTime).forEach(x => {
+              out.runs++;
+              const aKg = new Set(x.a.circuit.map(m => m.load).filter(Boolean));
+              x.b.circuit.forEach(m => {
+                const eq = EXERCISES[m.id].equipment, kg = parseInt(m.load, 10);
+                if (eq.includes('kb10') && kg > light) out.over.push([kb.join('/'), m.display]);
+                if (eq.includes('kb15') && kg > top) out.over.push([kb.join('/'), m.display]);
+                if (m.load && aKg.has(m.load)) out.over.push([kb.join('/'), 'shared', m.display]);
+              });
+            });
+          });
+        }
+      });
+      state.weights = JSON.parse(keep);
+      return out;
+    });
+    assert(sweep.runs > 50 && !sweep.over.length, 'with 16 and 24 (or 16, 20 and 24), a mate never gets a bell heavier than the one for that move, or one in the other lap: ' + JSON.stringify(sweep).slice(0, 400));
+    await s.click('#btnBack'); await s.click('#pathBuild');
+    assert((await s.$eval('#weightPicker', e => e.textContent)).includes('With a mate, the others are spares for when you both want a bell at once.'), 'setup says what the other bells are for');
+    await sw.close();
+  }
+  ok('swap a move: three like it for the gear, for both of you from the preview or one of you from a card in a rest or paused, only that person\'s moves changed, the clock where it was; kept by Save, a link (with the names), Resume and history, classics too; Leave it out from now on; the badge flips before Start only, and on a link for two makes it yours on your own, a note kept; a mate takes the spare bells, said in the preview; Wayne keeps a move both are on; a favourite says its minutes and style');
+
   step = 'two tabs open: one saving does not wipe what the other saved';
   await p.click('#btnBack'); await p.click('#pathLibrary');
   const cardsBefore = (await p.$$('.history-card')).length;
@@ -2122,7 +3841,7 @@ try {
   await listenFor(p, null);
   await tab2.evaluate(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
-    delete prefs.schema; delete prefs.beepOnSilent; delete prefs.todayOther;
+    delete prefs.schema; delete prefs.beepOnSilent; delete prefs.todayOther; delete prefs.sound; delete prefs.voice; delete prefs.styleAuto;
     prefs.history = prefs.history.slice(1);           // opened before the newest session
     prefs.saved = prefs.saved.slice(1);
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
@@ -2131,7 +3850,7 @@ try {
   const merged = await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     return { first: prefs.history[0].key, n: prefs.history.length, mem: state.history.length, saved: prefs.saved.length === state.saved.length,
-             beep: 'beepOnSilent' in prefs, dupes: new Set(prefs.history.map(h => h.key + h.at)).size !== prefs.history.length };
+             beep: 'beepOnSilent' in prefs && 'sound' in prefs && 'voice' in prefs && prefs.styleAuto === state.styleAuto, dupes: new Set(prefs.history.map(h => h.key + h.at)).size !== prefs.history.length };
   });
   assert(merged.first === newest && merged.n === merged.mem && merged.saved && merged.beep && !merged.dupes,
          "an older tab's stale save is merged in and written back with this tab's sessions and settings: " + JSON.stringify(merged));
@@ -2229,9 +3948,11 @@ try {
     const backup = JSON.parse(fileText);
     const mine = await st(() => ({ keys: PERSISTED, history: state.history.length, saved: state.saved.length,
                                    places: state.gearSets.map(g => g.name).join('|'), summary: dataSummary(state),
-                                   levels: JSON.stringify(state.levels) }));
+                                   levels: JSON.stringify(state.levels), programs: JSON.stringify(state.programs) }));
     assert(mine.keys.includes('levels') && JSON.stringify(backup.prefs.levels) === mine.levels && mine.levels.includes('"wayne"'),
            "the file holds each person's level too: " + JSON.stringify(backup.prefs.levels));
+    assert(JSON.stringify(backup.prefs.programs) === mine.programs && mine.programs.includes('"surfs":[{') && mine.programs.includes('"paddle":"cooked"'),
+           'and the program with its surfs and how the paddle-out felt: ' + mine.programs);
     assert(backup.kind === 'fit-backup' && mine.keys.every(k => k in backup.prefs) && backup.prefs.history.length === mine.history
            && backup.prefs.saved.length === mine.saved && mine.history > 0,
            `the file holds every setting, session and favourite: ${backup.prefs.history.length} of ${mine.history} sessions, ${backup.prefs.saved.length} of ${mine.saved} favourites`);
@@ -2283,22 +4004,39 @@ try {
     await f.click('#btnRestoreText');
     await f.click('#btnRestoreYes');
     const moved = await f.evaluate(() => ({ history: state.history.length, saved: state.saved.length, places: state.gearSets.map(g => g.name).join('|'),
-      asked: state.gearAsked, name: document.getElementById('nameA').value === state.nameA, people: state.people, levels: JSON.stringify(state.levels) }));
+      asked: state.gearAsked, name: document.getElementById('nameA').value === state.nameA, people: state.people, levels: JSON.stringify(state.levels),
+      programs: JSON.stringify(state.programs) }));
     assert(moved.history === mine.history && moved.saved === mine.saved && moved.places === mine.places && moved.asked && moved.name && moved.people === 1,
            'Replace brings every session, favourite, place and setting across, checked: ' + JSON.stringify(moved));
     assert(moved.levels === mine.levels && await f.evaluate(() => localStorage.getItem('fit-levels-1')) === mine.levels,
            "and each person's level, under its own key too: " + moved.levels);
-    assert((await said()).startsWith('Restored: ') && await f.$('#btnPutBack'), 'it says so, and offers Put it back');
+    assert(moved.programs === mine.programs, 'and the program, surfs and all: ' + moved.programs);
+    assert((await said()).startsWith('Restored: ') && !(await f.$('#btnPutBack')) && await f.evaluate(() => !localStorage.getItem('fit-prefs-2-before-restore')),
+           'it says so, and with nothing here before it, has nothing to put back');
     const box = (sel) => f.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.top, b.bottom, innerHeight]; });
     const onScreen = async (sel) => { const [top, bottom, ih] = await box(sel); return top >= 0 && bottom <= ih && bottom > top; };
-    assert(await onScreen('#yourData .data-note') && await onScreen('#btnPutBack'),
-           'where it can be seen, with Put back, though the sessions and favourites above it moved it down the page: '
-           + JSON.stringify([await box('#yourData .data-note'), await box('#btnPutBack')]));
+    assert(await onScreen('#yourData .data-note'),
+           'where it can be seen, though the sessions and favourites above it moved it down the page: ' + JSON.stringify(await box('#yourData .data-note')));
     assert(await f.$$eval('.workout-card:has-text("☆")', els => els.length) === mine.saved, 'the favourites are on the page');
     await (await f.$$('.workout-card:has-text("☆")'))[1].click();
     assert(await f.evaluate(() => state.workout.exerciseIds.join(',')) === idsA, 'favourite A opens on the other device with the same moves');
     await f.click('#btnBack');
     assert(await view() === 'welcomeView', 'and the gear question has been answered');
+    // a restore over what's here keeps it, to put back: from a file, the
+    // same way, onto this device with its sessions and levels gone since
+    await f.evaluate(() => { state.history = []; state.levels = {}; savePrefs(); });
+    await f.reload();
+    await f.click('#pathLibrary');
+    await f.click('#btnRestore');
+    await f.setInputFiles('#restoreFile', { name: 'FIT backup.json', mimeType: 'application/json', buffer: Buffer.from(fileText) });
+    await f.waitForSelector('#btnRestoreYes');
+    assert((await f.$eval('.restore-check', e => e.textContent)).includes(`This backup has ${mine.summary}`), 'a chosen backup file is read the same way');
+    await f.click('#btnRestoreYes');
+    assert(await f.evaluate((n) => state.history.length === n, mine.history), 'and restored');
+    assert((await said()).startsWith('Restored: ') && await f.$('#btnPutBack'), 'it says so, and offers Put it back');
+    assert(await onScreen('#yourData .data-note') && await onScreen('#btnPutBack'), 'with Put back where it can be seen: ' + JSON.stringify(await box('#btnPutBack')));
+    const undoLine = await f.$eval('#yourData .data-undo', e => e.textContent);
+    assert(/^Restored on \S+ \S+ from a backup saved \S+ \S+\. Put back what was here before$/.test(undoLine), 'saying when, and when the backup was saved: ' + undoLine);
     // Put it back undoes it, until the next restore
     await f.reload();
     await f.click('#pathLibrary');
@@ -2311,36 +4049,33 @@ try {
     assert(!(await f.$('#btnPutBack')) && (await said()).startsWith('Put back: '), 'and is used up');
     assert(await onScreen('#yourData .data-note'), 'saying so on screen');
     assert(await f.$eval('#restoreFile', e => e.accept) === '.json,application/json,text/plain', 'the file picker asks for the backup, so an iPhone opens Files, not Photos');
-    // from a file, the same way
-    await f.click('#btnRestore');
-    await f.setInputFiles('#restoreFile', { name: 'FIT backup.json', mimeType: 'application/json', buffer: Buffer.from(fileText) });
-    await f.waitForSelector('#btnRestoreYes');
-    assert((await f.$eval('.restore-check', e => e.textContent)).includes(`This backup has ${mine.summary}`), 'a chosen backup file is read the same way');
-    await f.click('#btnRestoreYes');
-    assert(await f.evaluate((n) => state.history.length === n, mine.history), 'and restored');
     await phone.close();
   }
   ok('Your data: a dated backup file, the same on the clipboard (or in a box without one), and a restore by file or paste from the first-visit question that says what it found, asks, cleans what it takes, and can be put back');
 
   step = 'corrupt preferences fall back, favourites persist';
+  // FIT picks off, with the style setup starts on: read from that alone it would be on
+  const picksWas = await st(() => { state.styleAuto = false; state.intervalStyle = 'short'; state.mixOn = false; savePrefs(); return state.styleAuto; });
   await st(() => {
     const prefs = JSON.parse(localStorage.getItem('fit-prefs-2'));
     prefs.people = 7; prefs.minutes = 13; prefs.textScale = 'big'; prefs.blockedTags = 'nope';
-    prefs.history.push(null, 'junk'); prefs.saved.push({ name: 'no seed' }); prefs.filterFocus = 'nowhere'; prefs.muteAudio = 'yes';
+    prefs.history.push(null, 'junk'); prefs.saved.push({ name: 'no seed' }); prefs.filterFocus = 'nowhere'; prefs.muteAudio = 'yes'; prefs.sound = 'loud'; prefs.voice = 'maybe'; prefs.styleAuto = 'maybe';
     prefs.levels = { ...prefs.levels, huge: { k: 5 }, odd: 'x', '': { k: 1.1 }, kept: { k: 1.2, easy: 1 } };
     prefs.history[0].feel = { a: 'meh', b: 'cooked' };
     if (prefs.history[1]) prefs.history[1].feel = 'nope';
     localStorage.setItem('fit-prefs-2', JSON.stringify(prefs));
   });
   await p.goto(URL);
-  const junk = await st(() => ({ levels: state.levels, feel: [state.history[0].feel, state.history[1] && state.history[1].feel] }));
+  const junk = await st(() => ({ levels: state.levels, feel: [state.history[0].feel, state.history[1] && state.history[1].feel], picks: state.styleAuto }));
+  assert(junk.picks === picksWas, 'FIT picks that is not on or off comes from its own key: ' + junk.picks);
   assert(JSON.stringify(junk.levels.kept) === '{"k":1.2,"easy":1}' && !junk.levels.huge && !junk.levels.odd && !('' in junk.levels) && junk.levels.wayne,
          'levels out of range or the wrong shape are dropped, the rest kept: ' + JSON.stringify(junk.levels));
   assert(JSON.stringify(junk.feel[0]) === '{"b":"cooked"}' && junk.feel[1] === undefined, 'and so are answers that are not one of the three: ' + JSON.stringify(junk.feel));
   assert(await st(() => state.people === 1 && state.minutes === 20 && state.textScale === 1 && Array.isArray(state.blockedTags)),
          'junk preference values fell back to defaults (one person)');
   assert(await st(() => state.saved.length === 2), 'saved favourites survived the reload');
-  assert(await st(() => state.history.every(h => h && typeof h.key === 'string') && state.filterFocus === 'all' && state.muteAudio === false),
+  assert(await st(() => state.history.every(h => h && typeof h.key === 'string') && state.filterFocus === 'all' && state.muteAudio === false
+                        && SOUNDS.includes(state.sound) && state.sound !== 'off' && state.voice === true),
          'sessions and favourites that cannot be used are dropped, and an unknown focus or a switch that is not on or off goes back to its default');
   ok('corrupt preference values fall back to defaults, favourites persist');
 

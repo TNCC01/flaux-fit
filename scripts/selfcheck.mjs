@@ -32,7 +32,10 @@ const {
   describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits, sectionInterval,
   freezeWorkout, thawWorkout, BLOCK_MAKERS, withWorkRest, cleanWorkRest, nextLevel, cleanRepScales, targetDiff,
   LEVEL_MIN, LEVEL_MAX, warmupPlan, cooldownPlan, warmupCard, cooldownCard, WARMUP_REHEARSAL,
-  planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL
+  planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL,
+  programEase, easeWeek, easeLeft, easedDay, weekLoad, EASE_SESSIONS, WATER_SESSIONS, WATER_SAFETY,
+  SURF_CHECK, checkSeconds, checkMinutes, checkShape, checkChange, isCheckDay,
+  swapCandidates, swapMaps, cleanSwaps, blockAlt, blockCycle
 } = A;
 
 const failures = [];
@@ -305,6 +308,73 @@ for (const prog of PROGRAMS) {
   const longAt = (n) => JSON.stringify(programDay(surf, n).workRest);
   if (longAt(0) !== '{"long":[30,30]}' || longAt(28) !== '{"long":[45,15]}') fail(`Surf Fit's Paddle power should run 30/30 in week 1 and 45/15 in week 5, got ${longAt(0)} and ${longAt(28)}`);
   if (programDay(surf, 3).workRest !== undefined) fail('Surf Fit Engine (EMOM, AMRAP) has no timed split to carry');
+  // easing back in: more than ten days off eases, three weeks or more eases further
+  const DAY = 86400000, now = new Date(2026, 9, 21, 18, 30).getTime();
+  [[9, null], [10, null], [11, 1], [20, 1], [21, 2], [60, 2]].forEach(([days, steps]) => {
+    const got = programEase(now - days * DAY, now);
+    if ((got && got.steps) !== steps || (got && got.days !== days)) fail(`programEase after ${days} days off should be ${steps ? `${steps} step(s)` : 'none'}, got ${JSON.stringify(got)}`);
+  });
+  // by the calendar: last thing late on the 10th, back early on the 21st is 11 days
+  if (!programEase(new Date(2026, 9, 10, 22, 0).getTime(), new Date(2026, 9, 21, 6, 0).getTime())) fail('programEase should count calendar days, not hours');
+  if (programEase(null, now) !== null || programEase(undefined, now) !== null) fail('programEase with nothing done yet should be none');
+  // a step down is the rung below on the rep ladder, never the same load
+  const weeks = [1, 2, 3, 4, 5, 6];
+  const one = weeks.map(w => easeWeek(surf, w, 1)).join(), two = weeks.map(w => easeWeek(surf, w, 2)).join();
+  if (one !== '1,1,2,2,3,3' || two !== '1,1,1,1,2,2') fail(`easeWeek should go a rung down (1,1,2,2,3,3) or two (1,1,1,1,2,2), got ${one} and ${two}`);
+  weeks.forEach(w => {
+    const e = easeWeek(surf, w, 1);
+    if (e < w && !(surf.repScale[e - 1] < surf.repScale[w - 1])) fail(`easing week ${w} to week ${e} isn't any lighter`);
+  });
+  // two sessions with reps, stretch days passed over: from day 21 (Paddle power) days 21 and 22; from Mobility (day 23) days 23 to 25
+  const lefts = (from) => [0, 1, 2, 3].map(i => easeLeft(surf, from, from + i)).join();
+  if (lefts(21) !== '2,1,0,0' || lefts(23) !== '2,2,1,0' || easeLeft(surf, 21, 20) !== 0) fail(`easeLeft should cover two sessions with reps, got ${lefts(21)} and ${lefts(23)}`);
+  const eased = easedDay(surf, programDay(surf, 21), 2);
+  if (eased.n !== 21 || eased.week !== 4 || eased.repScale !== 0.9 || JSON.stringify(eased.workRest) !== '{"long":[35,25]}' || eased.name !== 'Paddle power')
+    fail(`an eased week-4 Paddle power keeps its day and week, at week 2's load: ${JSON.stringify(eased)}`);
+  if (JSON.stringify(weekLoad(surf, surf.days[0], 4)) !== JSON.stringify({ repScale: 1, workRest: { long: [40, 20] } })) fail('weekLoad should match programDay');
+  if (EASE_SESSIONS !== 2) fail('easing back in is for two sessions');
+  // the flat-day paddles: three short lines each, on the paddle days only
+  WATER_SESSIONS.forEach(w => {
+    if (!w.id || !w.name || !w.about) fail(`water session ${JSON.stringify(w)}: needs an id, name and about`);
+    if (!Array.isArray(w.lines) || w.lines.length !== 3) fail(`${w.id}: three lines to remember, got ${w.lines && w.lines.length}`);
+    (w.lines || []).forEach(l => { if (l.length > 70) fail(`${w.id}: "${l}" is too long to remember (${l.length} characters)`); });
+  });
+  if (new Set(WATER_SESSIONS.map(w => w.id)).size !== WATER_SESSIONS.length) fail('water session ids must be unique');
+  if (!/mate/.test(WATER_SAFETY) || !/inside the break/.test(WATER_SAFETY) || !/dizzy/.test(WATER_SAFETY)) fail(`the water safety line should say paddle with someone, stay inside the break and stop if dizzy: ${WATER_SAFETY}`);
+  PROGRAMS.forEach(prog => prog.days.forEach(d => {
+    if (!d.water) return;
+    if (d.stretch || d.focus !== 'paddle') fail(`${prog.id} ${d.name}: flat-day paddles belong on paddle days`);
+    d.water.forEach(id => { if (!WATER_SESSIONS.some(w => w.id === id)) fail(`${prog.id} ${d.name}: unknown water session "${id}"`); });
+  }));
+  if (surf.days.filter(d => d.water).map(d => d.name).join() !== 'Paddle power,Paddle & shoulders') fail('Surf Fit\'s two paddle days have the flat-day paddles');
+  // the Surf check: three tests of floor moves with no gear, each done one way, said in a line
+  const tests = SURF_CHECK.stations;
+  if (tests.map(t => t.id).join() !== 'popups,pushups,paddle') fail(`the Surf check is pop-ups, push-ups and a paddle hold: ${tests.map(t => t.id)}`);
+  tests.forEach(t => {
+    const ex = EXERCISES[t.ex];
+    if (!ex || !ex.img) fail(`Surf check ${t.id}: "${t.ex}" needs to be a move with a figure`);
+    else if (ex.equipment.length) fail(`Surf check ${t.id}: "${t.ex}" needs gear, and the check is for anywhere`);
+    if (!t.label || !t.short || !t.how || !(t.sec > 0) || !(t.most >= t.sec || !t.hold)) fail(`Surf check ${t.id}: needs a label, short name, how, seconds and a top result`);
+    if (!t.standard || t.standard.length > 150) fail(`Surf check ${t.id}: its one way of doing it should be said in a line (${(t.standard || '').length} characters)`);
+  });
+  if (tests.filter(t => t.hold).map(t => t.id).join() !== 'paddle' || tests[tests.length - 1].hold !== true) fail('the paddle hold is the one timed test, and comes last');
+  if (checkSeconds(SURF_CHECK) !== 710 || checkMinutes(SURF_CHECK) !== 10) fail(`the Surf check is about ten minutes (11:50 with the hold run out): ${checkSeconds(SURF_CHECK)}s, about ${checkMinutes(SURF_CHECK)} min`);
+  const shape = checkShape(SURF_CHECK);
+  const warm = warmupPlan(shape, {}), cool = cooldownPlan(shape, {});
+  if (warm.reduce((t, m) => t + m.sec, 0) !== SURF_CHECK.warmupSec || cool.reduce((t, m) => t + m.sec, 0) !== SURF_CHECK.cooldownSec) fail('the Surf check warm-up and cool-down fill their time');
+  if (warm.some(m => !m.id) || warm[warm.length - 1].id !== 'popUp') fail(`the Surf check warm-up is real moves, a slow pop-up last: ${warm.map(m => m.id)}`);
+  // on day 1 of weeks 1, 3 and 5, each a Paddle power day, and one more after the end
+  const checkOn = [...Array(surf.weeks * surf.days.length + 2)].map((_, n) => n).filter(n => isCheckDay(surf, n));
+  if (checkOn.join() !== '0,14,28' || !surf.finalCheck) fail(`Surf Fit's Surf checks are days 1, 15 and 29 and one at the end: ${checkOn}`);
+  checkOn.forEach(n => { if (programDay(surf, n).name !== 'Paddle power') fail(`the Surf check on day ${n + 1} should take a Paddle power day, not ${programDay(surf, n).name}`); });
+  // against last time, in plain words
+  const [pops, , hold] = tests;
+  [[pops, 12, 9, '3 more than last time'], [pops, 8, 9, '1 fewer than last time'], [pops, 9, 9, 'Same as last time'],
+   [hold, 95, 70, '25s longer than last time'], [hold, 180, 70, '1:50 longer than last time'], [hold, 60, 125, '1:05 shorter than last time'],
+   [pops, 9, null, ''], [pops, 0, 9, '']].forEach(([t, now, before, want]) => {
+    const got = checkChange(t, now, before);
+    if (got !== want) fail(`checkChange(${t.id}, ${now}, ${before}) should say "${want}", got "${got}"`);
+  });
   const bad = [{ long: [50, 20] }, { emom: [30, 30] }, { long: [60, 0] }, { short: ['20', '10'] }, { toString: [30, 30] }, [30, 30], { long: [30, 30], short: [1, 29] }];
   bad.forEach(x => { if (cleanWorkRest(x) !== undefined) fail(`cleanWorkRest should refuse ${JSON.stringify(x)}`); });
   if (JSON.stringify(cleanWorkRest({ long: [45, 15], short: [25, 5] })) !== '{"long":[45,15],"short":[25,5]}') fail('cleanWorkRest should keep good splits');
@@ -776,6 +846,82 @@ let exported = 0;
   }
 }
 
+// ------------------------------------------------------- 8f. FIT picks
+// Left to FIT, the style is worked out from the time, the goal and the
+// sessions before, with nothing random: the same three always pick the
+// same style (so the home card names what Start builds). Whatever the
+// sessions were, the pick fits the minutes (a mix only from half an hour,
+// and only one that fits; a long session a steadier style), builds to the
+// second, and changes from one session to the next, going round every
+// style on offer before any comes back (in another order after a mix,
+// which counts as each style in it too). And each style says how it works
+// in one plain sentence, with the seconds it really runs at.
+let picksChecked = 0;
+{
+  const fitPicks = A.fitPicks, styleHow = A.styleHow;
+  const all = [...Object.keys(INTERVALS), 'mix'];
+  const asSession = (p) => (p.intervalId === 'mix' ? ['mix', ...p.mix] : [p.intervalId]);
+  // some sessions before: none, the program's, random ones (seeded), stretching and junk
+  const rand = (() => { let x = 7; return () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648; })();
+  const histories = [[], [['long']], [['short'], ['short'], ['emom']], [['mix', 'emom', 'amrap'], ['fortime']], [null, 'junk', ['toString'], []]];
+  for (let i = 0; i < 20; i++) histories.push(Array.from({ length: Math.floor(rand() * 14) }, () => asSession(
+    (() => { const id = all[Math.floor(rand() * all.length)]; return id === 'mix' ? { intervalId: 'mix', mix: ['emom', 'short', 'amrap'] } : { intervalId: id }; })())));
+  for (const goal of ['general', 'surf']) {
+    for (const minutes of minutesList) {
+      const pool = new Set();
+      for (const h of histories) {
+        const label = `FIT picks, ${goal}, ${minutes} min after ${JSON.stringify(h)}`;
+        const pick = fitPicks(minutes, goal, h);
+        picksChecked++;
+        if (JSON.stringify(fitPicks(minutes, goal, JSON.parse(JSON.stringify(h)))) !== JSON.stringify(pick)) fail(`${label}: picks differently the second time`);
+        const ok = pick && (pick.intervalId === 'mix' ? Array.isArray(pick.mix) && pick.mix.length >= 2 && pick.mix.every(id => INTERVALS[id]) : INTERVALS[pick.intervalId] && pick.mix === undefined);
+        if (!ok) { fail(`${label}: not a style: ${JSON.stringify(pick)}`); continue; }
+        pool.add(pick.intervalId);
+        if (pick.intervalId === 'mix' && (minutes < 30 || planMix(minutes, pick.mix).error)) fail(`${label}: a mix that doesn't fit`);
+        if (minutes >= 45 && !['long', 'emom', 'mix'].includes(pick.intervalId)) fail(`${label}: ${pick.intervalId} for three quarters of an hour or more`);
+        const w = generateWorkout({ minutes, people: 2, intervalId: pick.intervalId, mix: pick.mix, goal: goal === 'surf' ? 'surf' : undefined,
+          regions: REGION_IDS, equipment: ALL_EQUIP, excluded: [], blockedTags: [], seed: 500 + picksChecked, recent: [] });
+        if (w.error) { fail(`${label}: ${w.error}`); continue; }
+        const secs = w.sections || [{ intervalId: w.intervalId, count: w.blocks.length, minutes: 0, blockRestSec: w.blockRestSec }];
+        const real = w.warmupSec + w.cooldownSec + (secs.length - 1) * (w.changeoverSec || 0) + secs.reduce((t, x) => t + sectionSeconds(x), 0);
+        if (real !== minutes * 60) fail(`${label}: builds ${real}s, not ${minutes * 60}s`);
+        if (w.request.intervalId !== pick.intervalId || JSON.stringify(w.request.mix) !== JSON.stringify(pick.mix)) fail(`${label}: the build's request doesn't keep the style`);
+        // and the same request and seed build it again exactly, as a favourite or a link does
+        const again = generateWorkout({ ...w.request, equipment: ALL_EQUIP, excluded: [], seed: w.seed });
+        if (again.error || again.exerciseIds.join() !== w.exerciseIds.join() || JSON.stringify(again.sections) !== JSON.stringify(w.sections)) fail(`${label}: its request and seed build something else`);
+      }
+      // session after session: never the same twice running, and round every style on offer before one comes back
+      const offered = all.filter(id => id === 'mix' ? minutes >= 30 : minutes < 45 || id === 'long' || id === 'emom');
+      let h = [];
+      const run = [];
+      for (let n = 0; n < offered.length * 2; n++) {
+        const pick = fitPicks(minutes, goal, h);
+        run.push(pick.intervalId);
+        h = [asSession(pick), ...h];
+      }
+      const label = `FIT picks, ${goal}, ${minutes} min, session after session (${run.join(',')})`;
+      if (run.some((id, n) => n && id === run[n - 1])) fail(`${label}: the same style twice running`);
+      if (new Set(run.slice(0, offered.length)).size !== offered.length) fail(`${label}: doesn't go round every style before one comes back`);
+      if (new Set(run.slice(offered.length)).size !== offered.length) fail(`${label}: doesn't keep going round every style`);
+      if (minutes < 30 && pool.has('mix')) fail(`${label}: a mix under half an hour`);
+    }
+  }
+  // a first session is a timed style, and a mix counts as each style in it
+  if (fitPicks(20, 'general', []).intervalId !== 'short' || fitPicks(20, 'surf', []).intervalId !== 'long') fail('FIT picks: a first session should be short bursts, or for surfing long efforts');
+  if (['emom', 'short', 'amrap'].includes(fitPicks(20, 'general', [['mix', 'emom', 'short', 'amrap'], ['long']]).intervalId)) fail('FIT picks: just after a mix, it picks a style from the mix');
+  // how each style works: one sentence, plain, with the real numbers
+  const said = [...Object.values(INTERVALS).map(iv => [iv.id, styleHow(iv)]),
+    ['long at 45/15', styleHow(withWorkRest(INTERVALS.long, { long: [45, 15] }))],
+    ['AMRAP in a 7-minute section', styleHow(sectionInterval({ intervalId: 'amrap', start: 0, count: 1, minutes: 7, blockRestSec: 0 }))],
+    ['For Time in a 6-minute section', styleHow(sectionInterval({ intervalId: 'fortime', start: 0, count: 1, minutes: 6, blockRestSec: 0 }))]];
+  said.forEach(([id, text]) => {
+    if (typeof text !== 'string' || !/^[A-Z].{20,90}\.$/.test(text) || /[—–]|\.\s+[A-Z]|undefined|NaN/.test(text)) fail(`styleHow ${id}: not one plain sentence: "${text}"`);
+  });
+  const want = { short: '20s, rest 10s, 8 rounds', long: '40s, rest 20s, 4 rounds', 'long at 45/15': '45s, rest 15s, 4 rounds',
+                 amrap: 'in 4 minutes, tapping', 'AMRAP in a 7-minute section': 'in 7 minutes', fortime: 'in 4 minutes at most', 'For Time in a 6-minute section': 'in 6 minutes at most' };
+  said.forEach(([id, text]) => { if (want[id] && !text.includes(want[id])) fail(`styleHow ${id}: should say "${want[id]}": "${text}"`); });
+}
+
 // ---------------------------------- 9. exclusions are actually respected
 const someIds = ids.filter(id => !EXERCISES[id].equipment.length).slice(0, 40);
 const wEx = generateWorkout({
@@ -1081,6 +1227,128 @@ let frozenChecked = 0;
   if (Object.keys(BLOCK_MAKERS).join() !== 'same,alt,cycle,swap,swapAlt') fail('BLOCK_MAKERS should cover every block helper');
 }
 
+// ------------------------------------------------------------- swaps
+// A move swapped (SWAPS in js/workouts.js, swapCandidates in
+// js/generator.js), for every move of every block of a sweep of builds,
+// for one person and for both. What's offered suits the gear and the
+// leave-outs, is new to the block (never the same move at another
+// weight), comes in threes at most, the same each time, and never needs
+// gear the other person could be holding at that moment, with them in
+// either spot. Swapped in, it changes that person's moves where the block
+// had the move, and nothing else: not the other person's, not another
+// round. And swaps from storage or a link come back checked.
+let swapsChecked = 0, swapsOffered = 0, swapsNone = 0;
+{
+  const keys = { a: 'wayne', b: 'dave' }, swappedRound = { a: 'dave', b: 'wayne' };
+  // every round of a block for two people, with each spot's swaps in
+  const rounds = (block, w, bi, k, iv) => {
+    const maps = swapMaps(w, bi, k);
+    const ctx = (m) => ({ ...ctxFor(iv), hasEquip: () => true, swaps: m });
+    if (INTERVALS[iv].lap) {
+      const lapA = amrapCircuits(block, ctx(maps.a), true).a, lapB = amrapCircuits(block, ctx(maps.b), true, ctx(maps.a)).b;
+      return [{ a: lapA.map(x => x.id).join(','), b: lapB.map(x => x.id).join(','), lapA, lapB }];
+    }
+    const out = [];
+    for (let r = 1; r <= INTERVALS[iv].rounds; r++) out.push({ a: block.duo(r, ctx(maps.a)).a.id, b: block.duo(r, ctx(maps.b)).b.id });
+    return out;
+  };
+  const sweep = (where, w, iv, goal, equipment, excluded, blockedTags) => {
+        w.blocks.forEach((block, bi) => block.ids.forEach(from => [null, 'a', 'b'].forEach(who => {
+          const label = `swap [${where}] block ${bi + 1} ${from} for ${who || 'both'}`;
+          const opts = { equipment, excluded, blockedTags, recent: [], surf: goal === 'surf', lap: !!INTERVALS[iv].lap, who, swaps: { a: {}, b: {} } };
+          const got = swapCandidates(block, from, opts);
+          swapsChecked++;
+          swapsOffered += got.length;
+          if (!got.length) swapsNone++;
+          if (got.length > 3 || new Set(got).size !== got.length) fail(`${label}: offers ${got.join(', ')}`);
+          if (swapCandidates(block, from, opts).join() !== got.join()) fail(`${label}: offers something else the second time`);
+          const before = rounds(block, w, bi, keys, iv);
+          got.forEach(to => {
+            const ex = EXERCISES[to];
+            if (!ex) { fail(`${label}: offers unknown ${to}`); return; }
+            if (!ex.equipment.every(e => equipment[e] !== false)) fail(`${label}: offers ${to}, which needs gear that's off`);
+            if (excluded.includes(to) || ex.tags.some(t => blockedTags.includes(t))) fail(`${label}: offers ${to}, which is left out`);
+            if (block.ids.includes(to) || block.ids.some(id => EXERCISES[id].img === ex.img)) fail(`${label}: offers ${to}, already in the block`);
+            if (swapCandidates(block, from, { ...opts, only: to }).join() !== to) fail(`${label}: ${to} isn't safe when asked on its own`);
+            const sw = { ...w, swaps: [{ block: bi, from, to, ...(who ? { who: keys[who] } : {}) }] };
+            const slot = block.shape === 'swap' ? block.ids : [from];
+            // with them either way round, nobody's holding the other one's gear
+            [keys, swappedRound].forEach(k => rounds(block, sw, bi, k, iv).forEach((x, r) => {
+              if (x.lapA) {
+                x.lapA.forEach(m => x.lapB.forEach(n => { if (sharesSingle(m.id, n.id)) fail(`${label} -> ${to}: the laps share gear: ${m.id} + ${n.id}`); }));
+              } else if (sharesSingle(x.a, x.b)) fail(`${label} -> ${to}: round ${r + 1} has ${x.a} + ${x.b} at once`);
+            }));
+            // only the person who swapped, only where the move was
+            const after = rounds(block, sw, bi, keys, iv);
+            after.forEach((x, r) => ['a', 'b'].forEach(k => {
+              const mine = !who || who === k;
+              if (x.lapA) {
+                // a lap: the one who swapped has it (A's as it is, a mate's
+                // too when it was only theirs), the other's lap is as it was
+                // or better, never a move sent to bodyweight that wasn't
+                const lap = k === 'a' ? x.lapA : x.lapB, was = k === 'a' ? before[r].lapA : before[r].lapB;
+                if (mine && (k === 'a' || who === 'b') && !lap.some(m => m.id === to)) fail(`${label} -> ${to}: ${k}'s lap hasn't got it: ${x[k]}`);
+                if (!mine && k === 'b' && lap.some(m => m.adapted && was.some(n => n.base === m.base && !n.adapted))) fail(`${label} -> ${to}: sent a move of b's lap to bodyweight: ${x.b}`);
+                if (!mine && k === 'a' && x.a !== before[r].a) fail(`${label} -> ${to}: changed a's lap too`);
+                return;
+              }
+              const changed = x[k] !== before[r][k];
+              const due = mine && slot.includes(before[r][k]);
+              if (changed !== due || (due && x[k] !== to)) fail(`${label} -> ${to}: round ${r + 1} gives ${k} ${x[k]}, was ${before[r][k]}`);
+            }));
+          });
+        })));
+  };
+  const cases = [['full kit', ALL_EQUIP], ['no kettlebells', noKb], ['bodyweight only', bodyOnly]];
+  for (const [equipLabel, equipment] of cases) {
+    for (const seed of [3, 77, 1201, 9001]) {
+      for (const [iv, goal] of [['short', undefined], ['long', 'surf'], ['amrap', undefined], ['emom', undefined]]) {
+        const blockedTags = seed === 77 ? ['impact'] : [];
+        const excluded = seed === 1201 ? ['pushup', 'airSquat', 'plankHold'] : [];
+        const w = generateWorkout({ minutes: 30, people: 2, intervalId: iv, goal, regions: REGION_IDS, equipment, excluded, blockedTags, seed, recent: [] });
+        if (!w.error) sweep(`${equipLabel} | seed ${seed} | ${iv}${goal ? ' surf' : ''}`, w, iv, goal, equipment, excluded, blockedTags);
+      }
+    }
+  }
+  // and the classics, which run in whatever style is picked
+  CLASSICS.forEach(w => ['short', 'fortime'].forEach(iv => sweep(`${w.id} | ${iv}`, w, iv, undefined, ALL_EQUIP, [], [])));
+  if (swapsOffered < swapsChecked) fail(`swaps: offered only ${swapsOffered} moves over ${swapsChecked} asks`);
+  // a swap for one person over one for both, a two-weight block's pair
+  // swapped as one, and a swap for both you put back for one of you
+  const pairBlock = A.blockSwap('Goblet squats', 'gobletSquat15', 'gobletSquat10');
+  const sw = { blocks: [pairBlock, blockCycle('t', ['crunch', 'flutterKicks', 'reverseCrunch', 'tuckUp'])],
+               swaps: [{ block: 0, from: 'gobletSquat10', to: 'airSquat' }, { block: 0, from: 'gobletSquat15', to: 'tempoSquat', who: 'dave' },
+                       { block: 1, from: 'crunch', to: 'deadBug', who: 'wayne' }, { block: 1, from: 'tuckUp', to: 'vUp', who: 'nobody' }] };
+  const m0 = swapMaps(sw, 0, { a: 'wayne', b: 'dave' }), m1 = swapMaps(sw, 1, { a: 'dave', b: 'wayne' });
+  if (JSON.stringify(m0) !== '{"a":{"gobletSquat15":"airSquat","gobletSquat10":"airSquat"},"b":{"gobletSquat15":"tempoSquat","gobletSquat10":"tempoSquat"}}') {
+    fail(`swapMaps: a swap for both, then one person's over it, a pair as one: ${JSON.stringify(m0)}`);
+  }
+  if (JSON.stringify(m1) !== '{"a":{},"b":{"crunch":"deadBug"}}') fail(`swapMaps: a person's swap goes with their name: ${JSON.stringify(m1)}`);
+  // checked as they come back: junk dropped, what's left as it was
+  const junk = [null, 'x', { block: 0, from: 'crunch', to: 'crunch' }, { block: -1, from: 'crunch', to: 'deadBug' },
+                { block: 1.5, from: 'crunch', to: 'deadBug' }, { block: 1, from: 'noSuchMove', to: 'deadBug' },
+                { block: 1, from: 'crunch', to: 'noSuchMove' }, { block: 1, from: 'crunch', to: 'deadBug', who: '' },
+                { block: 1, from: 'crunch', to: 'deadBug', who: 'x'.repeat(31) }, { block: 1, from: 'crunch', to: 'deadBug', who: 7 },
+                { block: 1, from: 'crunch', to: 'deadBug', who: 'wayne', extra: 'gone' }, { block: 0, from: 'crunch', to: 'deadBug' },
+                { block: 5, from: 'crunch', to: 'deadBug' }];
+  const kept = cleanSwaps(JSON.parse(JSON.stringify(junk)), sw);
+  if (JSON.stringify(kept) !== '[{"block":1,"from":"crunch","to":"deadBug","who":"wayne"}]') fail(`cleanSwaps kept ${JSON.stringify(kept)}`);
+  if (cleanSwaps(junk).length !== 3 || cleanSwaps('nope').length || cleanSwaps(Array(80).fill({ block: 0, from: 'crunch', to: 'tuckUp' })).length !== 60) {
+    fail('cleanSwaps: without a workout, only the shape is checked, sixty at most');
+  }
+  // the spare bells: a mate's lap takes another bell where there's one
+  // (ctx.spare), rather than its bodyweight version, and with none spare
+  // goes to bodyweight as before
+  const lap = blockAlt('t', 'kbSwing15', 'kbPress10');
+  const base = { ...ctxFor('amrap'), loads: { kb15: '24kg', kb10: '16kg' } };
+  const spare = amrapCircuits(lap, { ...base, spare: (taken) => (taken.length === 2 ? { kb15: '12kg', kb10: '8kg' } : {}) }, true);
+  const none = amrapCircuits(lap, { ...base, spare: () => ({}) }, true);
+  if (spare.b.map(x => x.display).join(' | ') !== 'Single-arm KB press · 8kg | KB swings · 12kg' || spare.a.map(x => x.display).join(' | ') !== 'KB swings · 24kg | Single-arm KB press · 16kg') {
+    fail(`spare bells: a mate's lap should take the spares: ${spare.a.map(x => x.display).join(' | ')} / ${spare.b.map(x => x.display).join(' | ')}`);
+  }
+  if (none.b.some(x => EXERCISES[x.id].equipment.length)) fail(`spare bells: with none spare, the mate's lap goes bodyweight: ${none.b.map(x => x.id).join()}`);
+}
+
 // ------------------------------------------------------------- report
 const reused = ids.filter(id => EXERCISES[id].equipment.length === 0).length;
 console.log(`exercises          ${ids.length} (${reused} bodyweight)`);
@@ -1090,10 +1358,12 @@ console.log(`mixed sessions     ${mixBuilt} built, ${mixRefused} correctly refus
 console.log(`surf fitness       ${surfBuilt} sessions, surf exercises only, pop-ups and paddling in each`);
 console.log(`programs           ${programDays} program-day builds, every day at every length, leave-outs kept`);
 console.log(`export script      ${exported} exports, every style, lengths match the timer`);
+console.log(`FIT picks          ${picksChecked} picks: the same each time, fit the minutes, build to the second, go round every style`);
 console.log(`generator sweep    ${generated} combinations, ${errored} correctly refused, ${exact} to the second`);
 console.log(`session overlap    ${Math.round(worstOverlap * 100)}% worst case between consecutive`);
 console.log(`frozen favourites  ${frozenChecked} built and frozen, the same run after thawing; the golden one unchanged`);
 console.log(`personal levels    ${levelsChecked} builds with two levels: the same moves, only the reps differ`);
+console.log(`swaps              ${swapsChecked} asks, ${swapsOffered} moves offered (${swapsNone} with none), each safe for two, only the one person's moves changed`);
 console.log(`warm-up, cool-down ${bookendsChecked} sessions: real moves and stretches, to the second, nothing that jumps`);
 console.log(`main blocks        ${sameAsMain ? `${sameAsMain} builds the same as origin/main` : 'not compared (no origin/main here)'}`);
 if (warnings.length) {

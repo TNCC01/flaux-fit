@@ -312,12 +312,20 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 /* pinned to the bottom with Start when the card is taller than its content */
 .today-style { color: var(--muted); font-size: 0.95rem; line-height: 1.4; margin-top: auto; padding-top: 0.5rem; }
 .today-style .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; }
+/* FIT's pick in a sentence, with Choose myself, pinned there in its place
+   with the goal line close under it */
+.today-how { color: var(--muted); font-size: 0.9rem; line-height: 1.4; margin-top: auto; padding-top: 0.5rem; }
+.today-how .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; font-size: inherit; }
+.today-how + .today-style { margin-top: 0; padding-top: 0; }
 .today-go, .today-card .program-go { font-size: 1.3rem; padding: 1.1rem; margin-top: 0.2rem; }
 /* a small phone (375 x 667): a little closer, so Start stays on the first
    screen with a program line, two places and things left out */
 @media (max-height: 700px) {
   .today-card { gap: 0.3rem; }
-  .today-go, .today-card .program-go { padding: 0.9rem; }
+  .today-go, .today-card .program-go { padding: 0.75rem; }
+  .today-top { padding-bottom: 0.35rem; margin-bottom: 0; }
+  .today-how { font-size: 0.85rem; line-height: 1.35; padding-top: 0.25rem; }
+  .today-how + .today-style { margin-top: -0.15rem; }
 }
 
 /* ============== Pickers ============== */
@@ -392,6 +400,9 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .interval-name { font-size: 1.15rem; font-weight: 800; }
 .interval-sub { color: var(--teal-bright); font-weight: 700; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
 .interval-blurb { color: var(--muted); font-size: 0.9rem; line-height: 1.35; font-weight: 500; }
+/* FIT picks, and Choose myself under it, across the whole row */
+.interval-card.fit-picks, .styles-toggle { grid-column: 1 / -1; }
+.interval-grid .styles-toggle { justify-self: start; min-height: 44px; padding: 0 0.2rem; margin: -0.2rem 0; }
 
 /* ============== Body map ============== */
 .bodymap-wrap { display: flex; justify-content: center; padding: 0.35rem 0 0.85rem; }
@@ -619,6 +630,18 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .people-badge {
   color: var(--muted); font-size: 0.85rem; background: var(--card);
   padding: 0.4rem 0.7rem; border-radius: 0.75rem; font-weight: 700; white-space: nowrap;
+  border: 2px solid transparent; box-shadow: none; flex-shrink: 0;
+}
+.people-badge:disabled { cursor: default; }
+.people-badge:disabled:active { transform: none; box-shadow: none; }
+/* before Start it's a button: 1 person or 2 */
+.people-badge.can-flip { color: var(--text); border-color: var(--border); padding: 0.5rem 0.75rem; }
+.people-badge.can-flip::after { content: ' · ' attr(data-flip); color: var(--teal-bright); }
+.people-badge.can-flip:active { transform: scale(0.97); border-color: var(--teal); box-shadow: none; }
+/* on a phone upright, what a tap does goes under it, leaving the name room */
+@media (max-width: 700px) {
+  .people-badge.can-flip { text-align: center; line-height: 1.2; padding: 0.3rem 0.65rem; }
+  .people-badge.can-flip::after { content: attr(data-flip); display: block; font-size: 0.78rem; }
 }
 
 /* back after a while with the clock running: go back, or carry on (AWAY in js/app.js) */
@@ -695,6 +718,13 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
   padding: 1.1rem 1.2rem; border: 2px solid var(--border);
   display: flex; flex-direction: column; min-height: 120px;
 }
+/* Swap, top right of the card, in a rest or while paused */
+.person { position: relative; }
+.swap-btn {
+  position: absolute; top: 0.55rem; right: 0.6rem; z-index: 1;
+  padding: 0.45rem 0.8rem; min-height: 2.5rem; border-radius: 999px; font-size: 0.95rem; font-weight: 800;
+}
+.swap-btn[hidden] { display: none; }
 .person.a { border-top: 6px solid var(--accent); }
 .person.b { border-top: 6px solid var(--accent-b); }
 .person-label {
@@ -751,6 +781,18 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .count-now { flex: 1; display: flex; flex-direction: column; align-items: center; font-weight: 700; color: var(--muted); }
 .count-now b { font-size: 2.2rem; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
 .count-now span { font-size: 0.8rem; margin-top: 0.15rem; }
+/* a Surf check: how many (one fewer, one or five more), or Done in a hold */
+.check-count .count-more { padding: 0 1rem; }
+.check-count .count-now { text-align: center; }
+.check-count .check-done { flex: 1 1 auto; }
+/* on the finish screen, each test: its name, the count or time, and against last time */
+.check-result { display: grid; gap: 0.1rem; }
+.check-result + .check-result { border-top: 1px solid var(--border); padding-top: 0.45rem; }
+.check-label { font-size: 0.8rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.check-result .round-counter { margin: 0.15rem 0; }
+.check-time { flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 0.4rem; }
+.check-change { color: var(--teal-bright); font-size: 0.92rem; font-weight: 700; line-height: 1.35; }
+.check-change:empty { display: none; }
 .card-score { color: var(--teal-bright); font-weight: 700; font-size: 0.9rem; margin-top: 0.35rem; }
 .card-feel { color: var(--muted); font-weight: 600; font-size: 0.9rem; margin-top: 0.25rem; }
 /* a person's level moved this target: "+1 rep: you said too easy" */
@@ -854,6 +896,26 @@ body.hide-photos .ex-anim { display: none; }
 .next-text span { color: var(--muted); font-size: 0.86rem; line-height: 1.35; }
 .next-text .next-rounds { color: var(--teal-bright); font-weight: 700; font-size: 0.8rem; }
 .next-hint { color: var(--muted); font-size: 0.85rem; margin: 14px 0 0; }
+/* swap a move: the same sheet, a list of up to three, and the leave-out tick */
+.swap-sheet .next-sheet-inner { max-width: 640px; }
+.swap-for { margin: 0 0 12px; font-size: 1rem; line-height: 1.4; color: var(--text); }
+.swap-list { display: grid; gap: 10px; }
+.swap-none { color: var(--muted); line-height: 1.45; margin: 0; }
+.swap-sheet .swap-tap { margin-top: 10px; }
+.swap-back { display: block; margin-top: 6px; }
+.swap-back[hidden] { display: none; }
+.swap-leave { display: flex; margin-top: 16px; font-size: 1rem; font-weight: 700; }
+.swap-leave + .next-hint { margin-top: 6px; }
+/* a phone on its side: the three side by side, so they're all on screen */
+@media (orientation: landscape) and (max-height: 500px) {
+  .swap-sheet .next-sheet-inner { max-width: 960px; padding-top: 12px; }
+  .swap-sheet .next-head { margin-bottom: 6px; }
+  .swap-for { margin-bottom: 8px; font-size: 0.95rem; }
+  .swap-list { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; }
+  .swap-card { grid-template-columns: 1fr; align-items: start; gap: 6px; }
+  .swap-card .next-thumb { aspect-ratio: auto; height: 96px; }
+  .swap-sheet .swap-tap, .swap-leave { margin-top: 8px; }
+}
 
 /* the 3D movement viewer over the workout */
 .move-sheet {
@@ -944,6 +1006,17 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .preview-list { list-style: none; display: flex; flex-direction: column; gap: 0.65rem; }
 .preview-item-name { font-weight: 700; font-size: 1rem; line-height: 1.3; }
 .preview-item-sub { color: var(--muted); font-size: 0.9rem; line-height: 1.4; margin-top: 0.1rem; }
+/* a block's moves, each a tap to swap it (SWAP A MOVE in js/app.js) */
+.preview-hint { color: var(--muted); font-size: 0.9rem; line-height: 1.4; margin: -0.3rem 0 0.7rem; }
+.preview-hint[hidden] { display: none; }
+.preview-moves { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.preview-move {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); box-shadow: none;
+  border-radius: 999px; padding: 0.4rem 0.75rem; min-height: 2.4rem;
+  font-size: 0.92rem; font-weight: 600; line-height: 1.25; text-align: left;
+}
+.preview-move::after { content: ' ⇄'; color: var(--teal-bright); font-weight: 800; }
+.preview-move:active { transform: scale(0.97); border-color: var(--teal); background: var(--card-hi); box-shadow: none; }
 
 .toggle-row {
   display: flex; justify-content: space-around; gap: 1rem;
@@ -954,6 +1027,31 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .toggle input { width: 1.25rem; height: 1.25rem; cursor: pointer; accent-color: var(--accent); }
 .toggle[hidden] { display: none; }
 .toggle-hint { flex-basis: 100%; color: var(--muted); font-size: 0.85rem; line-height: 1.4; text-align: center; }
+.toggle-hint[hidden] { display: none; }
+/* The sound: its own row across the top of the settings, the choice, the
+   voice switch, and what the choice means */
+.sound-box {
+  flex-basis: 100%; display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+  padding-bottom: 0.8rem; border-bottom: 1px solid var(--border);
+}
+.sound-box:focus:not(:focus-visible) { outline: none; }
+.sound-title {
+  font-size: 0.8rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.12em; font-weight: 700;
+}
+.sound-picker { justify-content: center; }
+.sound-chip { font-size: 0.95rem; padding: 0.55rem 0.9rem; text-align: center; }
+/* a phone upright: one under another, the same width, so they read as a list */
+@media (max-width: 520px) {
+  .sound-picker { flex-direction: column; align-self: stretch; margin: 0 auto; width: min(100%, 20rem); }
+}
+.sound-box .toggle-hint { max-width: 32rem; }
+.toggle.off { opacity: 0.45; cursor: default; }
+.toggle input:disabled { cursor: default; }
+/* before Start only */
+.sound-line { color: var(--muted); font-size: 0.92rem; line-height: 1.4; text-align: center; }
+.sound-line .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; font-size: inherit; }
+.pre-start.underway .sound-line, #workoutView.finished .sound-line { display: none; }
 .text-size { gap: 0.35rem; color: var(--muted); font-weight: 600; }
 .text-size .mini-btn { padding: 0.3rem 0.6rem; line-height: 1; }
 .text-size .mini-btn:nth-of-type(1) { font-size: 0.85rem; }
@@ -1050,17 +1148,29 @@ body.show-alternatives .alternative.has-alt { display: block; }
   .round-counter { margin: 0.2rem 0 0.3rem; flex-wrap: wrap; gap: 0.4rem 0.5rem; }
   .round-counter button { min-height: 2.8rem; }
   .round-counter .count-more { flex: 1 0 auto; }
+  /* the count beside its −, clear of Swap at the top right */
+  .round-counter:not(.check-count) .count-now { align-items: flex-start; }
+  /* a Surf check count: the number and its words on one line, the buttons
+     in a row under it, so nothing breaks over three lines */
+  .check-count .count-now {
+    flex: 1 0 100%; order: -1; flex-direction: row; flex-wrap: wrap; justify-content: center;
+    align-items: baseline; column-gap: 0.4rem; white-space: nowrap;
+  }
+  .check-count .count-now span { margin-top: 0; }
+  .check-count .count-less, .check-count .count-more { flex: 1 0 0; width: auto; padding: 0 0.4rem; }
   .ex-anim, .exercise-grid:not(.solo) .ex-anim {
     flex: 1 1 0; aspect-ratio: auto; max-height: none; min-height: 4.5rem; margin-top: 0.5rem;
   }
   /* the question after time away is taller than the top bar it covers,
-     so an EMOM's hint makes way for it, as it does for where Resume picked
-     up, which leaves its "Tap Resume" to the button under it */
-  #workoutView.asking-away .round-hint, #workoutView.going-noted .round-hint, .going-tap { display: none; }
+     so the line on how a style works makes way for it, as it does for
+     where Resume picked up, which leaves its "Tap Resume" to the button
+     under it */
+  #workoutView.asking-away .round-hint, #workoutView.going-noted .round-hint,
+  #workoutView.asking-away .round-how, #workoutView.going-noted .round-how, .going-tap { display: none; }
   .going-note { font-size: 0.85rem; line-height: 1.3; }
 }
-/* a small phone on its side (375 tall): a little closer again, so an
-   EMOM's two-line hint still leaves the buttons under the timer */
+/* a small phone on its side (375 tall): a little closer again, so the
+   two-line how-to of a style still leaves the buttons under the timer */
 @media (orientation: landscape) and (max-height: 380px) {
   #workoutView > .block-info { padding: 0.4rem 0.7rem; gap: 0.25rem; }
   .round-hint { font-size: 0.8rem; line-height: 1.25; }
@@ -1111,6 +1221,51 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .program-rhythm li { color: var(--muted); font-size: 0.9rem; line-height: 1.35; }
 .program-rhythm b { color: var(--text); }
 .program-foot { padding: 0 0.2rem; }
+/* how the paddle-outs have gone, under the week strip */
+.paddle-felt { color: var(--muted); font-size: 0.92rem; }
+/* back after time off: the line under Start */
+.ease-line { color: var(--text); font-size: 0.92rem; }
+/* a surf logged today: Undo, and how the paddle-out felt */
+.surf-log { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+.surf-head { font-weight: 700; font-size: 0.95rem; }
+.surf-head .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; font-size: inherit; }
+.program-card .surf-log .picker-label { margin-top: 0.45rem; }
+/* on a paddle day, the flat-day paddles, closed until asked for */
+.water-alt { margin-top: 0.6rem; border-top: 1px solid var(--border); }
+.water-alt summary {
+  cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 0.4rem;
+  color: var(--teal-bright); font-weight: 700; font-size: 0.95rem; list-style: none;
+}
+.water-alt summary::-webkit-details-marker { display: none; }
+.water-alt summary::before { content: '▸'; display: inline-block; width: 0.8em; }
+.water-alt[open] summary::before { content: '▾'; }
+.water-alt > .program-hint { margin-top: 0; }
+.water-safety { margin-top: 0.5rem; padding: 0.5rem 0.65rem; border-left: 3px solid var(--accent-b); background: var(--card-hi);
+  border-radius: 0.4rem; font-size: 0.88rem; line-height: 1.4; }
+.water-session { margin-top: 0.75rem; }
+.water-name { font-weight: 800; }
+.water-name span { color: var(--muted); font-weight: 600; font-size: 0.85rem; margin-left: 0.3rem; }
+.water-session ol { margin: 0.3rem 0 0; padding-left: 1.3rem; display: grid; gap: 0.2rem; color: var(--muted); font-size: 0.92rem; line-height: 1.35; }
+.water-session button { width: 100%; padding: 0.7rem; }
+/* a Surf check day: Not today, and the way back to it */
+.check-later { font-size: 0.9rem; }
+.program-card .check-names { margin-top: 0.2rem; }
+/* each person's Surf check results, a line a test, oldest first */
+.check-results { display: grid; gap: 0.7rem; }
+.check-person { display: grid; gap: 0.15rem; }
+.check-who { font-size: 1rem; }
+.check-who span { color: var(--muted); font-size: 0.85rem; font-weight: 600; margin-left: 0.3rem; }
+.check-line { color: var(--muted); font-size: 0.95rem; line-height: 1.35; }
+.check-line b { color: var(--text); font-variant-numeric: tabular-nums; }
+.check-earlier { border-top: 1px solid var(--border); }
+.check-earlier summary {
+  cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 0.4rem;
+  color: var(--teal-bright); font-weight: 700; font-size: 0.95rem; list-style: none;
+}
+.check-earlier summary::-webkit-details-marker { display: none; }
+.check-earlier summary::before { content: '▸'; display: inline-block; width: 0.8em; }
+.check-earlier[open] summary::before { content: '▾'; }
+.check-earlier .check-person { margin-bottom: 0.5rem; }
 
 
 /* ============== One setup screen: More options ============== */

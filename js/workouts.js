@@ -24,7 +24,7 @@
 
 // Which release this file is from, sw.js's VERSION: js/app.js won't run
 // beside a file from another one (see the check at its top).
-const WORKOUTS_RELEASE = 'fit-v14';
+const WORKOUTS_RELEASE = 'fit-v21';
 
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',
@@ -48,6 +48,19 @@ const DEFAULT_INTERVAL = 'short';
 // Every block is this long whichever interval you pick.
 const blockSeconds = (iv) => iv.rounds * (iv.workSec + iv.restSec);
 const ownKey = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+
+// How a style works, in one plain sentence: under FIT's pick at home and
+// in setup, and on the timer the first time a session runs the style. iv
+// is the interval as it runs (a program week's split, see withWorkRest,
+// or a mix's section, see sectionInterval), so the numbers are the real
+// ones.
+function styleHow(iv) {
+  const min = Math.round(iv.workSec / 60), mins = `${min} minute${min === 1 ? '' : 's'}`;
+  if (iv.forTime) return `Race through the rounds, tapping +1 after each, in ${mins} at most.`;
+  if (iv.amrap) return `As many rounds as you can in ${mins}, tapping +1 after each.`;
+  if (iv.reps) return 'Do the reps, then rest till the next minute.';
+  return `${iv.id === 'long' ? 'Work steady' : 'Go hard'} for ${iv.workSec}s, rest ${iv.restSec}s, ${iv.rounds} rounds a block.`;
+}
 
 // A program week can run a timed style at its own split of the same block
 // (Surf Fit's long efforts go from 30s on, 30s off to 45s on, 15s off).
@@ -76,11 +89,13 @@ function cleanWorkRest(x) {
 
 // ---------------------------------------------------------------------
 // EXERCISE RESOLUTION
-// ctx = { rounds, workSec, restSec, reps, lap, repScale, level, hasEquip },
-// where hasEquip(id) => bool, reps is true for the styles that count reps
-// rather than seconds (EMOM, AMRAP, For Time), lap for the two that work
-// through the block as one list (AMRAP, For Time), repScale a program's
-// build-up and level the person's own (see PERSONAL LEVELS)
+// ctx = { rounds, workSec, restSec, reps, lap, repScale, level, hasEquip,
+// swaps, spare }, where hasEquip(id) => bool, reps is true for the styles
+// that count reps rather than seconds (EMOM, AMRAP, For Time), lap for the
+// two that work through the block as one list (AMRAP, For Time), repScale
+// a program's build-up, level the person's own (see PERSONAL LEVELS),
+// swaps the moves this person has swapped in this block (see SWAPS) and
+// spare the bells a mate can take in a lap (see amrapCircuits)
 // ---------------------------------------------------------------------
 
 // Walk bw fallbacks until everything the exercise needs is on hand.
@@ -182,7 +197,7 @@ function loadFor(ex, ctx) {
 // Build what the workout screen actually shows: a short bold name plus a
 // coaching cue whose timings match the interval in play.
 function describeEx(id, ctx) {
-  const ex = resolveEx(id, ctx);
+  const ex = resolveEx(swappedFor(id, ctx), ctx);
   const emom = !!(ctx && ctx.reps);
   // the program's build-up, then the person's own level on top
   const base = ctx && ctx.lap ? amrapTarget(ex.emom) : ex.emom;
@@ -204,7 +219,9 @@ function describeEx(id, ctx) {
   // the cue, so a pair sharing a movement at two weights can tell at a
   // glance which one is theirs.
   const load = loadFor(ex, ctx);
-  return { id: ex.id, name: ex.name, load, cue, reps: emom ? repsLabel(target) : '',
+  // `base` is the block's own id this stands for, before any swap or
+  // fallback: what a swap from this card replaces
+  return { id: ex.id, base: id, name: ex.name, load, cue, reps: emom ? repsLabel(target) : '',
            more: emom && level !== 1 ? targetDiff(target, plain) : '',
            display: load ? `${ex.name} · ${load}` : ex.name,
            alt: ex.alt || '', img: ex.img || null, adapted: ex.adapted };
@@ -249,6 +266,52 @@ function cleanRepScales(x) {
     if (key && key.length <= 30 && key !== '__proto__' && k >= LEVEL_MIN && k <= LEVEL_MAX && k !== 1) out[key] = k;
   });
   return Object.keys(out).length ? out : undefined;
+}
+
+// ---------------------------------------------------------------------
+// SWAPS
+// A move someone can't or won't do can be swapped for one like it: before
+// Start, in a rest or while paused, for the rest of the session. The
+// workout keeps them beside what it was built as, so a favourite, the
+// session in history, a link and a session picked up again all have them:
+// w.swaps = [{ block, from, to, who }], `from` one of that block's ids and
+// `who` the person's name (or their spot, '#a', with no name, as for the
+// levels), or left out for both of you. Each person's context then carries
+// their own for the block (ctx.swaps, { from: to }), and the block hands
+// them `to` wherever it would hand them `from`. So the rounds and the
+// clock stay as built, and with two people a swap changes only that
+// person's moves. A two-weight block's ids are one movement at two loads,
+// so a swap takes both. What's safe to swap in: swapCandidates, in
+// js/generator.js.
+// ---------------------------------------------------------------------
+const SWAPS_MOST = 60;
+function swappedFor(id, ctx) {
+  return ctx && ctx.swaps && ownKey(ctx.swaps, id) ? ctx.swaps[id] : id;
+}
+// Swaps from a favourite, history, a link or a saved session, checked:
+// known moves, someone or nobody, and with a workout, a move that's in
+// that block. Anything else is dropped, so the move stays as built.
+function cleanSwaps(x, w) {
+  if (!Array.isArray(x)) return [];
+  const plain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  return x.slice(0, SWAPS_MOST).filter(s => plain(s) && Number.isInteger(s.block) && s.block >= 0
+      && ownKey(EXERCISES, s.from) && ownKey(EXERCISES, s.to) && s.to !== s.from
+      && (s.who === undefined || (typeof s.who === 'string' && s.who.length > 0 && s.who.length <= 30))
+      && (!w || (Array.isArray(w.blocks) && !!w.blocks[s.block] && w.blocks[s.block].ids.includes(s.from))))
+    .map(s => ({ block: s.block, from: s.from, to: s.to, ...(s.who !== undefined ? { who: s.who } : {}) }));
+}
+// Each spot's swaps in one block, { a: { from: to }, b: { ... } }, for
+// whoever is in each spot now (keys: { a, b }, as levelKey in js/app.js
+// says): the swaps for both of you first, then each person's own over them.
+function swapMaps(w, blockIdx, keys) {
+  const maps = { a: {}, b: {} };
+  const block = w && Array.isArray(w.blocks) && w.blocks[blockIdx];
+  if (!block || !Array.isArray(w.swaps)) return maps;
+  const put = (m, s) => (block.shape === 'swap' ? block.ids : [s.from]).forEach(id => { m[id] = s.to; });
+  const here = w.swaps.filter(s => s.block === blockIdx && block.ids.includes(s.from));
+  here.filter(s => !s.who).forEach(s => { put(maps.a, s); put(maps.b, s); });
+  ['a', 'b'].forEach(k => here.filter(s => s.who && s.who === keys[k]).forEach(s => put(maps[k], s)));
+  return maps;
 }
 
 // ---------------------------------------------------------------------
@@ -332,30 +395,38 @@ function blockSwapAlternating(name, heavyId, lightId) {
 // AMRAP: each person laps the block's exercises at their own pace, so the
 // two of them are never in step and a shared bell could be wanted by both
 // at once. B starts one exercise along, and anything in B's lap that needs
-// single-instance gear A's lap uses goes to its bodyweight version. A swap
-// block's two ids are one movement at two weights: A takes the first, B
-// the second.
+// single-instance gear A's lap uses takes another bell you've got where
+// there is one (ctx.spare(roles) gives B's load for each kettlebell role
+// it can fill, see spareLoads in js/app.js), or goes to its bodyweight
+// version. A swap block's two ids are one movement at two weights: A takes
+// the first, B the second. ctx is the context of the lap wanted (B's for
+// B's), and ctxA A's, for the gear A's lap holds, each person's swaps in.
+// bOf has B's move for each of the block's ids it stands for (two can fall
+// back to the same move, which B's lap has once), for the preview.
 // For Time: laps to finish, so the work lands around three quarters of the
 // cap for most people (three minutes of a four-minute cap), leaving the rest
 // to recover. A longer cap in a mix gets proportionally more laps.
 const forTimeRounds = (lapLength, capSec = 240) =>
   Math.max(2, Math.round((lapLength >= 3 ? 3 : lapLength === 2 ? 4 : 5) * capSec / 240));
 
-function amrapCircuits(block, ctx, duo) {
+function amrapCircuits(block, ctx, duo, ctxA = ctx) {
   const swap = block.shape === 'swap';
   const ids = swap ? [block.ids[0]] : block.ids;
-  const a = ids.map(id => describeEx(id, ctx));
+  const a = ids.map(id => describeEx(id, ctxA));
   if (!duo) return { a, b: null };
   const aGear = new Set(a.flatMap(ex => EXERCISES[ex.id].equipment).filter(g => SINGLE_INSTANCE.includes(g)));
   const has = (ctx && ctx.hasEquip) || (() => true);
-  const bCtx = { ...ctx, hasEquip: (g) => !aGear.has(g) && has(g) };
+  const spare = (ctx && ctx.spare && ctx.spare([...aGear])) || {};
+  const bCtx = { ...ctx, hasEquip: (g) => (ownKey(spare, g) || !aGear.has(g)) && has(g) };
+  if (Object.keys(spare).length) bCtx.loads = { ...(ctx && ctx.loads), ...spare };
   const bIds = swap ? [block.ids[1]] : [...ids.slice(1), ids[0]];
-  const b = [];
+  const b = [], bOf = {};
   for (const id of bIds) {
     const ex = describeEx(id, bCtx);
+    bOf[id] = ex;
     if (!b.some(x => x.id === ex.id)) b.push(ex);   // two bells can fall back to the same move
   }
-  return { a, b };
+  return { a, b, bOf };
 }
 
 // ---------------------------------------------------------------------
@@ -930,14 +1001,95 @@ function cooldownCard(id) {
 }
 
 // ---------------------------------------------------------------------
+// FLAT-DAY PADDLES
+// On a paddle day by the water with no waves, a paddle on your board can
+// take the land session's place. Each is three short lines you can keep in
+// your head, counted in strokes rather than seconds, so it needs no phone
+// or watch.
+// ---------------------------------------------------------------------
+const WATER_SESSIONS = [
+  { id: 'paddle-engine', name: 'Paddle engine', about: 'about 20 min',
+    lines: ['Paddle easy for 5 minutes.', '8 times: 30 hard strokes, then 90 seconds easy.', 'Paddle in easy.'] },
+  { id: 'sprint-paddles', name: 'Sprint paddles', about: 'about 15 min',
+    lines: ['Paddle easy for 5 minutes.', '10 times: 10 flat-out strokes, then sit up and get your breath.', 'Paddle in easy.'] },
+  { id: 'long-paddle', name: 'Long paddle', about: 'about 25 min',
+    lines: ['Paddle easy for 5 minutes.', '10 minutes along the beach at a pace you could hold all day.', 'Turn round and paddle the same back.'] }
+];
+const WATER_IDS = WATER_SESSIONS.map(w => w.id);
+const WATER_SAFETY = 'Paddle with a mate, stay inside the break or on flat water, and come in if you feel dizzy or sick.';
+
+// ---------------------------------------------------------------------
+// SURF CHECK
+// Every two weeks a program can swap a day's session for three short
+// tests of what a surfer coming back wants better: getting to your feet,
+// pushing up off the board, and paddling. Each has one way of doing it,
+// said before it starts, so the numbers mean the same every time. Pop-ups
+// and push-ups are a minute each, counted by each person in the rest
+// after; the paddle hold is timed, each person tapping Done as their
+// chest touches down (still going at the end, they held it all). About
+// ten minutes with a short warm-up and cool-down. The results are kept
+// for each person (see SURF CHECKS in js/app.js).
+//   station: { id (what the result is kept as), ex, sec (the test, or the
+//              most a hold runs), label, short (in "How many ...?"),
+//              how (on the card), standard, hold, most (the biggest
+//              result kept) }
+// ---------------------------------------------------------------------
+const SURF_CHECK = {
+  id: 'surf-check', name: 'Surf check', format: 'check', focus: 'whole-body',
+  tagline: 'Three quick tests, every two weeks',
+  blurb: 'Pop-ups in a minute, push-ups in a minute and a paddle hold, to see the pop-ups and paddling getting better.',
+  warmupSec: 180, readySec: 20, restSec: 75, cooldownSec: 60,
+  stations: [
+    { id: 'popups', ex: 'popUp', sec: 60, label: 'Pop-ups in a minute', short: 'pop-ups', how: 'As many as you can', most: 200,
+      standard: 'Flat on your belly, up to your feet in your stance, then flat again. Each landing counts. A knee on the way up is fine, every time.' },
+    { id: 'pushups', ex: 'pushup', sec: 60, label: 'Push-ups in a minute', short: 'push-ups', how: 'As many as you can', most: 300,
+      standard: 'Chest to a fist off the floor, arms straight at the top, body in one line. Knees down is fine, every time.' },
+    { id: 'paddle', ex: 'pronePaddle', sec: 180, hold: true, label: 'Paddle hold', short: 'paddle hold', how: 'As long as you can', most: 600,
+      standard: 'On your belly, chest and feet up, steady strokes. Tap Done when your chest touches down.' }
+  ]
+};
+// The seconds a check runs with its hold run to the end, as the timer adds
+// them up: the warm-up, getting ready, the tests with a rest between each
+// (where the counts go in), and the cool-down.
+function checkSeconds(w) {
+  const s = w.stations;
+  return w.warmupSec + w.readySec + s.reduce((t, x) => t + x.sec, 0) + (s.length - 1) * w.restSec + w.cooldownSec;
+}
+// About how long it takes, said before it starts: a hold is usually over
+// well before its end, so it counts at half.
+const checkMinutes = (w) => Math.round((checkSeconds(w) - w.stations.filter(t => t.hold).reduce((x, t) => x + t.sec / 2, 0)) / 60);
+// What the warm-up and cool-down plans (see WARM-UP AND COOL-DOWN) work
+// around: a surf session made of the tests' moves.
+const checkShape = (w) => ({ warmupSec: w.warmupSec, cooldownSec: w.cooldownSec, request: { goal: 'surf' },
+                                blocks: w.stations.map(s => ({ ids: [s.ex] })) });
+// A result against the same person's last: "3 more than last time", "2
+// fewer", "25s longer", "Same as last time", or '' with nothing to go by.
+function checkChange(station, now, before) {
+  if (!(now > 0) || !(before > 0)) return '';
+  const d = Math.abs(now - before);
+  if (!d) return 'Same as last time';
+  if (!station.hold) return `${d} ${now > before ? 'more' : 'fewer'} than last time`;
+  const gap = d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, '0')}`;
+  return `${gap} ${now > before ? 'longer' : 'shorter'} than last time`;
+}
+// Day n (0-based) of a program is a Surf check day.
+const isCheckDay = (prog, n) => Array.isArray(prog.checkDays) && prog.checkDays.includes(n);
+
+// ---------------------------------------------------------------------
 // PROGRAMS
 // A program is a run of daily sessions planned ahead: a week of day
 // templates repeated, with the rep targets building over the weeks. Each
 // day builds through the same generator as everything else, so it fits the
 // time, gear and number of people on the day. Progress moves on when a day
-// is done, not by the calendar, so a missed day waits for you.
+// is done, not by the calendar, so a missed day waits for you. A surf is
+// logged beside the program and doesn't use a day up (see PROGRAMS in
+// js/app.js); a flat-day paddle (water, see WATER_SESSIONS) does, as it's
+// the same work done in the water. On checkDays a Surf check (see
+// SURF_CHECK) is offered in the day's place, and with finalCheck once more
+// after the last day.
 //   day: { name, short (for the week strip), about, style | mix, focus (the surf rhythm to lean on),
-//          minutes (the suggestion) }  or  { name, about, stretch: id }
+//          minutes (the suggestion), water (paddle sessions that can take its place) }
+//     or { name, about, stretch: id }
 // ---------------------------------------------------------------------
 const PROGRAMS = [
   {
@@ -952,8 +1104,11 @@ const PROGRAMS = [
       long:  [[30, 30], [35, 25], [40, 20], [40, 20], [45, 15], [45, 15]],
       short: [[15, 15], [20, 10], [20, 10], [20, 10], [25, 5], [25, 5]]
     },
+    // a Surf check on day 1 of weeks 1, 3 and 5 (each a Paddle power day,
+    // and the check's paddle hold is paddling), and a last one at the end
+    checkDays: [0, 14, 28], finalCheck: true,
     days: [
-      { name: 'Paddle power', short: 'Paddle', style: 'long', focus: 'paddle', minutes: 20,
+      { name: 'Paddle power', short: 'Paddle', style: 'long', focus: 'paddle', minutes: 20, water: WATER_IDS,
         about: 'Long efforts on paddling strength and stamina: rows, swimmers, prone paddling. The muscles that get you out the back.' },
       { name: 'Pop-ups & legs', short: 'Pop-ups', style: 'short', focus: 'popup', minutes: 20,
         about: 'Short, sharp bursts on getting to your feet fast and staying low: pop-ups, jumps, stance work.' },
@@ -961,12 +1116,12 @@ const PROGRAMS = [
         about: 'Hips, upper back, shoulders and ankles. Easy holds, no timer pressure.' },
       { name: 'Engine', short: 'Engine', mix: ['emom', 'amrap'], minutes: 25,
         about: 'An EMOM then an AMRAP finisher. Fitness for a long session and the paddle back out after a set.' },
-      { name: 'Paddle & shoulders', short: 'Paddle', style: 'emom', focus: 'paddle', minutes: 20,
+      { name: 'Paddle & shoulders', short: 'Paddle', style: 'emom', focus: 'paddle', minutes: 20, water: WATER_IDS,
         about: 'Paddling strength with shoulder care built in, every minute on the minute.' },
       { name: 'Pop-ups & turns', short: 'Turns', style: 'fortime', focus: 'popup', minutes: 20,
         about: 'Race the clock through pop-ups, turns and rotation. Fast feet when you\'re tired, like the end of a ride.' },
       { name: 'Easy day', short: 'Easy', stretch: 'cool-mobile',
-        about: 'Recovery and a long stretch. Or go for a surf.' }
+        about: 'Recovery and a long stretch. Good after a surf, too.' }
     ]
   }
 ];
@@ -975,11 +1130,61 @@ const PROGRAMS = [
 function programDay(prog, n) {
   const week = Math.min(prog.weeks, Math.floor(n / prog.days.length) + 1);
   const day = prog.days[n % prog.days.length];
+  return { ...day, n, week, ...weekLoad(prog, day, week) };
+}
+// A day's rep scale and timed splits as they are in a given week.
+function weekLoad(prog, day, week) {
   const ladder = prog.workRest || {};
   const timed = (day.mix || (day.style ? [day.style] : [])).filter(id => ownKey(ladder, id));
   const workRest = timed.length ? Object.fromEntries(timed.map(id => [id, ladder[id][week - 1].slice()])) : undefined;
-  return { ...day, n, week, repScale: prog.repScale[week - 1] || 1, workRest };
+  return { repScale: prog.repScale[week - 1] || 1, workRest };
 }
+
+// Easing back in. After more than EASE_AFTER_DAYS with nothing done (no
+// session, no surf), the next EASE_SESSIONS sessions with reps in them
+// (stretch days don't count) go at an earlier week's reps and timing: one
+// step down the rep ladder after up to three weeks off, two after longer.
+// Where you're up to never moves back, only the load.
+const EASE_AFTER_DAYS = 10;
+const EASE_SESSIONS = 2;
+// { days, steps } for a gap from lastAt (a time, or null for nothing
+// done yet) to now, or null when there's no easing to do.
+function programEase(lastAt, now) {
+  if (typeof lastAt !== 'number') return null;
+  const midnight = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const days = Math.round((midnight(now) - midnight(lastAt)) / 86400000);
+  if (!(days > EASE_AFTER_DAYS)) return null;
+  return { days, steps: days > 20 ? 2 : 1 };
+}
+// The week whose load is `steps` rungs of the rep ladder below this
+// week's, at the first week of that rung (weeks 3 and 4 are both 100%, so
+// a step down from either is week 2's 90%). Week 1 has nowhere to go.
+function easeWeek(prog, week, steps) {
+  const scale = prog.repScale;
+  let w = week;
+  for (let i = 0; i < steps; i++) {
+    let j = w - 1;
+    while (j >= 1 && scale[j - 1] >= scale[w - 1]) j--;
+    if (j < 1) break;
+    while (j > 1 && scale[j - 2] === scale[j - 1]) j--;
+    w = j;
+  }
+  return w;
+}
+// For an easing that began at day `from`, how many of its sessions are
+// left counting day n: EASE_SESSIONS less the days with reps from `from`
+// up to n, or 0 when n is past them (or before it began).
+function easeLeft(prog, from, n) {
+  if (!Number.isInteger(from) || n < from) return 0;
+  let had = 0;
+  for (let i = from; i < n; i++) if (!prog.days[i % prog.days.length].stretch) had++;
+  return Math.max(0, EASE_SESSIONS - had);
+}
+// A day at an earlier week's load (see easeWeek), still the same day.
+function easedDay(prog, day, week) {
+  return { ...day, ...weekLoad(prog, day, week) };
+}
+
 // The style a day runs in at this length: its own, or its mix. A mix that
 // won't fit the minutes runs as its first style on its own, so a short day
 // is still a session rather than a refusal.
@@ -990,3 +1195,49 @@ function programStyle(day, minutes) {
   return { intervalId: day.mix[0], short: true };
 }
 
+
+// ---------------------------------------------------------------------
+// FIT PICKS
+// Left to FIT, a built session's style is picked for you: one that suits
+// the time, and of those the one you've gone longest without, so it
+// changes from one session to the next. A mix counts as each style in it
+// as well, and stretching as none. Nothing random goes into it: the same
+// time, goal and sessions pick the same style, so the style the home card
+// names is the one Start builds. The build keeps it in its request, so a
+// favourite, a link or a session picked up later rebuilds that style,
+// whatever FIT would pick by then.
+//   recent: the styles of your sessions, newest first, each a list:
+//   ['long'], or a mix as ['mix', 'emom', 'short', 'amrap'].
+// Returns { intervalId } or { intervalId: 'mix', mix }.
+// ---------------------------------------------------------------------
+// the order a tie goes in (a first session takes the first): the timed
+// styles first, as they need nothing explained but Go and Rest
+const FIT_PICKS_ORDER = {
+  general: ['short', 'long', 'emom', 'amrap', 'fortime', 'mix'],
+  // Surf Fit's week: paddling, pop-ups, then the rest
+  surf: ['long', 'short', 'emom', 'fortime', 'amrap', 'mix']
+};
+// FIT's own mix: the first one setup offers, or for surfing the Engine day's
+const FIT_PICKS_MIX = { general: ['emom', 'short', 'amrap'], surf: ['emom', 'amrap'] };
+const FIT_PICKS_MIX_FROM = 30;      // minutes: shorter sessions get one style
+const FIT_PICKS_STEADY_FROM = 45;   // minutes: longer ones a steadier style or a mix
+const FIT_PICKS_LOOKBACK = 12;      // sessions
+function fitPicks(minutes, goal, recent) {
+  const kind = goal === 'surf' ? 'surf' : 'general';
+  const mix = FIT_PICKS_MIX[kind];
+  const mixMin = mixMinimumMinutes(mix);
+  // a mix only when there's time for it to be one (and it fits, see
+  // planMix); and three quarters of an hour of short bursts, AMRAPs or
+  // races against the clock is a lot to ask, so a long session doesn't
+  const fits = (id) => (id === 'mix'
+    ? minutes >= FIT_PICKS_MIX_FROM && !!mixMin && minutes >= mixMin
+    : minutes < FIT_PICKS_STEADY_FROM || id === 'long' || id === 'emom');
+  const back = (Array.isArray(recent) ? recent : []).slice(0, FIT_PICKS_LOOKBACK);
+  // how many sessions back each style was last done; never, past the end
+  const ago = (id) => {
+    const i = back.findIndex(r => Array.isArray(r) && r.includes(id));
+    return i < 0 ? back.length : i;
+  };
+  const id = FIT_PICKS_ORDER[kind].filter(fits).reduce((best, x) => (ago(x) > ago(best) ? x : best));
+  return id === 'mix' ? { intervalId: 'mix', mix: mix.slice() } : { intervalId: id };
+}

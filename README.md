@@ -17,7 +17,9 @@ has three cards:
 
 - **Today** (Build a workout): how long you've got and how many of you,
   filled in from last time, where you're training once there's more than
-  one place, a line with the style and goal, and Start. **Change** opens
+  one place, FIT's pick of style with how it works in a sentence ("FIT
+  picks Long efforts: work steady for 40s, rest 20s, 4 rounds a block.")
+  and **Choose myself**, a line with the goal, and Start. **Change** opens
   the full setup: what it's for, how many of you, your gear, how long
   you've got and the style. Target areas and anything you'd rather not do
   sit under **More options**, closed by default, with a line saying what's
@@ -29,8 +31,8 @@ has three cards:
   card says where you're up to ("Surf Fit · week 2 of 6").
 - **Saved & ready-made**: your favourites and recent sessions, the 16 named
   classics, and the stretch routines (the Stretching filter shows just
-  those). A classic runs in the style last picked in setup, and its card
-  says which. At the bottom, **Your data**: back it up, or move it to
+  those). A classic runs in the style last chosen in setup (Short bursts
+  until you choose one), never FIT's pick, and its card says which. At the bottom, **Your data**: back it up, or move it to
   another device or into the home-screen app.
 
 Built workouts are **generated on the spot** rather than
@@ -44,6 +46,29 @@ testing, back-to-back 30-minute sessions share under a quarter of their
 movements.
 
 ## Workout styles
+
+**FIT picks** the style unless you choose one (`fitPicks` in
+`js/workouts.js`). It goes by the time and the sessions in history: of
+the styles that suit the time, the one you've gone longest without, so it
+changes from one session to the next and goes round every style before
+one comes back (a mix counts as each style in it). A first session is
+short bursts (long efforts for surfing). From 30 minutes a mix is on
+offer too (EMOM, short bursts and AMRAP; for surfing Surf Fit's EMOM and
+AMRAP), and from 45 only the steadier styles, long efforts, EMOM or a
+mix. Nothing random goes into it, so the style the home card names is the
+one Start builds, and the build keeps it in its request: a favourite, a
+link or a session picked up later runs that style, whatever FIT would
+pick by then. In setup, FIT picks is one card with today's pick and how it
+works, and **Choose myself** opens the five styles and Mix under it.
+Choosing one turns FIT picks off (its card stays at the top to go back
+to). A new visitor starts on FIT picks; someone who had chosen a style
+before (anything but short bursts, or a mix) keeps it.
+
+The first block of each style in a session says how it works, under the
+round count ("Do the reps, then rest till the next minute.") or for an
+AMRAP or For Time in place of its line ("As many rounds as you can in 4
+minutes, tapping +1 after each."), with the session's real numbers; a mix says
+it for each section as it starts.
 
 All five run a **240-second block**, so switching between them never
 changes how long a workout takes, only how each minute is spent. The two
@@ -88,7 +113,17 @@ and the next time you open the same workout the counter shows last time's
 number to beat. With two people, B starts one exercise along, and anything
 in B's lap that needs a kettlebell, the barbell, the rope or the rings that
 A's lap also uses goes to its bodyweight version, because the two of you
-won't be in step.
+won't be in step. Where there's a lighter bell nobody's using, B takes
+it instead (`spareLoads` in `js/app.js`): with 8, 12, 16 and 24kg ticked
+and A on the 24 and the 16, B swings the 12 and presses the 8 rather than
+doing good mornings. A spare is only ever lighter than the bell that move
+has in A's lap, so with 16 and 24 a press B can't have the 16 for goes to
+its bodyweight version, never up to the 24. Setup says so under the bells,
+and the preview before Start gives each of you your own bell ("KB swings
+(Wayne 24kg, 10 reps; Dave 12kg, 10 reps)").
+Only builds since the spare bells use them (the request says so, `spare`),
+so a favourite, a session in history, a link or one to pick up from before
+keeps the lap it had, and a classic keeps the bodyweight version.
 
 **Surf fitness** is a goal you pick at the top of setup, alongside General
 fitness. It builds from exercises tagged with what they do for surfing
@@ -120,10 +155,51 @@ people, gear and weights, and leaves out whatever Build a workout leaves
 out (the day's card says what, with a Change link). Every length is on
 offer: picked shorter than its mix needs, the Engine day runs its EMOM on
 its own (`programStyle`). Progress moves on when a day is done, not by the
-calendar, so a missed day waits; "I surfed today" counts a surf instead,
-with an Undo straight after in case of a mis-tap. The screen shows the
-week, the day, a streak and a strip of this week's days. Programs are
-defined in `PROGRAMS` in `js/workouts.js`.
+calendar, so a missed day waits. "I surfed today" logs a surf beside the
+program rather than in a day's place, so the land session on paddling and
+pop-ups is still next (and today's stays on offer, said to be optional),
+with an optional one-tap "How was the paddle-out? Easy / OK / Cooked" and
+an Undo. Surfs count towards the streak and the week; the Programs screen
+says how many this week and how the last six paddle-outs went, oldest
+first ("Paddle-outs lately: Cooked → OK → Easy"). A surf logged before
+this worked that way stays the day it took, marked Surf. The screen shows
+the week, the day, a streak and a strip of this week's days.
+
+Back after more than ten days with nothing done or surfed, the next two
+sessions with reps (stretch days don't count) ease you back in at an
+earlier week's reps and timing: a rung down the rep ladder after up to
+three weeks off, two after longer (`programEase`, `easeWeek` in
+`js/workouts.js`), with a line saying why on the day's card. Where you're
+up to never moves back, and it happens once per break, a surf first
+included. On the two paddle days, a closed "Near the water? Paddle it
+instead" offers three flat-day paddles of three lines each, counted in
+strokes so the phone can stay on the sand, with a safety line (paddle
+with a mate, stay inside the break, come in if dizzy); ticking one off is
+the day done, marked Water in the strip, with an Undo (`WATER_SESSIONS`).
+
+Every two weeks (day 1 of weeks 1, 3 and 5, each a Paddle power day, and
+once more after day 42) Surf Fit offers a **Surf check** in the day's
+place, on home and the Programs screen: about ten minutes of three tests,
+pop-ups in a minute, push-ups in a minute and a paddle hold for as long as
+you can (up to 3:00), after a short warm-up. Each test has one way of
+doing it, said before and during it, so the numbers compare ("Chest to a
+fist off the floor ... Knees down is fine, every time"). In the rest after
+each minute, each person puts in how many on their own card (−, +1, +5,
+with their last time); in the paddle hold each taps Done as their chest
+touches down, and still going at 3:00 is the full 3:00. The finish screen
+says each result against that person's last ("3 more than last time",
+"25s longer"), and a count can still be put in or fixed there. **Not
+today** does the day's session instead (for that day: undone, the check is
+there again tomorrow), and a check isn't offered with No floor work. The
+check is that day done, marked Check in the strip. The results are kept
+for each person by name, as levels are (`SURF_CHECK` in
+`js/workouts.js`, SURF CHECKS in `js/app.js`), apart from the history so
+they never fall off its end or go with Clear history, and the Programs
+screen shows them a line a test, oldest first ("Pop-ups in a minute: 9,
+12, 14"), with the dates. Wayne and Dave swapping spots still compare
+with their own; results from before a name was put in go with that name.
+Starting the program again keeps them, closed away as earlier, by date.
+Programs are defined in `PROGRAMS` in `js/workouts.js`.
 
 **Mix** runs two or three of these styles back to back in one session,
 in the order you tap them, and still fits the minutes you picked exactly,
@@ -143,9 +219,12 @@ across the whole session, not chosen per section.
 
 For Time uses the same laps with a set amount of work: 3 rounds of a lap
 of three or more exercises, 4 of two, 5 of one, which lands around three
-minutes for most people. The clock counts up, each person taps Done when
-they finish (the time is saved like an AMRAP score, and shows as "Last
-time" next go), and once everyone's done the rest of the four-minute cap
+minutes for most people. The clock counts up and FIT counts the rounds,
+so nobody keeps count while puffing: each person's card says the round
+they're on ("Round 2 of 3"), with +1 round after each (and − for a stray
+tap), and the last one is Done, which logs the time (saved like an AMRAP
+score, and shown as "Last time" next go; the undo goes back to the last
+round). Once everyone's done the rest of the four-minute cap
 counts down as rest. Miss the cap and it's logged as capped. A block
 skipped before anyone scores shows as "–" in history, not 0 or capped.
 
@@ -166,6 +245,28 @@ rather than hardcoded.
   movements" below
 - **What's coming up**: during a rest, a button shows the next block's
   exercises as small moving figures, each opening the full view
+- **Swap a move**: a move you can't or won't do can be swapped for one
+  like it. In a rest (the move coming up) or while paused, **Swap** on a
+  person's card does it just for them: their mate's moves stay as they
+  are, even in a block the two of you go round. Before Start, every move
+  in the preview is a button, and a swap there is for both of you. On
+  your own a swap is for whoever does the workout, so it's the same once
+  your name is in, or on a mate's phone from a link. Either
+  way a sheet offers up to three moves of the same kind (for surfing, that
+  do the same job on the board) as moving figures, best first: the move's
+  own easier option, then nothing that jumps, the same pattern, the most
+  body areas in common, and not done lately (`swapCandidates` in
+  `js/generator.js`). They suit the gear and the leave-outs, are new to
+  the block, and never need gear the other person could be holding then,
+  with the two of you either way round. Opening it pauses the clock; a
+  swap changes the moves, never the timeline, so it carries on from where
+  it was, in that block and any later one with the same move. **Put it
+  back** undoes one, and **Leave it out from now on** puts the move on the
+  leave-out list for every build after. The workout keeps its swaps beside
+  what it was built as (`w.swaps`, SWAPS in `js/workouts.js`), by name
+  like the levels, so Save (and **Save with the swap** on a favourite
+  swapped since), Share, the session in history and Resume all have
+  them, for classics too; a tab on the release before opens them as built
 - **16 named workouts** and **3 stretch routines**
 - Equipment picker: kettlebells, a barbell, dumbbells, a skipping rope,
   rings, a pull-up bar, resistance bands, a medicine or slam ball and a box
@@ -238,7 +339,7 @@ rather than hardcoded.
   naming a move that has since left the library is built from its seed
   and says so. Share links are still the seed and the request
 - Your data, at the bottom of Saved & ready-made. **Save a backup** saves
-  a dated file of everything, levels included (`FIT backup 2026-10-20.json`;
+  a dated file of everything, levels, surfs and Surf checks included (`FIT backup 2026-10-20.json`;
   on an iPhone or iPad through the share sheet, so Save to Files or
   AirDrop). **Copy to
   another device** puts the same on the clipboard as text, or in a box to
@@ -250,15 +351,38 @@ rather than hardcoded.
   device). The file picker asks for the backup, so an iPhone opens Files
   rather than Photos. Once restored, the page goes to where it says so.
   What it replaced is kept, so **Put back
-  what was here before** undoes it until the next restore. The first-visit
+  what was here before** undoes it until the next restore (on a new
+  device there was nothing, so it isn't offered). The first-visit
   question links straight to Restore, for the home-screen app (which
   starts empty) or a new iPad
-- Wall-clock timer, wake lock (kept through a pause), audio cues that still
-  play with an iPhone on silent (a setting, since it pauses other music;
-  FIT gives the sound back when you leave the workout, and after time in
-  the background the first tap brings the beeps back for sure, while a
-  scroll leaves the sound that's playing alone),
-  two-tap reset, and two taps on Menu once a workout is going. Tap the
+- Wall-clock timer, wake lock (kept through a pause), and one plain sound
+  choice under the workout (and a line by Start that says what you'll
+  hear, with a Change link down to it): **Beeps over my music** (Spotify
+  keeps playing; needs the ringer on), **Beeps even on silent** (plays with
+  the silent switch on, but pauses other music; FIT gives the sound back
+  when you leave the workout) or **No sound**. Beeps even on silent is
+  only offered on an iPhone or iPad, and is where a new one starts; a Mac
+  or a PC has Beeps or No sound. The old Mute audio and Beep even on
+  silent tick boxes become the choice, and are still saved beside it for
+  a tab on an older release. After time in the background the first tap
+  brings the beeps back for sure, while a scroll leaves the sound that's
+  playing alone
+- A voice coach on top of the beeps (on unless you switch it off; never
+  with No sound), in the phone's own voice: an Australian one where the
+  phone has it, then British, then any English. In each rest it calls the
+  next move by person ("Next: Wayne, push-ups. Dave, squats.", "Last
+  round: ..." before the last), with an EMOM's reps and an AMRAP's list
+  when they fit; it calls work with no rest before it (the first block,
+  an EMOM's next minute), or only a rest too short to call it in (Surf
+  Fit's 5 seconds between sprints), near the end of the phase before,
+  names each warm-up move and stretch, says "Halfway" once, in front of a
+  rest's line near the middle (never in work, or in a Surf check), and
+  "One minute left" in a long AMRAP or For Time. The 3-2-1 stays as
+  beeps: a line only starts if it can finish clear of it, is cut off
+  there if it runs over, and stops when the phase changes, on a pause, a skip or leaving, so it is never
+  behind the clock or over itself. The Start tap is what lets Safari
+  talk, and it follows the same sound choice as the beeps
+- Two-tap reset, and two taps on Menu once a workout is going. Tap the
   timer to pause or resume; Start, Skip and Reset stay on screen however
   long the cards get, in one row on a phone
 - A finish screen with Done (home, or back to the program for a program
@@ -295,11 +419,23 @@ rather than hardcoded.
   stays hidden until one is tapped). A shorter spell just carries on
 - A phone on its side gets its own layout: the timer and its buttons on
   the left, the two people side by side on the right, all on one screen
+- The badge by the workout's name ("1 person · Add a mate", "Wayne & Dave
+  · Just me?") is a button until Start: a tap changes one person for two
+  and back, the same moves shared out again, for when a mate turns up (or
+  doesn't), and says so ("Now for 1 person. Tap the badge again for two."). Once
+  it's going it stays as it is. A link sent for two, done on your own, is
+  yours: your name, level and history, not the sender's
 - Share a workout as a link. The seed and the request that built it are
   packed into the URL, so it opens the exact same session on any phone or
   tablet, for the same number of people, with no account and no server
-  involved. The message says the minutes, style and people, and Share stays
-  on screen once the workout is going. A link passed on keeps the gear it
+  involved. The message says the minutes, style and people ("Wayne &
+  Dave" once they're named), and Share stays on screen once the workout
+  is going. With two people it carries their names, so the other phone
+  has the same person on each card ("Opened from a shared link, for Wayne
+  & Dave"), and any moves swapped. Those names are for that workout only
+  (and picking it up again): the other phone's own names stay as they
+  are, so Dave opening Wayne's link is still Dave, with his own level,
+  once he's home. A link passed on keeps the gear it
   was first built with, so the third person gets the same session too.
   It carries each named person's level, so on the other device Wayne's
   reps reach whoever is called Wayne there and nobody else, and someone
@@ -385,10 +521,15 @@ that broke on its way up can never write a new visitor's defaults over
 everything kept. When `PERSISTED` gains a key, bump `PREFS_SCHEMA`, so a
 save from a tab still on the last release (which leaves the key out) can
 be told apart: its lists are taken (it hears the others' saves, so they're
-current), and what it leaves out (now the levels: the storage listener in
-`js/app.js` checks for them) is kept from this tab and written back. With
-no tab of this release open to do that, the levels come from their own
-key (`LEVELS_KEY`, which older releases never write) at the next load.
+current), and what it leaves out (now the levels and the Surf checks: the
+storage listener in `js/app.js` checks for them) is kept from this tab and
+written back. With no tab of this release open to do that, they come from
+their own keys (`LEVELS_KEY`, `CHECKS_KEY`, which older releases never
+write) at the next load. A day a check took (`check: true` in a program's
+`done`) is a day done to an older tab, which keeps the mark as it is.
+Settings an older tab doesn't know (the voice switch, FIT picks) stay as
+they are in this tab, and are kept under their own keys too (`VOICE_KEY`,
+`PICKS_KEY`), so the next load reads them from there.
 
 ## 3D movements
 
@@ -441,7 +582,11 @@ shape or names a move that's gone is refused. Every rung of a program's
 work/rest ladder runs its block in 240 seconds and reaches the build;
 the level rules (two Too easy up, one Cooked down, 0.7 to 1.3) hold, and
 the same seed with levels picks the same moves in every style with only
-the rep targets different. It also checks that every
+the rep targets different. A swap is checked for every move of a sweep of
+builds and every classic, for each person and both: what's offered suits
+the gear and the leave-outs, is new to the block, and never puts two
+people on one item at once, with them either way round, and swapping it
+in changes that person's moves and nothing else. It also checks that every
 file the pages load is precached and that `FILES_HASH` in `sw.js` is
 current (see Offline and updates).
 
@@ -456,7 +601,10 @@ keeping their moves through a library change, backing up, copying and
 restoring your data on a second device (and putting it back), the finish
 screen's summary and How was that? (two Too easy taps lifting one
 person's EMOM reps above the other's, kept through a favourite, a swap of
-spots and a link), Surf Fit's timed days building week by week, the app
+spots and a link), swapping a move for both before Start and for one
+person in a rest (kept by Save, a link with the names, Resume, history
+and a tab on the last release), the people badge before and after Start,
+a mate on the spare bells, Surf Fit's timed days building week by week, the app
 opening with the network switched off and at once with a six-second
 network, a new release waiting for its tap and never running beside the
 old one, a page whose scripts fail handing over to the release
