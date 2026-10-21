@@ -145,10 +145,28 @@ people, gear and weights, and leaves out whatever Build a workout leaves
 out (the day's card says what, with a Change link). Every length is on
 offer: picked shorter than its mix needs, the Engine day runs its EMOM on
 its own (`programStyle`). Progress moves on when a day is done, not by the
-calendar, so a missed day waits; "I surfed today" counts a surf instead,
-with an Undo straight after in case of a mis-tap. The screen shows the
-week, the day, a streak and a strip of this week's days. Programs are
-defined in `PROGRAMS` in `js/workouts.js`.
+calendar, so a missed day waits. "I surfed today" logs a surf beside the
+program rather than in a day's place, so the land session on paddling and
+pop-ups is still next (and today's stays on offer, said to be optional),
+with an optional one-tap "How was the paddle-out? Easy / OK / Cooked" and
+an Undo. Surfs count towards the streak and the week; the Programs screen
+says how many this week and how the last six paddle-outs went, oldest
+first ("Paddle-outs lately: Cooked → OK → Easy"). A surf logged before
+this worked that way stays the day it took, marked Surf. The screen shows
+the week, the day, a streak and a strip of this week's days.
+
+Back after more than ten days with nothing done or surfed, the next two
+sessions with reps (stretch days don't count) ease you back in at an
+earlier week's reps and timing: a rung down the rep ladder after up to
+three weeks off, two after longer (`programEase`, `easeWeek` in
+`js/workouts.js`), with a line saying why on the day's card. Where you're
+up to never moves back, and it happens once per break, a surf first
+included. On the two paddle days, a closed "Near the water? Paddle it
+instead" offers three flat-day paddles of three lines each, counted in
+strokes so the phone can stay on the sand, with a safety line (paddle
+with a mate, stay inside the break, come in if dizzy); ticking one off is
+the day done, marked Water in the strip, with an Undo (`WATER_SESSIONS`).
+Programs are defined in `PROGRAMS` in `js/workouts.js`.
 
 **Mix** runs two or three of these styles back to back in one session,
 in the order you tap them, and still fits the minutes you picked exactly,
@@ -266,7 +284,7 @@ rather than hardcoded.
   naming a move that has since left the library is built from its seed
   and says so. Share links are still the seed and the request
 - Your data, at the bottom of Saved & ready-made. **Save a backup** saves
-  a dated file of everything, levels included (`FIT backup 2026-10-20.json`;
+  a dated file of everything, levels and surfs included (`FIT backup 2026-10-20.json`;
   on an iPhone or iPad through the share sheet, so Save to Files or
   AirDrop). **Copy to
   another device** puts the same on the clipboard as text, or in a box to

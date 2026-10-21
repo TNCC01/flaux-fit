@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v16';
+const RELEASE = 'fit-v17';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -79,7 +79,8 @@ const state = {
   intervalStyle: DEFAULT_INTERVAL,
   // what the session is for: general fitness, or surfing (see SURF_GROUPS)
   goal: 'general',
-  // programs started: { [id]: { startedAt, done: [{ n, at, surfed }] } }
+  // programs started: { [id]: { startedAt, done: [{ n, at, surfed, water }],
+  // surfs: [{ at, paddle }], ease } } (see PROGRAMS)
   programs: {},
   // each person's level, from how their sessions felt: { [name, or '#a'
   // for a spot with no name]: { k, easy } } (see PERSONAL LEVELS)
@@ -201,8 +202,18 @@ function cleanPrefs(p) {
   if (!plain(s.programs)) s.programs = {};
   Object.keys(s.programs).forEach(id => {
     const pr = s.programs[id];
-    if (!PROGRAMS.some(x => x.id === id) || !plain(pr) || !Array.isArray(pr.done)) delete s.programs[id];
-    else pr.done = pr.done.filter(d => plain(d) && Number.isInteger(d.n) && typeof d.at === 'number');
+    if (!PROGRAMS.some(x => x.id === id) || !plain(pr) || !Array.isArray(pr.done)) { delete s.programs[id]; return; }
+    pr.done = pr.done.filter(d => plain(d) && Number.isInteger(d.n) && typeof d.at === 'number');
+    // a flat-day paddle names its session; one not known here is still a day done
+    pr.done.forEach(d => { if (d.water !== undefined && !WATER_IDS.includes(d.water)) delete d.water; });
+    // the surfs beside it (none from before there were any), and how the
+    // paddle-out felt where it was said
+    pr.surfs = (Array.isArray(pr.surfs) ? pr.surfs : []).filter(x => plain(x) && typeof x.at === 'number').slice(-SURFS_CAP);
+    pr.surfs.forEach(x => { if (x.paddle !== undefined && !ownKey(PADDLE_FEEL, x.paddle)) delete x.paddle; });
+    // easing back in after time off, as noted (see noteEase)
+    const e = pr.ease;
+    if (e !== undefined && !(plain(e) && Number.isInteger(e.n) && e.n >= 0 && (e.steps === 1 || e.steps === 2)
+                             && Number.isInteger(e.days) && e.days > 0)) delete pr.ease;
   });
   s.levels = cleanLevels(s.levels);
   if (!Array.isArray(s.mixStyles)) s.mixStyles = ['emom', 'short', 'amrap'];
@@ -1322,7 +1333,8 @@ function fillToday() {
     card.appendChild(top);
     tagline = '';
   } else if (ps && ps.doneToday) {
-    tagline = `<div class="card-tagline today-line">${esc(`${prog.name}: today's done${ps.last.surfed ? ' (a surf counts)' : ''}. Next up: ${ps.day.name}.`)}</div>`;
+    const counts = ps.last.surfed ? ' (a surf counts)' : ps.last.water ? ' (a paddle counts)' : '';
+    tagline = `<div class="card-tagline today-line">${esc(`${prog.name}: today's done${counts}. Next up: ${ps.day.name}.`)}</div>`;
   }
   const head = document.createElement('div');
   head.innerHTML = `${tagline}<div class="card-name">Build a workout</div>`;
@@ -4008,9 +4020,33 @@ function dataSection() {
 // One screen: what today is, the week so far, and the streak. Starting a
 // day builds it through the generator like any other session (today's
 // people, gear and weights); finishing it ticks the day off. A missed day
-// waits, and "I surfed today" counts a surf in its place.
+// waits.
+//
+// Where a program is up to is { startedAt, done, surfs, ease }:
+// - done: a day used up, in order, so the day you're on is done.length
+//   (programDay numbers them, and history and a session left part-way
+//   keep that number). A finished session is { n, at }, and a flat-day
+//   paddle in its place { n, at, water: id }. Up to release fit-v16 a surf
+//   took the day's place as well, { n, at, surfed: true }: those stay days
+//   done, marked Surf on the strip, so nobody's progress moves back and
+//   the same day comes up next as before. Nothing in them is changed.
+// - surfs: each surf since, { at, paddle } (paddle: how the paddle-out
+//   felt, if said). A surf sits beside the program and doesn't use a day
+//   up, so the land work on paddling and pop-ups still comes next, and
+//   today's stays on offer, optional. It counts towards the streak and the
+//   week's surfs. History stays the sessions FIT ran (and can run again),
+//   so a surf isn't in it.
+// - ease: { n, steps, days }, easing back in after time off (see
+//   programEase in js/workouts.js), noted as the time off ends (see
+//   noteEase), so it lasts its two sessions once something's recent.
+// A tab on an older release only checks done, so it keeps surfs and ease
+// as they are, and its own "I surfed today" still uses a day up, as it
+// always did.
 // =====================================================================
 const dayKey = (t) => new Date(t).toLocaleDateString('en-CA');
+const SURFS_CAP = 400;           // surfs kept, newest; a 6-week program and years more
+// how the paddle-out felt, after a surf
+const PADDLE_FEEL = { easy: 'Easy', ok: 'OK', cooked: 'Cooked' };
 function openProgram() {
   stopTimer();
   state.programRun = null;
@@ -4021,10 +4057,10 @@ function openProgram() {
   renderProgram();
   setView('program');
 }
-// Days in a row with something done, up to today (or yesterday, if today
-// isn't done yet).
+// Days in a row with something done or a surf, up to today (or
+// yesterday, if today has neither yet).
 function programStreak(st) {
-  const days = new Set(st.done.map(d => dayKey(d.at)));
+  const days = new Set([...st.done, ...surfsOf(st)].map(d => dayKey(d.at)));
   const d = new Date();
   if (!days.has(dayKey(d))) d.setDate(d.getDate() - 1);
   let n = 0;
@@ -4040,6 +4076,47 @@ function programStatus(prog) {
   if (n >= prog.weeks * prog.days.length) return { st, n, finished: true };
   const last = st.done[n - 1];
   return { st, n, day: programDay(prog, n), last, doneToday: !!last && dayKey(last.at) === dayKey(Date.now()) };
+}
+const newProgram = () => ({ startedAt: Date.now(), done: [], surfs: [] });
+// A program's surfs, a list from here on for one set up without (saved
+// prefs always have one, see cleanPrefs).
+const surfsOf = (st) => (Array.isArray(st.surfs) ? st.surfs : (st.surfs = []));
+// Today's surf, if one's logged.
+const todaysSurf = (st) => surfsOf(st).find(x => dayKey(x.at) === dayKey(Date.now()));
+// Surfs this week, Monday on, the old kind that took a day's place too.
+function surfsThisWeek(st) {
+  const monday = new Date();
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+  return [...surfsOf(st), ...st.done.filter(d => d.surfed)].filter(x => x.at >= monday.getTime()).length;
+}
+// The last time anything was done or surfed, or null.
+function lastActivity(st) {
+  const at = [...st.done, ...surfsOf(st)].map(x => x.at);
+  return at.length ? Math.max(...at) : null;
+}
+// Easing back in, from time off that's ending now: from the day you're on,
+// with the steps down and days off (see programEase), or null.
+function freshEase(st) {
+  const gap = programEase(lastActivity(st), Date.now());
+  return gap && { n: st.done.length, steps: gap.steps, days: gap.days };
+}
+// Called before a session, surf or paddle is recorded: if it ends time off,
+// the easing is kept, so the sessions after it are still eased.
+function noteEase(st) {
+  const fresh = freshEase(st);
+  if (fresh) st.ease = fresh;
+}
+// Whether day n eases back in: the week whose load it takes (week), the
+// days off and how many eased sessions are left counting it, or null. A
+// stretch day, or one with nothing lighter to go to, doesn't.
+function programEaseFor(prog, st, n) {
+  const e = freshEase(st) || st.ease;
+  const left = e ? easeLeft(prog, e.n, n) : 0;
+  const day = programDay(prog, n);
+  if (!left || day.stretch) return null;
+  const week = easeWeek(prog, day.week, e.steps);
+  return week < day.week ? { week, days: e.days, left } : null;
 }
 function renderProgram() {
   const prog = PROGRAMS[0];
@@ -4067,7 +4144,7 @@ function renderProgram() {
     const go = document.createElement('button');
     go.textContent = `Start ${prog.name}`;
     go.addEventListener('click', () => {
-      state.programs[prog.id] = { startedAt: Date.now(), done: [] };
+      state.programs[prog.id] = newProgram();
       savePrefs();
       keepStorage();
       renderProgram();
@@ -4084,27 +4161,38 @@ function renderProgram() {
   }
   const { st, n, day, last, doneToday } = ps;
   const streak = programStreak(st);
+  // the surfs, once there are any: this week's, and how the paddle-outs
+  // have gone, oldest first (the last six said)
+  const surfs = surfsThisWeek(st);
+  const surfing = surfsOf(st).length > 0 || st.done.some(d => d.surfed);
+  const felt = surfsOf(st).filter(x => x.paddle).slice(-6).map(x => PADDLE_FEEL[x.paddle]);
+  // what a day in the strip was: a session, a surf in its place (before
+  // surfs sat beside the program) or a paddle
+  const mark = (rec) => (rec.surfed ? ['Surf', 'surfed'] : rec.water ? ['Water', 'paddled'] : ['✓', 'done']);
   add(`<div class="program-progress">
       <div><b>Week ${day.week}</b> of ${prog.weeks}</div>
       <div><b>Day ${n + 1}</b> of ${total}</div>
       <div><b>${streak}</b> day${streak === 1 ? '' : 's'} in a row</div>
+      ${surfing ? `<div class="program-surfs"><b>${surfs}</b> surf${surfs === 1 ? '' : 's'} this week</div>` : ''}
     </div>
     <div class="program-week">${prog.days.map((d, i) => {
       const at = (day.week - 1) * prog.days.length + i;
       const rec = st.done.find(x => x.n === at);
       const cls = rec ? 'done' : at === n ? 'now' : '';
-      return `<div class="program-dot ${cls}" title="Day ${at + 1}: ${esc(d.name)}" aria-label="Day ${at + 1}, ${esc(d.name)}${rec ? (rec.surfed ? ', surfed' : ', done') : ''}">
-        <b>${at + 1}</b><span>${esc(d.short || d.name)}</span><i>${rec ? (rec.surfed ? 'Surf' : '✓') : at === n ? (doneToday ? 'Next' : 'Today') : ''}</i></div>`;
-    }).join('')}</div>`, 'program-status');
+      return `<div class="program-dot ${cls}" title="Day ${at + 1}: ${esc(d.name)}" aria-label="Day ${at + 1}, ${esc(d.name)}${rec ? `, ${mark(rec)[1]}` : ''}">
+        <b>${at + 1}</b><span>${esc(d.short || d.name)}</span><i>${rec ? mark(rec)[0] : at === n ? (doneToday ? 'Next' : 'Today') : ''}</i></div>`;
+    }).join('')}</div>
+    ${felt.length ? `<div class="paddle-felt" role="img" aria-label="Paddle-outs lately, oldest first: ${felt.join(', ')}">Paddle-outs lately: ${felt.join(' → ')}</div>` : ''}`, 'program-status');
 
   if (doneToday && !state.programAhead) {
     const c = add(`<div class="card-name">Today's done</div>
-      <div class="card-blurb">${last.surfed ? 'A surf counts. ' : ''}Next up: <b>${esc(day.name)}</b>. ${esc(day.about)}</div>`);
+      <div class="card-blurb">${last.surfed ? 'A surf counts. ' : last.water ? 'A paddle counts. ' : ''}Next up: <b>${esc(day.name)}</b>. ${esc(day.about)}</div>`);
     const again = document.createElement('button');
     again.className = 'secondary';
     again.textContent = 'Do the next one now anyway';
     again.addEventListener('click', () => { state.programAhead = true; renderProgram(); });
-    c.appendChild(again);
+    // a surf after the session is logged too
+    c.append(again, surfLog(prog, st, renderProgram, false));
   } else {
     renderProgramToday(prog, st, day);
   }
@@ -4117,7 +4205,9 @@ function restartButton(prog) {
   b.textContent = 'Start the program again';
   b.addEventListener('click', () => {
     if (b.dataset.sure) {
-      state.programs[prog.id] = { startedAt: Date.now(), done: [] };
+      // from day 1 again, keeping the surfs: they're a log of surfing, not days of the program
+      const was = state.programs[prog.id];
+      state.programs[prog.id] = { ...newProgram(), surfs: was ? surfsOf(was) : [] };
       savePrefs();
       renderProgram();
     } else {
@@ -4141,14 +4231,25 @@ function renderProgramToday(prog, st, day) {
 // screen and the home card both show it, so they say how to redraw and
 // where a message goes.
 function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint }) {
+  // back after time off, an earlier week's reps and timing (as Start builds it)
+  const ease = programEaseFor(prog, st, day.n);
+  if (ease) day = easedDay(prog, day, ease.week);
   // a timed day says this week's split: "45s on, 15s off this week"
   const timing = Object.values(day.workRest || {}).map(([on, off]) => `${on}s on, ${off}s off`).join(', ');
   c.innerHTML = `<div class="card-tagline">${esc(tagline)}</div>
     <div class="card-name">${esc(day.name)}</div>
     <div class="card-blurb">${esc(day.about)}</div>
-    ${timing ? `<div class="day-timing">${esc(timing)} this week</div>` : ''}`;
+    ${timing ? `<div class="day-timing">${esc(timing)} ${ease ? 'today, easing back in' : 'this week'}</div>` : ''}`;
   // the notes go under Start, so Start stays on the first screen of a phone
   const notes = [];
+  if (ease) {
+    const load = `week ${ease.week}'s ${day.workRest ? 'reps and timing' : 'reps'}`;
+    const line = programHint(ease.left > 1
+      ? `Welcome back. After ${ease.days} days off, this session and the next are a bit lighter (${load}) to ease you back in.`
+      : `Still easing back in: this one's a bit lighter too (${load}). Then it's back to week ${programDay(prog, day.n).week}.`);
+    line.classList.add('ease-line');
+    notes.push(line);
+  }
   if (!day.stretch) {
     if (!TIME_OPTIONS.includes(state.programMinutes)) state.programMinutes = TIME_OPTIONS.includes(day.minutes) ? day.minutes : 20;
     c.append(pickerLabel('How long have you got?'),
@@ -4175,25 +4276,105 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
     const err = startProgramDay(prog, day);
     if (err) note.textContent = err;
   });
-  c.append(go, ...notes);
-  const surfed = document.createElement('button');
-  surfed.className = 'secondary';
-  surfed.textContent = 'I surfed today';
-  surfed.addEventListener('click', () => {
-    st.done.push({ n: day.n, at: Date.now(), surfed: true });
-    savePrefs();
-    rerender();
-    note.textContent = 'Logged. If you\'ve got ten minutes, Surf Mobility in Saved & ready-made is good after a session. ';
-    // a mis-tap can be taken back: only today's surf, and only the last one
-    note.appendChild(linkButton('Undo', () => {
+  c.append(go, ...notes, surfLog(prog, st, rerender, true));
+  if (day.water) c.append(waterAlt(prog, day, rerender, note));
+}
+// "I surfed today", which logs a surf beside the program (see PROGRAMS);
+// once one's logged today, how the paddle-out felt (one tap, if you want
+// to say) and Undo. With today's session still to do, it says that's
+// optional now.
+function surfLog(prog, st, rerender, optional) {
+  const surf = todaysSurf(st);
+  if (!surf) {
+    const b = document.createElement('button');
+    b.className = 'secondary';
+    b.textContent = 'I surfed today';
+    b.addEventListener('click', () => {
+      // as it is now: another tab may have saved since this was drawn
       const now = state.programs[prog.id];
-      const last = now && now.done[now.done.length - 1];
-      if (last && last.surfed && dayKey(last.at) === dayKey(Date.now())) { now.done.pop(); savePrefs(); }
-      note.textContent = '';
+      if (now && !todaysSurf(now)) {
+        noteEase(now);
+        surfsOf(now).push({ at: Date.now() });
+        savePrefs();
+      }
       rerender();
-    }));
+    });
+    return b;
+  }
+  const box = document.createElement('div');
+  box.className = 'surf-log';
+  const head = document.createElement('div');
+  head.className = 'surf-head';
+  head.textContent = 'Surf logged for today. ';
+  // a mis-tap can be taken back: today's surf only (another tab may have
+  // changed the list since this was drawn, so it's looked up afresh)
+  head.appendChild(linkButton('Undo', () => {
+    const now = state.programs[prog.id];
+    const mine = now && todaysSurf(now);
+    if (mine) { now.surfs.splice(now.surfs.indexOf(mine), 1); savePrefs(); }
+    rerender();
+  }));
+  const row = document.createElement('div');
+  row.className = 'chip-row paddle-chips';
+  Object.entries(PADDLE_FEEL).forEach(([id, label]) => {
+    const on = surf.paddle === id;
+    const chip = tappable('chip' + (on ? ' active' : ''), () => {
+      const now = state.programs[prog.id];
+      const mine = now && todaysSurf(now);
+      if (mine && mine.paddle !== id) { mine.paddle = id; savePrefs(); }
+      rerender();
+    });
+    chip.textContent = label;
+    chip.dataset.paddle = id;
+    chip.setAttribute('aria-pressed', String(on));
+    row.appendChild(chip);
   });
-  c.append(surfed);
+  box.append(head, pickerLabel('How was the paddle-out?'), row);
+  if (optional) box.append(programHint("Today's session is optional now: do it if you're keen, or it'll wait for tomorrow."));
+  return box;
+}
+// On a paddle day, a closed "Near the water?" with the flat-day paddles
+// (see WATER_SESSIONS): ticking one off is the day done, with an Undo.
+let waterOpen = false;           // left open as the card redraws, for this visit
+function waterAlt(prog, day, rerender, note) {
+  const box = document.createElement('details');
+  box.className = 'water-alt';
+  box.open = waterOpen;
+  box.addEventListener('toggle', () => { waterOpen = box.open; });
+  box.innerHTML = `<summary>Near the water? Paddle it instead</summary>
+    <div class="program-hint">On a flat day, one of these on your board does the same job as the land session. Short enough to remember, so the phone stays on the sand.</div>
+    <div class="water-safety">${esc(WATER_SAFETY)}</div>`;
+  day.water.map(id => WATER_SESSIONS.find(w => w.id === id)).filter(Boolean).forEach(w => {
+    const el = document.createElement('div');
+    el.className = 'water-session';
+    el.innerHTML = `<div class="water-name">${esc(w.name)} <span>${esc(w.about)}</span></div>
+      <ol>${w.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ol>`;
+    const did = document.createElement('button');
+    did.className = 'secondary';
+    did.textContent = 'I did this';
+    did.dataset.water = w.id;
+    did.addEventListener('click', () => {
+      const now = state.programs[prog.id];
+      if (!now || now.done.some(d => d.n === day.n)) { rerender(); return; }
+      noteEase(now);
+      now.done.push({ n: day.n, at: Date.now(), water: w.id });
+      savePrefs();
+      waterOpen = false;
+      rerender();
+      note.textContent = `Ticked off: ${w.name}. `;
+      // a mis-tap can be taken back: only today's paddle, and only the last day done
+      note.appendChild(linkButton('Undo', () => {
+        const now = state.programs[prog.id];
+        const last = now && now.done[now.done.length - 1];
+        if (last && last.water && dayKey(last.at) === dayKey(Date.now())) { now.done.pop(); savePrefs(); }
+        note.textContent = '';
+        rerender();
+      }));
+    });
+    el.appendChild(did);
+    box.appendChild(el);
+  });
+  return box;
 }
 function programHint(text) {
   const el = document.createElement('div');
@@ -4274,6 +4455,11 @@ function startProgramDay(prog, day) {
     openWorkout(w);
     return null;
   }
+  // back after time off, an earlier week's reps and timing (see
+  // programEaseFor), which the request keeps for a favourite or a link
+  const st = state.programs[prog.id];
+  const ease = st && programEaseFor(prog, st, day.n);
+  if (ease) day = easedDay(prog, day, ease.week);
   const minutes = state.programMinutes || day.minutes;
   // a mix too long for the minutes runs as its first style (see programStyle)
   const { intervalId, mix } = programStyle(day, minutes);
@@ -4296,6 +4482,7 @@ function completeProgramDay() {
   if (!run) return;
   const st = state.programs[run.id];
   if (st && !st.done.some(d => d.n === run.n)) {
+    noteEase(st);
     st.done.push({ n: run.n, at: Date.now() });
     savePrefs();
   }

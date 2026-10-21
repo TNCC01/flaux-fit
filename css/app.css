@@ -1149,6 +1149,32 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .program-rhythm li { color: var(--muted); font-size: 0.9rem; line-height: 1.35; }
 .program-rhythm b { color: var(--text); }
 .program-foot { padding: 0 0.2rem; }
+/* how the paddle-outs have gone, under the week strip */
+.paddle-felt { color: var(--muted); font-size: 0.92rem; }
+/* back after time off: the line under Start */
+.ease-line { color: var(--text); font-size: 0.92rem; }
+/* a surf logged today: Undo, and how the paddle-out felt */
+.surf-log { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+.surf-head { font-weight: 700; font-size: 0.95rem; }
+.surf-head .link-btn { display: inline; min-height: 0; margin: -0.9rem 0; padding: 0.9rem 0.2rem; font-size: inherit; }
+.program-card .surf-log .picker-label { margin-top: 0.45rem; }
+/* on a paddle day, the flat-day paddles, closed until asked for */
+.water-alt { margin-top: 0.6rem; border-top: 1px solid var(--border); }
+.water-alt summary {
+  cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 0.4rem;
+  color: var(--teal-bright); font-weight: 700; font-size: 0.95rem; list-style: none;
+}
+.water-alt summary::-webkit-details-marker { display: none; }
+.water-alt summary::before { content: '▸'; display: inline-block; width: 0.8em; }
+.water-alt[open] summary::before { content: '▾'; }
+.water-alt > .program-hint { margin-top: 0; }
+.water-safety { margin-top: 0.5rem; padding: 0.5rem 0.65rem; border-left: 3px solid var(--accent-b); background: var(--card-hi);
+  border-radius: 0.4rem; font-size: 0.88rem; line-height: 1.4; }
+.water-session { margin-top: 0.75rem; }
+.water-name { font-weight: 800; }
+.water-name span { color: var(--muted); font-weight: 600; font-size: 0.85rem; margin-left: 0.3rem; }
+.water-session ol { margin: 0.3rem 0 0; padding-left: 1.3rem; display: grid; gap: 0.2rem; color: var(--muted); font-size: 0.92rem; line-height: 1.35; }
+.water-session button { width: 100%; padding: 0.7rem; }
 
 
 /* ============== One setup screen: More options ============== */

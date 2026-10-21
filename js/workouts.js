@@ -24,7 +24,7 @@
 
 // Which release this file is from, sw.js's VERSION: js/app.js won't run
 // beside a file from another one (see the check at its top).
-const WORKOUTS_RELEASE = 'fit-v16';
+const WORKOUTS_RELEASE = 'fit-v17';
 
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',
@@ -943,14 +943,36 @@ function cooldownCard(id) {
 }
 
 // ---------------------------------------------------------------------
+// FLAT-DAY PADDLES
+// On a paddle day by the water with no waves, a paddle on your board can
+// take the land session's place. Each is three short lines you can keep in
+// your head, counted in strokes rather than seconds, so it needs no phone
+// or watch.
+// ---------------------------------------------------------------------
+const WATER_SESSIONS = [
+  { id: 'paddle-engine', name: 'Paddle engine', about: 'about 20 min',
+    lines: ['Paddle easy for 5 minutes.', '8 times: 30 hard strokes, then 90 seconds easy.', 'Paddle in easy.'] },
+  { id: 'sprint-paddles', name: 'Sprint paddles', about: 'about 15 min',
+    lines: ['Paddle easy for 5 minutes.', '10 times: 10 flat-out strokes, then sit up and get your breath.', 'Paddle in easy.'] },
+  { id: 'long-paddle', name: 'Long paddle', about: 'about 25 min',
+    lines: ['Paddle easy for 5 minutes.', '10 minutes along the beach at a pace you could hold all day.', 'Turn round and paddle the same back.'] }
+];
+const WATER_IDS = WATER_SESSIONS.map(w => w.id);
+const WATER_SAFETY = 'Paddle with a mate, stay inside the break or on flat water, and come in if you feel dizzy or sick.';
+
+// ---------------------------------------------------------------------
 // PROGRAMS
 // A program is a run of daily sessions planned ahead: a week of day
 // templates repeated, with the rep targets building over the weeks. Each
 // day builds through the same generator as everything else, so it fits the
 // time, gear and number of people on the day. Progress moves on when a day
-// is done, not by the calendar, so a missed day waits for you.
+// is done, not by the calendar, so a missed day waits for you. A surf is
+// logged beside the program and doesn't use a day up (see PROGRAMS in
+// js/app.js); a flat-day paddle (water, see WATER_SESSIONS) does, as it's
+// the same work done in the water.
 //   day: { name, short (for the week strip), about, style | mix, focus (the surf rhythm to lean on),
-//          minutes (the suggestion) }  or  { name, about, stretch: id }
+//          minutes (the suggestion), water (paddle sessions that can take its place) }
+//     or { name, about, stretch: id }
 // ---------------------------------------------------------------------
 const PROGRAMS = [
   {
@@ -966,7 +988,7 @@ const PROGRAMS = [
       short: [[15, 15], [20, 10], [20, 10], [20, 10], [25, 5], [25, 5]]
     },
     days: [
-      { name: 'Paddle power', short: 'Paddle', style: 'long', focus: 'paddle', minutes: 20,
+      { name: 'Paddle power', short: 'Paddle', style: 'long', focus: 'paddle', minutes: 20, water: WATER_IDS,
         about: 'Long efforts on paddling strength and stamina: rows, swimmers, prone paddling. The muscles that get you out the back.' },
       { name: 'Pop-ups & legs', short: 'Pop-ups', style: 'short', focus: 'popup', minutes: 20,
         about: 'Short, sharp bursts on getting to your feet fast and staying low: pop-ups, jumps, stance work.' },
@@ -974,12 +996,12 @@ const PROGRAMS = [
         about: 'Hips, upper back, shoulders and ankles. Easy holds, no timer pressure.' },
       { name: 'Engine', short: 'Engine', mix: ['emom', 'amrap'], minutes: 25,
         about: 'An EMOM then an AMRAP finisher. Fitness for a long session and the paddle back out after a set.' },
-      { name: 'Paddle & shoulders', short: 'Paddle', style: 'emom', focus: 'paddle', minutes: 20,
+      { name: 'Paddle & shoulders', short: 'Paddle', style: 'emom', focus: 'paddle', minutes: 20, water: WATER_IDS,
         about: 'Paddling strength with shoulder care built in, every minute on the minute.' },
       { name: 'Pop-ups & turns', short: 'Turns', style: 'fortime', focus: 'popup', minutes: 20,
         about: 'Race the clock through pop-ups, turns and rotation. Fast feet when you\'re tired, like the end of a ride.' },
       { name: 'Easy day', short: 'Easy', stretch: 'cool-mobile',
-        about: 'Recovery and a long stretch. Or go for a surf.' }
+        about: 'Recovery and a long stretch. Good after a surf, too.' }
     ]
   }
 ];
@@ -988,11 +1010,61 @@ const PROGRAMS = [
 function programDay(prog, n) {
   const week = Math.min(prog.weeks, Math.floor(n / prog.days.length) + 1);
   const day = prog.days[n % prog.days.length];
+  return { ...day, n, week, ...weekLoad(prog, day, week) };
+}
+// A day's rep scale and timed splits as they are in a given week.
+function weekLoad(prog, day, week) {
   const ladder = prog.workRest || {};
   const timed = (day.mix || (day.style ? [day.style] : [])).filter(id => ownKey(ladder, id));
   const workRest = timed.length ? Object.fromEntries(timed.map(id => [id, ladder[id][week - 1].slice()])) : undefined;
-  return { ...day, n, week, repScale: prog.repScale[week - 1] || 1, workRest };
+  return { repScale: prog.repScale[week - 1] || 1, workRest };
 }
+
+// Easing back in. After more than EASE_AFTER_DAYS with nothing done (no
+// session, no surf), the next EASE_SESSIONS sessions with reps in them
+// (stretch days don't count) go at an earlier week's reps and timing: one
+// step down the rep ladder after up to three weeks off, two after longer.
+// Where you're up to never moves back, only the load.
+const EASE_AFTER_DAYS = 10;
+const EASE_SESSIONS = 2;
+// { days, steps } for a gap from lastAt (a time, or null for nothing
+// done yet) to now, or null when there's no easing to do.
+function programEase(lastAt, now) {
+  if (typeof lastAt !== 'number') return null;
+  const midnight = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const days = Math.round((midnight(now) - midnight(lastAt)) / 86400000);
+  if (!(days > EASE_AFTER_DAYS)) return null;
+  return { days, steps: days > 20 ? 2 : 1 };
+}
+// The week whose load is `steps` rungs of the rep ladder below this
+// week's, at the first week of that rung (weeks 3 and 4 are both 100%, so
+// a step down from either is week 2's 90%). Week 1 has nowhere to go.
+function easeWeek(prog, week, steps) {
+  const scale = prog.repScale;
+  let w = week;
+  for (let i = 0; i < steps; i++) {
+    let j = w - 1;
+    while (j >= 1 && scale[j - 1] >= scale[w - 1]) j--;
+    if (j < 1) break;
+    while (j > 1 && scale[j - 2] === scale[j - 1]) j--;
+    w = j;
+  }
+  return w;
+}
+// For an easing that began at day `from`, how many of its sessions are
+// left counting day n: EASE_SESSIONS less the days with reps from `from`
+// up to n, or 0 when n is past them (or before it began).
+function easeLeft(prog, from, n) {
+  if (!Number.isInteger(from) || n < from) return 0;
+  let had = 0;
+  for (let i = from; i < n; i++) if (!prog.days[i % prog.days.length].stretch) had++;
+  return Math.max(0, EASE_SESSIONS - had);
+}
+// A day at an earlier week's load (see easeWeek), still the same day.
+function easedDay(prog, day, week) {
+  return { ...day, ...weekLoad(prog, day, week) };
+}
+
 // The style a day runs in at this length: its own, or its mix. A mix that
 // won't fit the minutes runs as its first style on its own, so a short day
 // is still a session rather than a refusal.

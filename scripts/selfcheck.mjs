@@ -32,7 +32,8 @@ const {
   describeEx, resolveEx, stretchList, generateWorkout, blockSeconds, bookends, amrapCircuits, sectionInterval,
   freezeWorkout, thawWorkout, BLOCK_MAKERS, withWorkRest, cleanWorkRest, nextLevel, cleanRepScales, targetDiff,
   LEVEL_MIN, LEVEL_MAX, warmupPlan, cooldownPlan, warmupCard, cooldownCard, WARMUP_REHEARSAL,
-  planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL
+  planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL,
+  programEase, easeWeek, easeLeft, easedDay, weekLoad, EASE_SESSIONS, WATER_SESSIONS, WATER_SAFETY
 } = A;
 
 const failures = [];
@@ -305,6 +306,45 @@ for (const prog of PROGRAMS) {
   const longAt = (n) => JSON.stringify(programDay(surf, n).workRest);
   if (longAt(0) !== '{"long":[30,30]}' || longAt(28) !== '{"long":[45,15]}') fail(`Surf Fit's Paddle power should run 30/30 in week 1 and 45/15 in week 5, got ${longAt(0)} and ${longAt(28)}`);
   if (programDay(surf, 3).workRest !== undefined) fail('Surf Fit Engine (EMOM, AMRAP) has no timed split to carry');
+  // easing back in: more than ten days off eases, three weeks or more eases further
+  const DAY = 86400000, now = new Date(2026, 9, 21, 18, 30).getTime();
+  [[9, null], [10, null], [11, 1], [20, 1], [21, 2], [60, 2]].forEach(([days, steps]) => {
+    const got = programEase(now - days * DAY, now);
+    if ((got && got.steps) !== steps || (got && got.days !== days)) fail(`programEase after ${days} days off should be ${steps ? `${steps} step(s)` : 'none'}, got ${JSON.stringify(got)}`);
+  });
+  // by the calendar: last thing late on the 10th, back early on the 21st is 11 days
+  if (!programEase(new Date(2026, 9, 10, 22, 0).getTime(), new Date(2026, 9, 21, 6, 0).getTime())) fail('programEase should count calendar days, not hours');
+  if (programEase(null, now) !== null || programEase(undefined, now) !== null) fail('programEase with nothing done yet should be none');
+  // a step down is the rung below on the rep ladder, never the same load
+  const weeks = [1, 2, 3, 4, 5, 6];
+  const one = weeks.map(w => easeWeek(surf, w, 1)).join(), two = weeks.map(w => easeWeek(surf, w, 2)).join();
+  if (one !== '1,1,2,2,3,3' || two !== '1,1,1,1,2,2') fail(`easeWeek should go a rung down (1,1,2,2,3,3) or two (1,1,1,1,2,2), got ${one} and ${two}`);
+  weeks.forEach(w => {
+    const e = easeWeek(surf, w, 1);
+    if (e < w && !(surf.repScale[e - 1] < surf.repScale[w - 1])) fail(`easing week ${w} to week ${e} isn't any lighter`);
+  });
+  // two sessions with reps, stretch days passed over: from day 21 (Paddle power) days 21 and 22; from Mobility (day 23) days 23 to 25
+  const lefts = (from) => [0, 1, 2, 3].map(i => easeLeft(surf, from, from + i)).join();
+  if (lefts(21) !== '2,1,0,0' || lefts(23) !== '2,2,1,0' || easeLeft(surf, 21, 20) !== 0) fail(`easeLeft should cover two sessions with reps, got ${lefts(21)} and ${lefts(23)}`);
+  const eased = easedDay(surf, programDay(surf, 21), 2);
+  if (eased.n !== 21 || eased.week !== 4 || eased.repScale !== 0.9 || JSON.stringify(eased.workRest) !== '{"long":[35,25]}' || eased.name !== 'Paddle power')
+    fail(`an eased week-4 Paddle power keeps its day and week, at week 2's load: ${JSON.stringify(eased)}`);
+  if (JSON.stringify(weekLoad(surf, surf.days[0], 4)) !== JSON.stringify({ repScale: 1, workRest: { long: [40, 20] } })) fail('weekLoad should match programDay');
+  if (EASE_SESSIONS !== 2) fail('easing back in is for two sessions');
+  // the flat-day paddles: three short lines each, on the paddle days only
+  WATER_SESSIONS.forEach(w => {
+    if (!w.id || !w.name || !w.about) fail(`water session ${JSON.stringify(w)}: needs an id, name and about`);
+    if (!Array.isArray(w.lines) || w.lines.length !== 3) fail(`${w.id}: three lines to remember, got ${w.lines && w.lines.length}`);
+    (w.lines || []).forEach(l => { if (l.length > 70) fail(`${w.id}: "${l}" is too long to remember (${l.length} characters)`); });
+  });
+  if (new Set(WATER_SESSIONS.map(w => w.id)).size !== WATER_SESSIONS.length) fail('water session ids must be unique');
+  if (!/mate/.test(WATER_SAFETY) || !/inside the break/.test(WATER_SAFETY) || !/dizzy/.test(WATER_SAFETY)) fail(`the water safety line should say paddle with someone, stay inside the break and stop if dizzy: ${WATER_SAFETY}`);
+  PROGRAMS.forEach(prog => prog.days.forEach(d => {
+    if (!d.water) return;
+    if (d.stretch || d.focus !== 'paddle') fail(`${prog.id} ${d.name}: flat-day paddles belong on paddle days`);
+    d.water.forEach(id => { if (!WATER_SESSIONS.some(w => w.id === id)) fail(`${prog.id} ${d.name}: unknown water session "${id}"`); });
+  }));
+  if (surf.days.filter(d => d.water).map(d => d.name).join() !== 'Paddle power,Paddle & shoulders') fail('Surf Fit\'s two paddle days have the flat-day paddles');
   const bad = [{ long: [50, 20] }, { emom: [30, 30] }, { long: [60, 0] }, { short: ['20', '10'] }, { toString: [30, 30] }, [30, 30], { long: [30, 30], short: [1, 29] }];
   bad.forEach(x => { if (cleanWorkRest(x) !== undefined) fail(`cleanWorkRest should refuse ${JSON.stringify(x)}`); });
   if (JSON.stringify(cleanWorkRest({ long: [45, 15], short: [25, 5] })) !== '{"long":[45,15],"short":[25,5]}') fail('cleanWorkRest should keep good splits');
