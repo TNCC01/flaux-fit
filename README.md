@@ -166,6 +166,29 @@ instead" offers three flat-day paddles of three lines each, counted in
 strokes so the phone can stay on the sand, with a safety line (paddle
 with a mate, stay inside the break, come in if dizzy); ticking one off is
 the day done, marked Water in the strip, with an Undo (`WATER_SESSIONS`).
+
+Every two weeks (day 1 of weeks 1, 3 and 5, each a Paddle power day, and
+once more after day 42) Surf Fit offers a **Surf check** in the day's
+place, on home and the Programs screen: about ten minutes of three tests,
+pop-ups in a minute, push-ups in a minute and a paddle hold for as long as
+you can (up to 3:00), after a short warm-up. Each test has one way of
+doing it, said before and during it, so the numbers compare ("Chest to a
+fist off the floor ... Knees down is fine, every time"). In the rest after
+each minute, each person puts in how many on their own card (−, +1, +5,
+with their last time); in the paddle hold each taps Done as their chest
+touches down, and still going at 3:00 is the full 3:00. The finish screen
+says each result against that person's last ("3 more than last time",
+"25s longer"), and a count can still be put in or fixed there. **Not
+today** does the day's session instead (for that day: undone, the check is
+there again tomorrow), and a check isn't offered with No floor work. The
+check is that day done, marked Check in the strip. The results are kept
+for each person by name, as levels are (`SURF_CHECK` in
+`js/workouts.js`, SURF CHECKS in `js/app.js`), apart from the history so
+they never fall off its end or go with Clear history, and the Programs
+screen shows them a line a test, oldest first ("Pop-ups in a minute: 9,
+12, 14"), with the dates. Wayne and Dave swapping spots still compare
+with their own; results from before a name was put in go with that name.
+Starting the program again keeps them, closed away as earlier, by date.
 Programs are defined in `PROGRAMS` in `js/workouts.js`.
 
 **Mix** runs two or three of these styles back to back in one session,
@@ -284,7 +307,7 @@ rather than hardcoded.
   naming a move that has since left the library is built from its seed
   and says so. Share links are still the seed and the request
 - Your data, at the bottom of Saved & ready-made. **Save a backup** saves
-  a dated file of everything, levels and surfs included (`FIT backup 2026-10-20.json`;
+  a dated file of everything, levels, surfs and Surf checks included (`FIT backup 2026-10-20.json`;
   on an iPhone or iPad through the share sheet, so Save to Files or
   AirDrop). **Copy to
   another device** puts the same on the clipboard as text, or in a box to
@@ -451,10 +474,12 @@ that broke on its way up can never write a new visitor's defaults over
 everything kept. When `PERSISTED` gains a key, bump `PREFS_SCHEMA`, so a
 save from a tab still on the last release (which leaves the key out) can
 be told apart: its lists are taken (it hears the others' saves, so they're
-current), and what it leaves out (now the levels: the storage listener in
-`js/app.js` checks for them) is kept from this tab and written back. With
-no tab of this release open to do that, the levels come from their own
-key (`LEVELS_KEY`, which older releases never write) at the next load.
+current), and what it leaves out (now the levels and the Surf checks: the
+storage listener in `js/app.js` checks for them) is kept from this tab and
+written back. With no tab of this release open to do that, they come from
+their own keys (`LEVELS_KEY`, `CHECKS_KEY`, which older releases never
+write) at the next load. A day a check took (`check: true` in a program's
+`done`) is a day done to an older tab, which keeps the mark as it is.
 Settings an older tab doesn't know (the voice switch, FIT picks) stay as
 they are in this tab, and are kept under their own keys too (`VOICE_KEY`,
 `PICKS_KEY`), so the next load reads them from there.

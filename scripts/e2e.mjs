@@ -148,6 +148,8 @@ const st = (fn, arg) => p.evaluate(fn, arg);
 // none), before the other tab writes, and heard() waits until it has fired.
 // The app's own listener was added first, so by then it has run (and
 // written back, when it does).
+// the prefs schema this release saves (see PREFS_SCHEMA in js/app.js)
+const HERE_SCHEMA = Number(fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8').match(/^const PREFS_SCHEMA = (\d+)/m)[1]);
 const listenFor = (pg, schema) => pg.evaluate((want) => {
   window.e2eHeard = false;
   addEventListener('storage', function heard(e) {
@@ -981,6 +983,8 @@ try {
     step = 'a program day picks up as that day, and finishing it ticks the day off';
     await leaveStarted(r);
     await ev(() => { state.programs['surf-fit'] = { startedAt: Date.now(), done: [] }; savePrefs(); renderToday(); });
+    // day 1 offers the Surf check (see the Surf check step): Not today, for Paddle power
+    await r.click('#todayCard #btnCheckLater');
     // left on purpose, it goes back to the program and is not offered again,
     // even after the page goes (the phone locks, or the app is swiped away)
     await r.click('#todayCard .program-go'); await r.click('#btnStart');
@@ -2254,6 +2258,10 @@ try {
   await p.click('#programBody button:has-text("Start Surf Fit")');
   assert((await p.$eval('#programBody', e => e.textContent)).includes('Day 1'), 'day 1 of the program');
   assert((await p.$$('.program-dot')).length === 7, 'the week strip has seven days');
+  // day 1 is a Surf check (see the Surf check steps): Not today, for its Paddle power
+  assert((await p.$eval('.program-today .card-name', e => e.textContent)) === 'Surf check', 'day 1 offers the Surf check');
+  await p.click('.program-today #btnCheckLater');
+  assert((await p.$eval('.program-today .card-name', e => e.textContent)) === 'Paddle power', 'and Not today has Paddle power on the card');
   // home now leads with today's session, and can set it aside for the day
   await p.click('#btnProgramBack');
   const homeDay = await p.$eval('#todayCard', e => e.textContent);
@@ -2592,6 +2600,7 @@ try {
 
     step = 'Surf Fit: a flat-day paddle in place of a paddle day, and Undo';
     await device(0, 0);
+    await w.click('#todayCard #btnCheckLater');             // day 1's Surf check, not today
     const water = await ev(() => {
       const d = document.querySelector('#todayCard .water-alt');
       return d && { open: d.open, summary: d.querySelector('summary').textContent, sessions: [...d.querySelectorAll('.water-session')].map(s => s.querySelectorAll('li').length),
@@ -2625,6 +2634,317 @@ try {
     await ev(() => { state.programs['surf-fit'].done.push(...[1, 2, 3].map(n => ({ n, at: Date.now() - 86400000 }))); savePrefs(); renderToday(); });
     assert((await w.$eval('#todayCard .card-name', e => e.textContent)) === 'Paddle & shoulders' && await w.$('#todayCard .water-alt'), 'Paddle & shoulders has them too');
     ok('Surf Fit: on a paddle day, a closed "Near the water?" with three paddles of three lines and a safety line; ticking one off is the day done, marked Water, and Undo takes it back; Pop-ups & legs has none');
+    step = 'Surf check: day 1, 15 and 29 offer it in the day\'s place, with Not today for the session';
+    // a device with Surf Fit just started, Wayne and Dave training
+    const checkDevice = async (prefs) => {
+      await w.goto(URL + 'e2e-blank.html');
+      await w.evaluate((prefs) => { localStorage.clear(); localStorage.setItem('fit-prefs-2', JSON.stringify({ schema: 6, gearAsked: true, ...prefs })); }, prefs);
+      await w.goto(URL);
+    };
+    await checkDevice({ people: 2, nameA: 'Wayne', nameB: 'Dave', programs: { 'surf-fit': { startedAt: Date.now() - 60000, done: [] } } });
+    const homeCard = () => ev(() => {
+      const q = (sel) => document.querySelector(`#todayCard ${sel}`);
+      return { tag: q('.card-tagline').textContent, name: q('.card-name').textContent, blurb: q('.card-blurb').textContent.replace(/\s+/g, ' ').trim(),
+               go: (q('.program-go') || {}).textContent, later: !!q('#btnCheckLater'), back: !!q('#btnCheckBack'), names: !!q('.check-names'), water: !!q('.water-alt') };
+    });
+    const c1 = await homeCard();
+    assert(c1.tag === 'Surf Fit · Week 1, Day 1' && c1.name === 'Surf check' && c1.go === 'Start the Surf check' && c1.later && !c1.names && !c1.water
+           && c1.blurb.includes('in place of Paddle power') && c1.blurb.includes('Pop-ups in a minute, push-ups in a minute, then a paddle hold') && c1.blurb.includes('About 10 minutes'),
+           'home leads with the Surf check on day 1, in place of Paddle power, with Not today: ' + JSON.stringify(c1));
+    const checkDays = await ev(() => [...Array(42)].map((_, n) => n).filter(n => checkToday(PROGRAMS[0], state.programs['surf-fit'], n)).join());
+    assert(checkDays === '0,14,28', 'the Surf check days are day 1 of weeks 1, 3 and 5: ' + checkDays);
+    // Not today: the day's own session, the same day after a reload too, and the way back to the check
+    await w.click('#todayCard #btnCheckLater');
+    const c2 = await homeCard();
+    assert(c2.name === 'Paddle power' && c2.go === "Start today's session" && c2.back && c2.water, 'Not today has Paddle power on the card, with a way back: ' + JSON.stringify(c2));
+    await w.reload();
+    assert((await homeCard()).name === 'Paddle power' && (await ev(() => state.programs['surf-fit'].checkLater)) === (await ev(() => dayKey(Date.now()))),
+           'and it lasts the day, kept with the program');
+    await w.click('#todayCard #btnCheckBack');
+    assert((await homeCard()).name === 'Surf check' && !(await ev(() => 'checkLater' in state.programs['surf-fit'])), 'Do the Surf check brings it back');
+    // put off yesterday, it's offered again today
+    await ev((DAY) => { state.programs['surf-fit'].checkLater = dayKey(Date.now() - DAY); savePrefs(); }, DAY);
+    await w.reload();
+    assert((await homeCard()).name === 'Surf check' && !(await ev(() => 'checkLater' in state.programs['surf-fit'])), 'a Not today from yesterday has gone');
+    // a name missing, with two of you: the names go in on the card
+    await ev(() => { state.nameB = ''; savePrefs(); renderToday(); });
+    assert((await homeCard()).names, 'with a name missing, the card asks for the names the results are kept under');
+    await w.fill('#todayCard .check-names input[data-name="b"]', 'Dave');
+    assert(await ev(() => state.nameB === 'Dave' && document.getElementById('nameB').value === 'Dave' && JSON.parse(localStorage.getItem('fit-prefs-2')).nameB === 'Dave'),
+           'and are kept, the same as in setup');
+    // No floor work leaves it out: all three tests are on the floor
+    await ev(() => { state.blockedTags = ['floor']; savePrefs(); renderToday(); });
+    const noFloor = await homeCard();
+    assert(noFloor.name === 'Paddle power' && !noFloor.back && !noFloor.later, 'with No floor work the day is its own session, and no check is mentioned: ' + JSON.stringify(noFloor));
+    await ev(() => { state.blockedTags = []; savePrefs(); renderToday(); });
+    ok('Surf check: on day 1 (and only days 1, 15 and 29) home leads with it in place of Paddle power; Not today has the session for the day, after a reload too, with the way back; asks for a missing name; left out with No floor work');
+
+    step = 'Surf check: three tests with their standards, a count for each person in the rest after, a paddle hold timed with Done';
+    await w.click('#pathProgram');
+    assert((await w.$eval('.program-today .card-name', e => e.textContent)) === 'Surf check', 'the Programs screen offers it too');
+    await w.click('.program-today .program-go');
+    const opened = await ev(() => ({
+      title: document.getElementById('workoutTitle').textContent, run: JSON.stringify(state.programRun),
+      kinds: state.sequence.map(x => (x.check ? `${x.kind}:${x.check}${x.tally !== undefined ? '?' : ''}` : x.kind)).filter((k, i, a) => k !== a[i - 1]).join(' '),
+      total: state.totalDuration, share: getComputedStyle(document.getElementById('btnShare')).display,
+      preview: [...document.querySelectorAll('#previewList li')].map(li => li.textContent.replace(/\s+/g, ' ').trim())
+    }));
+    assert(opened.title === 'Surf check' && opened.run === '{"id":"surf-fit","n":0,"check":true}', 'it opens as the Surf check, on day 1: ' + JSON.stringify(opened));
+    assert(opened.kinds === 'warmup rest:popups work:popups rest:pushups? work:pushups rest:paddle? work:paddle cooldown',
+           'a warm-up, then each test with a rest before it (the count for the last one goes in there), and a cool-down: ' + opened.kinds);
+    assert(opened.total === 710 && opened.share === 'none', 'eleven minutes fifty at the most (the paddle hold runs to 3:00), and no Share: ' + opened.total);
+    assert(opened.preview[0].startsWith('How it works') && opened.preview.some(t => t.startsWith('Test 1: Pop-ups in a minute') && t.includes('Each landing counts'))
+           && opened.preview.some(t => t.startsWith('Test 3: Paddle hold, up to 3 min') && t.includes('Tap Done when your chest touches down')),
+           'the preview says how each test is done: ' + JSON.stringify(opened.preview));
+    // the clock moved on to a phase, as if run there
+    const jumpTo = (pred, plus = 2) => ev(({ pred, plus }) => {
+      const i = state.sequence.findIndex(new Function('x', `return ${pred}`));
+      state.elapsedAtResume = startOf(i) + plus; state.runStartWall = Date.now(); tickClock();
+      return i;
+    }, { pred, plus });
+    await w.click('#btnStart');
+    await jumpTo("x.kind === 'rest' && x.check === 'popups'");
+    const ready = await ev(() => ({ label: document.getElementById('phaseLabel').textContent, block: document.getElementById('blockName').textContent,
+      dots: document.getElementById('roundDots').textContent.replace(/\s+/g, ' ').trim(), a: document.getElementById('exerciseA').textContent, skip: document.getElementById('btnSkip').textContent }));
+    assert(ready.label === 'Get ready' && ready.block === 'Get ready: Pop-ups in a minute' && ready.dots.startsWith('Test 1 of 3') && ready.dots.includes('Each landing counts')
+           && ready.a === 'Pop-ups in a minute' && ready.skip === 'Skip rest', 'it gets ready for the first test and says how it is done: ' + JSON.stringify(ready));
+    await jumpTo("x.kind === 'work' && x.check === 'popups'");
+    const test1 = await ev(() => ({ label: document.getElementById('phaseLabel').textContent, reps: document.getElementById('repsA').textContent,
+      counter: !document.getElementById('counterA').hidden, skip: document.getElementById('btnSkip').textContent, time: document.getElementById('timeDisplay').textContent }));
+    assert(test1.label === 'Work' && test1.reps === 'As many as you can' && !test1.counter && test1.skip === 'Skip test' && /^0:5[78]$/.test(test1.time),
+           'a minute of pop-ups counts down, nothing to tap meanwhile: ' + JSON.stringify(test1));
+    // the rest after: how many, for each person by name
+    await jumpTo('x.tally === 0');
+    const tally = await ev(() => ({ a: document.getElementById('exerciseA').textContent, b: document.getElementById('exerciseB').textContent,
+      resting: document.getElementById('workoutView').classList.contains('resting'), up: document.querySelector('#upcoming strong').textContent,
+      labels: [document.getElementById('labelA').textContent, document.getElementById('labelB').textContent].join(),
+      now: document.querySelector('#counterA .count-now').textContent.replace(/\s+/g, ' ').trim(), less: document.querySelector('#counterA .count-less').disabled }));
+    assert(tally.a === 'How many pop-ups?' && tally.b === 'How many pop-ups?' && tally.labels === 'Wayne,Dave' && tally.now === '0 pop-ups' && tally.less && !tally.resting
+           && tally.up === 'Push-ups in a minute · As many as you can', 'the rest after asks each of them how many, with what is next under it: ' + JSON.stringify(tally));
+    for (const k of ['5', '5', '1', '1']) await w.click(`#counterA button[data-step="${k}"]`);
+    for (const k of ['5', '1', '1', '1', '-1']) await w.click(`#counterB button[data-step="${k}"]`);
+    assert(await ev(() => JSON.stringify(state.scores[0])) === '{"a":12,"b":7}', 'Wayne puts in 12, Dave 7 (one taken back)');
+    // the voice asks too, then says what's next
+    const said = await ev(() => entrySaid(state.currentIdx).lines[0]);
+    assert(said === 'How many pop-ups? Next: Push-ups in a minute, As many as you can.', 'the voice coach asks how many, then calls the next test: ' + said);
+    // the phone locks and the page goes: the counts come back with it
+    await w.reload();
+    const resumeText = await w.$eval('#todayCard .today-resume .resume-text', e => e.textContent);
+    assert(resumeText === 'Resume Surf check from 4:20, the rest before test 2', 'home offers it by name, and where: ' + resumeText);
+    await w.click('#btnResumeRun');
+    const resumed = await ev(() => ({ scores: JSON.stringify(state.scores[0]), run: JSON.stringify(state.programRun), title: document.getElementById('workoutTitle').textContent,
+      now: document.querySelector('#counterB .count-now b').textContent }));
+    assert(resumed.scores === '{"a":12,"b":7}' && resumed.run === '{"id":"surf-fit","n":0,"check":true}' && resumed.title === 'Surf check' && resumed.now === '7',
+           'picked up after a reload, the counts and the day are kept: ' + JSON.stringify(resumed));
+    await w.click('#btnStart');
+    await jumpTo('x.tally === 1');
+    for (let k = 0; k < 4; k++) await w.click('#counterA button[data-step="5"]');
+    for (const k of ['5', '5', '1', '1', '1']) await w.click(`#counterB button[data-step="${k}"]`);
+    // the paddle hold counts up, and each taps Done as their chest touches down (paused
+    // there, so the second the tap lands on is the one asked for)
+    const holdAt = (sec) => ev((sec) => {
+      const i = state.sequence.findIndex(x => x.hold);
+      if (!state.running) startTimer();
+      state.elapsedAtResume = startOf(i) + sec; state.runStartWall = Date.now(); tickClock(); pauseTimer();
+    }, sec);
+    await holdAt(70);
+    const hold = await ev(() => ({ label: document.getElementById('phaseLabel').textContent, time: document.getElementById('timeDisplay').textContent,
+      done: document.querySelector('#counterA button[data-step="done"]').textContent, reps: document.getElementById('repsA').textContent }));
+    assert(hold.label === 'Hold' && hold.time === '1:10' && hold.done === 'Done' && hold.reps === 'As long as you can', 'the paddle hold counts up, with Done for each: ' + JSON.stringify(hold));
+    await w.click('#counterA button[data-step="done"]');
+    assert((await w.$eval('#counterA .count-now', e => e.textContent.replace(/\s+/g, ' ').trim())) === '1:10 held', 'Wayne held 1:10');
+    // a mis-tap taken back, then Dave goes on to 1:25
+    await w.click('#counterB button[data-step="done"]');
+    await w.click('#counterB button[data-step="undo"]');
+    await holdAt(85);
+    await w.click('#counterB button[data-step="done"]');
+    assert(await ev(() => JSON.stringify(state.scores[2]) === '{"a":70,"b":85}' && document.getElementById('phaseLabel').textContent === 'Done'), 'both done: 1:10 and 1:25');
+    await w.click('#btnStart');                              // and going again
+    await w.waitForFunction(() => state.sequence[state.currentIdx].kind === 'cooldown', null, { timeout: 8000 });
+    assert(await ev(() => state.skippedSec >= 90 && JSON.stringify(state.scores[2]) === '{"a":70,"b":85}'), 'a moment later it goes on to the cool-down, and the time left on the hold is not counted as done');
+    await runOut();
+    ok('Surf check: a warm-up, a get-ready with how the first test is done, a minute of pop-ups, then each person puts in how many (−, +1, +5), kept over a reload; push-ups the same; the paddle hold counts up with Done for each, an undo, and on to the cool-down once both are done');
+
+    step = 'Surf check: the finish screen and the Programs screen say how each of you went, kept per person';
+    // runOut pressed Done: back on the Programs screen, with the check day ticked off
+    const prog1 = await ev(() => ({ view: document.querySelector('.view.active').id, done: JSON.stringify(state.programs['surf-fit'].done.map(d => ({ n: d.n, check: d.check }))),
+      mark: document.querySelector('.program-dot i').textContent, label: document.querySelector('.program-dot').getAttribute('aria-label'),
+      today: document.querySelector('#programBody .program-card .card-blurb').textContent }));
+    assert(prog1.view === 'programView' && prog1.done === '[{"n":0,"check":true}]' && prog1.mark === 'Check' && prog1.label === 'Day 1, Paddle power, Surf check done'
+           && prog1.today.startsWith('Surf check done. Next up: Pop-ups & legs'), 'the check is day 1 done, marked Check in the strip: ' + JSON.stringify(prog1));
+    const kept1 = await ev(() => ({ mem: JSON.stringify(state.checks), stored: JSON.stringify(JSON.parse(localStorage.getItem('fit-prefs-2')).checks),
+      own: localStorage.getItem('fit-checks-1'), history: state.history.length, entry: state.history[0] && `${state.history[0].name}|${state.history[0].program.day}|${state.history[0].intervalId}` }));
+    const c1at = JSON.parse(kept1.mem)[0].at;
+    assert(kept1.mem === `[{"at":${c1at},"n":0,"results":{"wayne":{"name":"Wayne","popups":12,"pushups":20,"paddle":70},"dave":{"name":"Dave","popups":7,"pushups":13,"paddle":85}}}]`
+           && kept1.stored === kept1.mem && kept1.own === kept1.mem, 'the results are kept per person by name, in the prefs and under their own key: ' + kept1.mem);
+    assert(kept1.entry === 'Surf check|Surf check|check', 'and the session is in the history as the Surf check: ' + kept1.entry);
+    const results = () => ev(() => {
+      const box = document.querySelector('.check-results');
+      return box && { people: [...box.querySelectorAll(':scope > .check-person')].map(p => [...p.querySelectorAll('.check-line')].map(l => l.textContent).join(' | ')
+        + ' @ ' + p.querySelector('.check-who b').textContent), earlier: !!box.querySelector('.check-earlier'), text: box.textContent };
+    });
+    const r1 = await results();
+    assert(r1 && r1.people.join(' / ') === 'Pop-ups in a minute: 12 | Push-ups in a minute: 20 | Paddle hold: 1:10 @ Wayne / Pop-ups in a minute: 7 | Push-ups in a minute: 13 | Paddle hold: 1:25 @ Dave'
+           && !r1.earlier, 'the Programs screen shows each of their results: ' + JSON.stringify(r1));
+    await w.reload();
+    await w.click('#pathProgram');
+    assert(JSON.stringify(await results()) === JSON.stringify(r1), 'and after a reload');
+    // the finish screen, opened again from the history: the first check, so the numbers to beat
+    await ev(() => { openFromRecord(state.history[0]); });
+    assert(await ev(() => state.workout.format === 'check' && !state.programRun), 'a check in the history opens again, outside the program');
+    await ev(() => { state.checks = []; savePrefs(); });    // as if it were the first (put back below)
+    await w.click('#btnStart');
+    await ev(() => { state.scores = { 0: { a: 12, b: 7 }, 1: { a: 20, b: 13 }, 2: { a: 70, b: 85 } }; });
+    await ev(() => { state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now(); });
+    await w.waitForFunction(() => isFinished(), null, { timeout: 10000 });
+    const fin1 = await ev(() => ({ top: document.getElementById('blockName').textContent, lines: [...document.querySelectorAll('#roundDots .finish-line')].map(e => e.textContent),
+      a: [...document.querySelectorAll('#finishA .check-result')].map(r => [r.querySelector('.check-label').textContent, r.querySelector('.count-now').textContent.replace(/\s+/g, ' ').trim(),
+        r.querySelector('.check-change').textContent].join(' | ')), feel: !!document.querySelector('.feel-ask'),
+      n: state.checks.length, named: JSON.stringify(state.checks[0] && Object.keys(state.checks[0].results)), noN: state.checks[0] && !('n' in state.checks[0]) }));
+    assert(fin1.top === 'Surf check done. Nice work.' && /^\d+ min done · 3 of 3 tests$/.test(fin1.lines[0]) && !fin1.feel,
+           'the finish screen says the check is done, the tests, and asks nobody how it felt: ' + JSON.stringify(fin1));
+    assert(fin1.a.join(' / ') === 'Pop-ups in a minute | 12 pop-ups | Your first one: the number to beat. / Push-ups in a minute | 20 push-ups | Your first one: the number to beat. / Paddle hold | 1:10 held | Your first one: the number to beat.',
+           "each person's results, the first time the numbers to beat: " + JSON.stringify(fin1.a));
+    assert(fin1.n === 1 && fin1.named === '["wayne","dave"]' && fin1.noN, 'kept, with no program day: ' + JSON.stringify(fin1));
+    // a count put in late, or fixed, on the finish screen is kept at once; all of one person's taken back, they're let go
+    await w.click('#finishB .check-count[data-test="0"] button[data-step="1"]');
+    assert(await ev(() => state.checks[0].results.dave.popups === 8 && JSON.parse(localStorage.getItem('fit-checks-1'))[0].results.dave.popups === 8),
+           "Dave's 8th pop-up, put in on the finish screen, is kept");
+    await ev((at) => {
+      const was = state.checks.pop();
+      state.checks = [{ at, n: 0, results: { ...was.results } }];      // the first check, as it was, with Dave's 8
+      state.checkAt = null; savePrefs();
+    }, c1at);
+    await w.click('#btnStart');
+    ok('Surf check: kept per person by name, in the prefs and their own key, apart from the history; day 1 marked Check; the Programs screen has each line, after a reload too; the finish screen has the numbers to beat and takes a late count');
+
+    step = 'Surf check: two weeks on, "3 more than last time", matched by name with the two of them swapped round';
+    // days 2 to 14 done, the check two weeks ago: day 15 is the next check, Dave in the first spot now
+    await ev((DAY) => {
+      const pr = state.programs['surf-fit'];
+      pr.done[0].at -= 14 * DAY; state.checks[0].at -= 14 * DAY; pr.startedAt -= 15 * DAY;
+      for (let n = 1; n < 14; n++) pr.done.push({ n, at: Date.now() - (14 - n) * DAY });
+      state.nameA = 'Dave'; state.nameB = 'Wayne'; state.people = 2;
+      savePrefs();
+    }, DAY);
+    await w.goto(URL);
+    const c15 = await homeCard();
+    assert(c15.tag === 'Surf Fit · Week 3, Day 15' && c15.name === 'Surf check', 'day 15 offers the second check: ' + JSON.stringify(c15));
+    await w.click('#todayCard .program-go');
+    await w.click('#btnStart');
+    await jumpTo('x.tally === 0');
+    const lastTime = await ev(() => [document.querySelector('#counterA .count-now span'), document.querySelector('#counterB .count-now span')].map(e => e && e.textContent).join());
+    assert(lastTime === 'Last time 8,Last time 12', "each sees their own last time, by name, though they've swapped spots: " + lastTime);
+    for (const k of ['5', '1', '1', '1', '1']) await w.click(`#counterA button[data-step="${k}"]`);
+    for (const k of ['5', '5', '5']) await w.click(`#counterB button[data-step="${k}"]`);
+    await jumpTo('x.tally === 1');
+    for (const k of ['5', '5', '1', '1', '1']) await w.click(`#counterA button[data-step="${k}"]`);
+    for (const k of ['5', '5', '5', '1', '1', '1']) await w.click(`#counterB button[data-step="${k}"]`);
+    // Dave drops at a minute; Wayne is still going when the hold runs out, so he held all 3:00
+    await holdAt(60);
+    await w.click('#counterA button[data-step="done"]');
+    await w.click('#btnStart');
+    await jumpTo("x.kind === 'cooldown'", 1);
+    assert(await ev(() => JSON.stringify(state.scores[2])) === '{"a":60,"b":180}', 'still going at the end of the hold is the whole 3:00');
+    await ev(() => { state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now(); });
+    await w.waitForFunction(() => isFinished(), null, { timeout: 10000 });
+    const fin2 = await ev(() => ({ a: [...document.querySelectorAll('#finishA .check-change')].map(e => e.textContent), b: [...document.querySelectorAll('#finishB .check-change')].map(e => e.textContent),
+      line: document.querySelectorAll('#roundDots .finish-line')[1].textContent }));
+    assert(fin2.b.join(' | ') === '3 more than last time | 2 fewer than last time | 1:50 longer than last time' && fin2.a.join(' | ') === '1 more than last time | Same as last time | 25s shorter than last time',
+           'the finish screen says how each went against their own last time: ' + JSON.stringify(fin2));
+    assert(fin2.line === 'Day 15 of 42 done. Next: Pop-ups & legs', 'and where the program is up to: ' + fin2.line);
+    await w.click('#btnStart');
+    const r2 = await results();
+    assert(r2.people.join(' / ') === 'Pop-ups in a minute: 12, 15 | Push-ups in a minute: 20, 18 | Paddle hold: 1:10, 3:00 @ Wayne / Pop-ups in a minute: 8, 9 | Push-ups in a minute: 13, 13 | Paddle hold: 1:25, 1:00 @ Dave',
+           'the Programs screen has both checks, oldest first, for each by name: ' + JSON.stringify(r2.people));
+    // day 29 is the third
+    await ev((DAY) => { const pr = state.programs['surf-fit']; for (let n = 15; n < 28; n++) pr.done.push({ n, at: Date.now() - DAY }); savePrefs(); renderToday(); }, DAY);
+    assert((await homeCard()).name === 'Surf check' && (await homeCard()).tag === 'Surf Fit · Week 5, Day 29', 'and day 29 the third');
+    ok('Surf check: on day 15 each sees their own last time, by name, with Dave and Wayne swapped; a hold still going at its end is the full 3:00; the finish screen says "3 more than last time", "2 fewer", "1:50 longer", "Same as last time"; the Programs screen has "Pop-ups in a minute: 12, 15"; day 29 is the third');
+
+    step = 'Surf check: one last check after six weeks, then starting again keeps the results, by date';
+    await ev((DAY) => { const pr = state.programs['surf-fit']; for (let n = 28; n < 42; n++) pr.done.push({ n, at: Date.now() - DAY, ...(n === 28 ? { check: true } : {}) }); savePrefs(); renderToday(); }, DAY);
+    await w.click('#btnProgramBack');
+    assert((await w.$eval('#pathProgramGo', e => e.textContent)) === 'Surf Fit · the last Surf check →', 'the Programs card on home says the last check is to do');
+    await w.click('#pathProgram');
+    const fin = await ev(() => ({ cards: [...document.querySelectorAll('#programBody .card-name')].map(e => e.textContent), go: (document.querySelector('.program-today .program-go') || {}).textContent,
+      later: !!document.querySelector('#btnCheckLater') }));
+    assert(fin.cards.slice(0, 3).join() === '6 weeks done,The last Surf check,Surf check results' && fin.go === 'Start the last Surf check' && !fin.later,
+           'six weeks done offers one last check: ' + JSON.stringify(fin));
+    await w.click('.program-today .program-go');
+    assert(await ev(() => JSON.stringify(state.programRun) === '{"id":"surf-fit","n":42,"check":true}' && programRunLabel().where === 'Surf Fit · after 6 weeks'), 'it runs as the check after the end');
+    await w.click('#btnStart');
+    await ev(() => { state.scores = { 0: { a: 11, b: 17 }, 1: { a: 15, b: 22 }, 2: { a: 75, b: 150 } }; state.elapsedAtResume = state.totalDuration - 0.3; state.runStartWall = Date.now(); });
+    await w.waitForFunction(() => isFinished(), null, { timeout: 10000 });
+    assert(await ev(() => document.querySelectorAll('#roundDots .finish-line')[1].textContent === 'The last Surf check of Surf Fit.'
+                          && state.programs['surf-fit'].done.length === 42 && state.checks.length === 3 && state.checks[2].n === 42), 'it ticks no day off, and is kept as the last');
+    await w.click('#btnStart');
+    assert((await ev(() => [...document.querySelectorAll('#programBody .card-name')].map(e => e.textContent).join())) === '6 weeks done,Surf check results', 'done, it is not offered again');
+    await w.click('#btnProgramBack');
+    assert((await w.$eval('#pathProgramGo', e => e.textContent)) === 'Surf Fit · all 6 weeks done →', 'nor on home');
+    await w.click('#pathProgram');
+    assert((await results()).people[0] === 'Pop-ups in a minute: 12, 15, 17 | Push-ups in a minute: 20, 18, 22 | Paddle hold: 1:10, 3:00, 2:30 @ Wayne', 'Wayne\'s three checks');
+    // starting again: day 1's check comes round, and the results so far are kept, earlier, by date
+    await w.click('#programBody .card-remove:has-text("Start the program again")');
+    await w.click('#programBody .card-remove:has-text("Tap again")');
+    const again = await ev(() => {
+      const box = document.querySelector('.check-results');
+      const old = box.querySelector('.check-earlier');
+      return { today: document.querySelector('.program-today .card-name').textContent, kept: state.checks.length, open: old.open, summary: old.querySelector('summary').textContent,
+               now: box.querySelectorAll(':scope > .check-person').length, none: box.querySelector(':scope > .program-hint').textContent,
+               lines: [...old.querySelectorAll('.check-line')].map(e => e.textContent), when: shortDate(state.checks[0].at) };
+    });
+    assert(again.today === 'Surf check' && again.kept === 3 && again.now === 0 && !again.open && again.summary === 'Earlier, before you started again'
+           && again.none.startsWith('None yet since you started again'), 'started again: the check on day 1, and the results kept, closed away: ' + JSON.stringify(again));
+    assert(again.lines[0] === `${again.when}: 12 pop-ups, 20 push-ups and a 1:10 paddle hold` && again.lines.length === 6, 'each by its date: ' + JSON.stringify(again.lines));
+    ok('Surf check: after day 42, one last check (no day ticked off, offered until done); starting the program again keeps every result, closed away as earlier, by date');
+
+    step = 'Surf check: the results are checked when read, a name takes in its results from before it had one, and a backup carries them';
+    const junkChecks = await ev(() => {
+      const c = cleanPrefs({ checks: [null, 'x', { at: 'soon', results: { wayne: { popups: 9 } } }, { at: 5, results: null },
+        { at: 7, n: 'two', results: { wayne: { name: 7, popups: -1, pushups: 'ten', paddle: 9999 }, dave: { name: 'Dave', popups: 8.5, pushups: 12, board: 'mal' } } },
+        { at: 6, n: 14, results: { ['x'.repeat(31)]: { popups: 3 }, '': { popups: 3 }, wayne: { name: 'Wayne', popups: 10 } } },
+        { at: 8, results: JSON.parse('{"__proto__": {"popups": 4}, "dave": {"name": "Dave", "paddle": 60}}') }] }).checks;
+      return JSON.stringify(c);
+    });
+    assert(junkChecks === '[{"at":6,"n":14,"results":{"wayne":{"name":"Wayne","popups":10}}},{"at":7,"results":{"dave":{"name":"Dave","pushups":12}}},{"at":8,"results":{"dave":{"name":"Dave","paddle":60}}}]',
+           'results that are not whole numbers in range, names too long, and entries with no time are let go, oldest first: ' + junkChecks);
+    assert(await ev(() => JSON.stringify(cleanPrefs({}).checks) === '[]' && JSON.stringify(cleanPrefs({ programs: { 'surf-fit': { done: [{ n: 0, at: 1, check: 'yes' }], checkLater: 'someday' } } }).programs['surf-fit']) === '{"done":[{"n":0,"at":1}],"surfs":[]}'),
+           'no checks from before they were kept, and a check flag or Not today that makes no sense is let go');
+    // Wayne on his own, no name, then with Dave and their names in: his results come with his name
+    const adopt = await ev(() => {
+      const keep = { checks: JSON.parse(JSON.stringify(state.checks)), people: state.people, a: state.nameA, b: state.nameB, run: state.programRun };
+      state.checks = [{ at: 1, results: { '#a': { name: '', popups: 6 } } }];
+      state.people = 2; state.nameA = 'Wayne'; state.nameB = 'Dave'; state.programRun = null;
+      const last = lastCheck('a', 'popups');
+      Object.assign(state, { workout: SURF_CHECK, scores: { 0: { a: 9, b: 7 } }, checkAt: null });
+      recordCheck();
+      const out = { last, checks: JSON.stringify(state.checks.map(c => Object.keys(c.results))) };
+      Object.assign(state, { checks: keep.checks, people: keep.people, nameA: keep.a, nameB: keep.b, programRun: keep.run, workout: null, scores: {}, checkAt: null });
+      savePrefs();
+      return out;
+    });
+    assert(adopt.last === 6 && adopt.checks === '[["wayne"],["wayne","dave"]]', "a check with names takes in the first spot's results from before it had one: " + JSON.stringify(adopt));
+    // a backup to another device: the results come too, and show there
+    const backup = await ev(() => backupText());
+    assert(JSON.parse(backup).prefs.checks.length === 3, 'the backup has the checks');
+    const other = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const o = await other.newPage();
+    o.on('pageerror', e => errors.push('check restore: ' + e));
+    o.on('console', m => { if (m.type() === 'error') errors.push('check restore: ' + m.text()); });
+    await o.goto(URL);
+    await o.click('#btnGearRestore');
+    await o.fill('#restoreText', backup);
+    await o.click('#btnRestoreText');
+    assert((await o.$eval('.restore-check .restore-found', e => e.textContent)).includes('3 Surf checks'), 'Restore says the backup has 3 Surf checks');
+    await o.click('#btnRestoreYes');
+    const there = await o.evaluate(() => ({ checks: JSON.stringify(state.checks), own: localStorage.getItem('fit-checks-1') }));
+    assert(there.checks === JSON.stringify(JSON.parse(backup).prefs.checks) && there.own === there.checks, 'restored, under their own key too');
+    await o.click('#btnLibraryBack');
+    await o.click('#pathProgram');
+    assert((await o.$eval('.check-results', e => e.textContent)).includes('Earlier, before you started again'), 'and on its Programs screen');
+    await other.close();
+    ok('Surf check: junk results, names and times are let go; a name takes in its spot\'s results from before; a backup carries the checks to another device, which says so before it restores');
     await life.close();
   }
 
@@ -2684,7 +3004,7 @@ try {
            "the last release's save keeps both surfs, how they felt and the easing, here and in storage: " + JSON.stringify(k1));
     // and the other way: a change here reaches it, and its next save keeps it
     await mine.click('#pathProgram');
-    await listenFor(old, 5);
+    await listenFor(old, HERE_SCHEMA);
     await mine.click('.program-card .paddle-chips .chip[data-paddle="easy"]');
     await heard(old);
     await listenFor(mine, lastSchema);
@@ -2693,8 +3013,42 @@ try {
     const k2 = await kept();
     assert(k2.mem === '{"done":4,"felt":"ok,easy","ease":{"n":3,"steps":1,"days":12}}' && k2.stored === k2.mem,
            'a rating changed here survives its next save: ' + JSON.stringify(k2));
-    await both.close();
     ok(`Surf Fit: a tab on ${lastRelease && lastRelease !== here ? `the last release (${lastRelease})` : 'this release (no other here to try)'} saving beside this one keeps the surfs, how they felt and the easing, both ways`);
+
+    step = 'Surf check: a tab still on the last release keeps the results, and a day the check took';
+    // a check two weeks ago, and today a check day done here
+    await listenFor(old, HERE_SCHEMA);
+    await mine.evaluate(() => {
+      state.checks.push({ at: Date.now() - 2 * 86400000, n: 0, results: { wayne: { name: 'Wayne', popups: 9, pushups: 15, paddle: 70 } } });
+      state.programs['surf-fit'].done.push({ n: 4, at: Date.now(), check: true });
+      savePrefs();
+    });
+    await heard(old);
+    // the last release saves what it heard, knowing nothing of the checks
+    await listenFor(mine, lastSchema);
+    await old.evaluate(() => { state.minutes = 25; savePrefs(); });
+    await heard(mine);
+    const checksKept = () => mine.evaluate(() => {
+      const stored = JSON.parse(localStorage.getItem('fit-prefs-2'));
+      const day = (pr) => JSON.stringify(pr.done.find(d => d.n === 4));
+      return { mem: JSON.stringify(state.checks), stored: JSON.stringify(stored.checks), own: localStorage.getItem('fit-checks-1'),
+               day: day(state.programs['surf-fit']), storedDay: day(stored.programs['surf-fit']) };
+    });
+    const k3 = await checksKept();
+    assert(JSON.parse(k3.mem).length === 1 && k3.mem.includes('"popups":9') && k3.stored === k3.mem && k3.own === k3.mem,
+           "the last release's save leaves the Surf checks here, and they're written back: " + JSON.stringify(k3));
+    assert(JSON.parse(k3.day).check === true && k3.storedDay === k3.day, 'and the day the check took is still marked so: ' + k3.day);
+    // with no tab of this release open, its save can't lose them either: the next tab finds them under their own key
+    await mine.close();
+    await old.evaluate(() => { state.minutes = 30; savePrefs(); });
+    assert(await old.evaluate(() => !('checks' in JSON.parse(localStorage.getItem('fit-prefs-2')))), 'the last release saved without them');
+    const next = await both.newPage(); watch(next, 'this release, later');
+    await next.goto(URL);
+    assert(await next.evaluate((m) => JSON.stringify(state.checks) === m && state.minutes === 30, k3.mem), 'a tab of this release opened after has them again');
+    await next.click('#pathProgram');
+    assert((await next.$eval('.check-results', e => e.textContent)).includes('Pop-ups in a minute: 9'), 'and on its Programs screen');
+    await both.close();
+    ok(`Surf check: a tab on ${lastRelease && lastRelease !== here ? `the last release (${lastRelease})` : 'this release (no other here to try)'} saving beside this one keeps the results and the day the check took, and with none of this release open the next one finds them`);
   }
 
   step = 'history: program days by name, 200 kept, two taps to clear';

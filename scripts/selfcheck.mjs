@@ -33,7 +33,8 @@ const {
   freezeWorkout, thawWorkout, BLOCK_MAKERS, withWorkRest, cleanWorkRest, nextLevel, cleanRepScales, targetDiff,
   LEVEL_MIN, LEVEL_MAX, warmupPlan, cooldownPlan, warmupCard, cooldownCard, WARMUP_REHEARSAL,
   planMix, planBlocks, sectionSeconds, isFlexible, FLEX_MIN_MINUTES, PROGRAMS, programDay, programStyle, mixMinimumMinutes, DEFAULT_INTERVAL,
-  programEase, easeWeek, easeLeft, easedDay, weekLoad, EASE_SESSIONS, WATER_SESSIONS, WATER_SAFETY
+  programEase, easeWeek, easeLeft, easedDay, weekLoad, EASE_SESSIONS, WATER_SESSIONS, WATER_SAFETY,
+  SURF_CHECK, checkSeconds, checkMinutes, checkShape, checkChange, isCheckDay
 } = A;
 
 const failures = [];
@@ -345,6 +346,34 @@ for (const prog of PROGRAMS) {
     d.water.forEach(id => { if (!WATER_SESSIONS.some(w => w.id === id)) fail(`${prog.id} ${d.name}: unknown water session "${id}"`); });
   }));
   if (surf.days.filter(d => d.water).map(d => d.name).join() !== 'Paddle power,Paddle & shoulders') fail('Surf Fit\'s two paddle days have the flat-day paddles');
+  // the Surf check: three tests of floor moves with no gear, each done one way, said in a line
+  const tests = SURF_CHECK.stations;
+  if (tests.map(t => t.id).join() !== 'popups,pushups,paddle') fail(`the Surf check is pop-ups, push-ups and a paddle hold: ${tests.map(t => t.id)}`);
+  tests.forEach(t => {
+    const ex = EXERCISES[t.ex];
+    if (!ex || !ex.img) fail(`Surf check ${t.id}: "${t.ex}" needs to be a move with a figure`);
+    else if (ex.equipment.length) fail(`Surf check ${t.id}: "${t.ex}" needs gear, and the check is for anywhere`);
+    if (!t.label || !t.short || !t.how || !(t.sec > 0) || !(t.most >= t.sec || !t.hold)) fail(`Surf check ${t.id}: needs a label, short name, how, seconds and a top result`);
+    if (!t.standard || t.standard.length > 150) fail(`Surf check ${t.id}: its one way of doing it should be said in a line (${(t.standard || '').length} characters)`);
+  });
+  if (tests.filter(t => t.hold).map(t => t.id).join() !== 'paddle' || tests[tests.length - 1].hold !== true) fail('the paddle hold is the one timed test, and comes last');
+  if (checkSeconds(SURF_CHECK) !== 710 || checkMinutes(SURF_CHECK) !== 10) fail(`the Surf check is about ten minutes (11:50 with the hold run out): ${checkSeconds(SURF_CHECK)}s, about ${checkMinutes(SURF_CHECK)} min`);
+  const shape = checkShape(SURF_CHECK);
+  const warm = warmupPlan(shape, {}), cool = cooldownPlan(shape, {});
+  if (warm.reduce((t, m) => t + m.sec, 0) !== SURF_CHECK.warmupSec || cool.reduce((t, m) => t + m.sec, 0) !== SURF_CHECK.cooldownSec) fail('the Surf check warm-up and cool-down fill their time');
+  if (warm.some(m => !m.id) || warm[warm.length - 1].id !== 'popUp') fail(`the Surf check warm-up is real moves, a slow pop-up last: ${warm.map(m => m.id)}`);
+  // on day 1 of weeks 1, 3 and 5, each a Paddle power day, and one more after the end
+  const checkOn = [...Array(surf.weeks * surf.days.length + 2)].map((_, n) => n).filter(n => isCheckDay(surf, n));
+  if (checkOn.join() !== '0,14,28' || !surf.finalCheck) fail(`Surf Fit's Surf checks are days 1, 15 and 29 and one at the end: ${checkOn}`);
+  checkOn.forEach(n => { if (programDay(surf, n).name !== 'Paddle power') fail(`the Surf check on day ${n + 1} should take a Paddle power day, not ${programDay(surf, n).name}`); });
+  // against last time, in plain words
+  const [pops, , hold] = tests;
+  [[pops, 12, 9, '3 more than last time'], [pops, 8, 9, '1 fewer than last time'], [pops, 9, 9, 'Same as last time'],
+   [hold, 95, 70, '25s longer than last time'], [hold, 180, 70, '1:50 longer than last time'], [hold, 60, 125, '1:05 shorter than last time'],
+   [pops, 9, null, ''], [pops, 0, 9, '']].forEach(([t, now, before, want]) => {
+    const got = checkChange(t, now, before);
+    if (got !== want) fail(`checkChange(${t.id}, ${now}, ${before}) should say "${want}", got "${got}"`);
+  });
   const bad = [{ long: [50, 20] }, { emom: [30, 30] }, { long: [60, 0] }, { short: ['20', '10'] }, { toString: [30, 30] }, [30, 30], { long: [30, 30], short: [1, 29] }];
   bad.forEach(x => { if (cleanWorkRest(x) !== undefined) fail(`cleanWorkRest should refuse ${JSON.stringify(x)}`); });
   if (JSON.stringify(cleanWorkRest({ long: [45, 15], short: [25, 5] })) !== '{"long":[45,15],"short":[25,5]}') fail('cleanWorkRest should keep good splits');

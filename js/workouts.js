@@ -24,7 +24,7 @@
 
 // Which release this file is from, sw.js's VERSION: js/app.js won't run
 // beside a file from another one (see the check at its top).
-const WORKOUTS_RELEASE = 'fit-v17';
+const WORKOUTS_RELEASE = 'fit-v18';
 
 const INTERVALS = {
   short: { id: 'short', label: 'Short bursts', sub: '20s work · 10s rest',
@@ -961,6 +961,63 @@ const WATER_IDS = WATER_SESSIONS.map(w => w.id);
 const WATER_SAFETY = 'Paddle with a mate, stay inside the break or on flat water, and come in if you feel dizzy or sick.';
 
 // ---------------------------------------------------------------------
+// SURF CHECK
+// Every two weeks a program can swap a day's session for three short
+// tests of what a surfer coming back wants better: getting to your feet,
+// pushing up off the board, and paddling. Each has one way of doing it,
+// said before it starts, so the numbers mean the same every time. Pop-ups
+// and push-ups are a minute each, counted by each person in the rest
+// after; the paddle hold is timed, each person tapping Done as their
+// chest touches down (still going at the end, they held it all). About
+// ten minutes with a short warm-up and cool-down. The results are kept
+// for each person (see SURF CHECKS in js/app.js).
+//   station: { id (what the result is kept as), ex, sec (the test, or the
+//              most a hold runs), label, short (in "How many ...?"),
+//              how (on the card), standard, hold, most (the biggest
+//              result kept) }
+// ---------------------------------------------------------------------
+const SURF_CHECK = {
+  id: 'surf-check', name: 'Surf check', format: 'check', focus: 'whole-body',
+  tagline: 'Three quick tests, every two weeks',
+  blurb: 'Pop-ups in a minute, push-ups in a minute and a paddle hold, to see the pop-ups and paddling getting better.',
+  warmupSec: 180, readySec: 20, restSec: 75, cooldownSec: 60,
+  stations: [
+    { id: 'popups', ex: 'popUp', sec: 60, label: 'Pop-ups in a minute', short: 'pop-ups', how: 'As many as you can', most: 200,
+      standard: 'Flat on your belly, up to your feet in your stance, then flat again. Each landing counts. A knee on the way up is fine, every time.' },
+    { id: 'pushups', ex: 'pushup', sec: 60, label: 'Push-ups in a minute', short: 'push-ups', how: 'As many as you can', most: 300,
+      standard: 'Chest to a fist off the floor, arms straight at the top, body in one line. Knees down is fine, every time.' },
+    { id: 'paddle', ex: 'pronePaddle', sec: 180, hold: true, label: 'Paddle hold', short: 'paddle hold', how: 'As long as you can', most: 600,
+      standard: 'On your belly, chest and feet up, steady strokes. Tap Done when your chest touches down.' }
+  ]
+};
+// The seconds a check runs with its hold run to the end, as the timer adds
+// them up: the warm-up, getting ready, the tests with a rest between each
+// (where the counts go in), and the cool-down.
+function checkSeconds(w) {
+  const s = w.stations;
+  return w.warmupSec + w.readySec + s.reduce((t, x) => t + x.sec, 0) + (s.length - 1) * w.restSec + w.cooldownSec;
+}
+// About how long it takes, said before it starts: a hold is usually over
+// well before its end, so it counts at half.
+const checkMinutes = (w) => Math.round((checkSeconds(w) - w.stations.filter(t => t.hold).reduce((x, t) => x + t.sec / 2, 0)) / 60);
+// What the warm-up and cool-down plans (see WARM-UP AND COOL-DOWN) work
+// around: a surf session made of the tests' moves.
+const checkShape = (w) => ({ warmupSec: w.warmupSec, cooldownSec: w.cooldownSec, request: { goal: 'surf' },
+                                blocks: w.stations.map(s => ({ ids: [s.ex] })) });
+// A result against the same person's last: "3 more than last time", "2
+// fewer", "25s longer", "Same as last time", or '' with nothing to go by.
+function checkChange(station, now, before) {
+  if (!(now > 0) || !(before > 0)) return '';
+  const d = Math.abs(now - before);
+  if (!d) return 'Same as last time';
+  if (!station.hold) return `${d} ${now > before ? 'more' : 'fewer'} than last time`;
+  const gap = d < 60 ? `${d}s` : `${Math.floor(d / 60)}:${String(d % 60).padStart(2, '0')}`;
+  return `${gap} ${now > before ? 'longer' : 'shorter'} than last time`;
+}
+// Day n (0-based) of a program is a Surf check day.
+const isCheckDay = (prog, n) => Array.isArray(prog.checkDays) && prog.checkDays.includes(n);
+
+// ---------------------------------------------------------------------
 // PROGRAMS
 // A program is a run of daily sessions planned ahead: a week of day
 // templates repeated, with the rep targets building over the weeks. Each
@@ -969,7 +1026,9 @@ const WATER_SAFETY = 'Paddle with a mate, stay inside the break or on flat water
 // is done, not by the calendar, so a missed day waits for you. A surf is
 // logged beside the program and doesn't use a day up (see PROGRAMS in
 // js/app.js); a flat-day paddle (water, see WATER_SESSIONS) does, as it's
-// the same work done in the water.
+// the same work done in the water. On checkDays a Surf check (see
+// SURF_CHECK) is offered in the day's place, and with finalCheck once more
+// after the last day.
 //   day: { name, short (for the week strip), about, style | mix, focus (the surf rhythm to lean on),
 //          minutes (the suggestion), water (paddle sessions that can take its place) }
 //     or { name, about, stretch: id }
@@ -987,6 +1046,9 @@ const PROGRAMS = [
       long:  [[30, 30], [35, 25], [40, 20], [40, 20], [45, 15], [45, 15]],
       short: [[15, 15], [20, 10], [20, 10], [20, 10], [25, 5], [25, 5]]
     },
+    // a Surf check on day 1 of weeks 1, 3 and 5 (each a Paddle power day,
+    // and the check's paddle hold is paddling), and a last one at the end
+    checkDays: [0, 14, 28], finalCheck: true,
     days: [
       { name: 'Paddle power', short: 'Paddle', style: 'long', focus: 'paddle', minutes: 20, water: WATER_IDS,
         about: 'Long efforts on paddling strength and stamina: rows, swimmers, prone paddling. The muscles that get you out the back.' },

@@ -762,6 +762,18 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
 .count-now { flex: 1; display: flex; flex-direction: column; align-items: center; font-weight: 700; color: var(--muted); }
 .count-now b { font-size: 2.2rem; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
 .count-now span { font-size: 0.8rem; margin-top: 0.15rem; }
+/* a Surf check: how many (one fewer, one or five more), or Done in a hold */
+.check-count .count-more { padding: 0 1rem; }
+.check-count .count-now { text-align: center; }
+.check-count .check-done { flex: 1 1 auto; }
+/* on the finish screen, each test: its name, the count or time, and against last time */
+.check-result { display: grid; gap: 0.1rem; }
+.check-result + .check-result { border-top: 1px solid var(--border); padding-top: 0.45rem; }
+.check-label { font-size: 0.8rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.check-result .round-counter { margin: 0.15rem 0; }
+.check-time { flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 0.4rem; }
+.check-change { color: var(--teal-bright); font-size: 0.92rem; font-weight: 700; line-height: 1.35; }
+.check-change:empty { display: none; }
 .card-score { color: var(--teal-bright); font-weight: 700; font-size: 0.9rem; margin-top: 0.35rem; }
 .card-feel { color: var(--muted); font-weight: 600; font-size: 0.9rem; margin-top: 0.25rem; }
 /* a person's level moved this target: "+1 rep: you said too easy" */
@@ -1175,6 +1187,25 @@ body.show-alternatives .alternative.has-alt { display: block; }
 .water-name span { color: var(--muted); font-weight: 600; font-size: 0.85rem; margin-left: 0.3rem; }
 .water-session ol { margin: 0.3rem 0 0; padding-left: 1.3rem; display: grid; gap: 0.2rem; color: var(--muted); font-size: 0.92rem; line-height: 1.35; }
 .water-session button { width: 100%; padding: 0.7rem; }
+/* a Surf check day: Not today, and the way back to it */
+.check-later { font-size: 0.9rem; }
+.program-card .check-names { margin-top: 0.2rem; }
+/* each person's Surf check results, a line a test, oldest first */
+.check-results { display: grid; gap: 0.7rem; }
+.check-person { display: grid; gap: 0.15rem; }
+.check-who { font-size: 1rem; }
+.check-who span { color: var(--muted); font-size: 0.85rem; font-weight: 600; margin-left: 0.3rem; }
+.check-line { color: var(--muted); font-size: 0.95rem; line-height: 1.35; }
+.check-line b { color: var(--text); font-variant-numeric: tabular-nums; }
+.check-earlier { border-top: 1px solid var(--border); }
+.check-earlier summary {
+  cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 0.4rem;
+  color: var(--teal-bright); font-weight: 700; font-size: 0.95rem; list-style: none;
+}
+.check-earlier summary::-webkit-details-marker { display: none; }
+.check-earlier summary::before { content: '▸'; display: inline-block; width: 0.8em; }
+.check-earlier[open] summary::before { content: '▾'; }
+.check-earlier .check-person { margin-bottom: 0.5rem; }
 
 
 /* ============== One setup screen: More options ============== */

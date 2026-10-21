@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v17';
+const RELEASE = 'fit-v18';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -79,9 +79,13 @@ const state = {
   intervalStyle: DEFAULT_INTERVAL,
   // what the session is for: general fitness, or surfing (see SURF_GROUPS)
   goal: 'general',
-  // programs started: { [id]: { startedAt, done: [{ n, at, surfed, water }],
-  // surfs: [{ at, paddle }], ease } } (see PROGRAMS)
+  // programs started: { [id]: { startedAt, done: [{ n, at, surfed, water, check }],
+  // surfs: [{ at, paddle }], ease, checkLater } } (see PROGRAMS)
   programs: {},
+  // each Surf check's results, oldest first, kept apart from the history:
+  // [{ at, n, results: { [name, or '#a']: { name, popups, pushups, paddle } } }]
+  // (see SURF CHECKS)
+  checks: [],
   // each person's level, from how their sessions felt: { [name, or '#a'
   // for a spot with no name]: { k, easy } } (see PERSONAL LEVELS)
   levels: {},
@@ -142,7 +146,7 @@ const state = {
   todayOther: null
 };
 
-const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'styleAuto', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'levels', 'gearSets', 'gearSetId',
+const PERSISTED = ['people', 'nameA', 'nameB', 'equipment', 'weights', 'minutes', 'styleAuto', 'intervalStyle', 'mixOn', 'mixStyles', 'goal', 'programs', 'checks', 'levels', 'gearSets', 'gearSetId',
   'regions', 'blockedTags', 'excluded', 'sound', 'voice', 'muteAudio', 'beepOnSilent', 'showAlts', 'showPhotos',
   'textScale', 'recent', 'saved', 'history', 'filterFocus', 'gearAsked', 'todayOther'];
 
@@ -164,8 +168,10 @@ function loadPrefs() {
     const p = JSON.parse(raw);
     const s = cleanPrefs(p);
     // a save from an older release leaves the levels out (see LEVELS_KEY),
-    // the voice switch (see VOICE_KEY) and FIT picks (see PICKS_KEY)
+    // the voice switch (see VOICE_KEY), FIT picks (see PICKS_KEY) and the
+    // Surf checks (see CHECKS_KEY)
     if (!hasLevels(p)) s.levels = storedLevels() || s.levels;
+    if (!hasChecks(p)) s.checks = storedChecks() || s.checks;
     if (!hasVoice(p)) s.voice = storedVoice() ?? s.voice;
     if (!hasPicks(p)) s.styleAuto = storedPicks() ?? s.styleAuto;
     Object.assign(state, s);
@@ -206,6 +212,10 @@ function cleanPrefs(p) {
     pr.done = pr.done.filter(d => plain(d) && Number.isInteger(d.n) && typeof d.at === 'number');
     // a flat-day paddle names its session; one not known here is still a day done
     pr.done.forEach(d => { if (d.water !== undefined && !WATER_IDS.includes(d.water)) delete d.water; });
+    // a day the Surf check took (see SURF CHECKS)
+    pr.done.forEach(d => { if (d.check !== undefined && d.check !== true) delete d.check; });
+    // "Not today" for the check, which only lasts the day it was said
+    if (pr.checkLater !== undefined && pr.checkLater !== dayKey(Date.now())) delete pr.checkLater;
     // the surfs beside it (none from before there were any), and how the
     // paddle-out felt where it was said
     pr.surfs = (Array.isArray(pr.surfs) ? pr.surfs : []).filter(x => plain(x) && typeof x.at === 'number').slice(-SURFS_CAP);
@@ -216,6 +226,7 @@ function cleanPrefs(p) {
                              && Number.isInteger(e.days) && e.days > 0)) delete pr.ease;
   });
   s.levels = cleanLevels(s.levels);
+  s.checks = cleanChecks(s.checks);
   if (!Array.isArray(s.mixStyles)) s.mixStyles = ['emom', 'short', 'amrap'];
   s.mixStyles = [...new Set(s.mixStyles.filter(id => INTERVALS[id]))].slice(0, 3);
   if (s.mixStyles.length < 2) s.mixStyles = ['emom', 'short', 'amrap'];
@@ -276,8 +287,8 @@ function cleanLevels(x) {
 // (or a later one) from one made by a tab still running an older FIT. Up
 // it whenever PERSISTED gains a key: an older tab's save leaves the key
 // out, and taken as current it would wipe it (3: each person's levels; 4:
-// the sound choice and the voice; 5: FIT picks).
-const PREFS_SCHEMA = 5;
+// the sound choice and the voice; 5: FIT picks; 6: the Surf checks).
+const PREFS_SCHEMA = 6;
 // From 2 on, a tab hears the others' saves (see below), so its lists are
 // as new as anyone's.
 const HEARS_SCHEMA = 2;
@@ -325,10 +336,23 @@ function storedPicks() {
     return typeof v === 'boolean' ? v : null;
   } catch (e) { return null; }
 }
+// And the Surf check results (6), the same way as the levels: a tab on an
+// older release saves without them, and a tab of this release writes
+// them back, or the next one to open takes them from here.
+const CHECKS_KEY = 'fit-checks-1';
+const CHECKS_SCHEMA = 6;
+const hasChecks = (p) => p.schema >= CHECKS_SCHEMA && Array.isArray(p.checks);
+function storedChecks() {
+  try {
+    const x = JSON.parse(localStorage.getItem(CHECKS_KEY));
+    return Array.isArray(x) ? cleanChecks(x) : null;
+  } catch (e) { return null; }
+}
 function savePrefs() {
   if (!prefsLoaded) return;
   try {
     localStorage.setItem(LEVELS_KEY, JSON.stringify(state.levels));
+    localStorage.setItem(CHECKS_KEY, JSON.stringify(state.checks));
     localStorage.setItem(VOICE_KEY, JSON.stringify(state.voice));
     localStorage.setItem(PICKS_KEY, JSON.stringify(state.styleAuto));
   } catch (e) { /* as below */ }
@@ -353,7 +377,8 @@ function savePrefs() {
 //
 // The first two don't know the levels, and leave them out: they're taken
 // from their own key (LEVELS_KEY), or stay as they are here, and are
-// saved straight back. None of them know the voice switch or FIT picks,
+// saved straight back, and none of them know the Surf checks, kept the
+// same way (CHECKS_KEY). None of them know the voice switch or FIT picks,
 // settings, so they stay as they are here, and the next load finds them
 // under their own keys (VOICE_KEY, PICKS_KEY).
 window.addEventListener('storage', (e) => {
@@ -367,12 +392,14 @@ window.addEventListener('storage', (e) => {
     state.saved = theirs.saved;
     state.programs = theirs.programs;
   }
-  // levels move on with the history, as a session finishes
+  // levels move on with the history, as a session finishes, and the
+  // checks as a check does
+  let back = false;
   if (hasLevels(p)) state.levels = theirs.levels;
-  else {
-    state.levels = storedLevels() || state.levels;
-    savePrefs();
-  }
+  else { state.levels = storedLevels() || state.levels; back = true; }
+  if (hasChecks(p)) state.checks = theirs.checks;
+  else { state.checks = storedChecks() || state.checks; back = true; }
+  if (back) savePrefs();
   // redraw whatever lists them, and FIT's pick, which goes by the sessions
   if (state.view === 'welcome') renderToday();
   else if (state.view === 'library') renderLibrary();
@@ -484,8 +511,8 @@ function sectionsOf(w) {
   return [{ intervalId: intervalFor(w).id, start: 0, count: w.blocks.length, minutes: 0, blockRestSec: w.blockRestSec }];
 }
 // A workout's style for history and comparisons: 'stretch' for a stretch
-// routine, 'mix', or the interval's id.
-const styleIdOf = (w) => (w.format === 'stretch' ? 'stretch' : w.sections ? 'mix' : intervalFor(w).id);
+// routine, 'check' for a Surf check, 'mix', or the interval's id.
+const styleIdOf = (w) => (w.format === 'stretch' || w.format === 'check' ? w.format : w.sections ? 'mix' : intervalFor(w).id);
 // The cards' context for one person ('a', the default, or 'b'): their
 // level comes with it (see personScale).
 const buildCtx = (w, ivOverride, who = 'a') => {
@@ -621,6 +648,8 @@ function durationParts(w) {
     const total = stretchList(w).reduce((s, x) => s + x.hold, 0);
     return { totalMin: Math.round(total / 60), totalSec: total, workMin: null, bookendsMin: null };
   }
+  // a Surf check's minutes are about how long it takes (its hold seldom runs out)
+  if (w.format === 'check') return { totalMin: checkMinutes(w), totalSec: checkSeconds(w), workMin: null, bookendsMin: null };
   const secs = sectionsOf(w);
   const work = secs.reduce((t, x) => t + sectionSeconds(x), 0) + (secs.length - 1) * (w.changeoverSec || 0);
   const bookend = w.warmupSec + w.cooldownSec;
@@ -702,6 +731,41 @@ function buildSequence(workout, people) {
       });
     });
     const cool = cooldownPlan(workout, around);
+    cool.forEach((m, i) => {
+      const ex = cooldownCard(m.id);
+      seq.push({ kind: 'cooldown', duration: m.sec, coolIdx: i, totalCool: cool.length,
+                 name: `Cool-down ${i + 1} of ${cool.length}: ${ex.name}`, ...pair(ex) });
+    });
+  } else if (workout.format === 'check') {
+    // a Surf check (see SURF_CHECK): the warm-up, then each test with a
+    // rest before it, the first a short get-ready and the others the rest
+    // after the last test, where each person puts in how many they did
+    const around = bookendOpts(workout), shape = checkShape(workout);
+    const warm = warmupPlan(shape, around);
+    warm.forEach((m, i) => {
+      const ex = warmupCard(m.id, m.sec);
+      seq.push({ kind: 'warmup', duration: m.sec, warmIdx: i, totalWarm: warm.length,
+                 name: `Warm-up ${i + 1} of ${warm.length}: ${ex.name}`, ...pair(ex) });
+    });
+    const tests = workout.stations, total = tests.length;
+    tests.forEach((t, i) => {
+      const ex = EXERCISES[t.ex];
+      const card = { id: t.ex, name: t.label, display: t.label, reps: t.how, cue: ex.cue, alt: ex.alt || '', img: ex.img };
+      const before = tests[i - 1];
+      if (!before) {
+        seq.push({ kind: 'rest', check: t.id, stationIdx: i, totalStations: total, duration: workout.readySec,
+                   name: `Get ready: ${t.label}`, ...pair({ name: 'Get ready', display: 'Get ready', cue: '', alt: '', img: null }) });
+      } else {
+        // blockIdx is the test whose count goes in
+        const ask = before.hold ? null : `How many ${before.short}?`;
+        seq.push({ kind: 'rest', check: t.id, stationIdx: i, totalStations: total, duration: workout.restSec,
+                   blockIdx: i - 1, tally: ask ? i - 1 : undefined,
+                   name: `Rest, then ${t.label}`, ...pair({ name: ask || 'Rest', display: ask || 'Rest', cue: '', alt: '', img: null }) });
+      }
+      seq.push({ kind: 'work', check: t.id, hold: !!t.hold, stationIdx: i, totalStations: total, blockIdx: i,
+                 duration: t.sec, name: `Test ${i + 1} of ${total}: ${t.label}`, ...pair(card) });
+    });
+    const cool = cooldownPlan(shape, around);
     cool.forEach((m, i) => {
       const ex = cooldownCard(m.id);
       seq.push({ kind: 'cooldown', duration: m.sec, coolIdx: i, totalCool: cool.length,
@@ -1119,7 +1183,10 @@ function callSaid(w, from) {
 function entrySaid(idx) {
   const seq = state.sequence, p = seq[idx], next = seq[idx + 1];
   if (p.kind === 'rest' || p.kind === 'blockrest') {
-    return next && next.kind === 'work' ? { w: idx + 1, lines: callSaid(idx + 1, idx) } : null;
+    if (!(next && next.kind === 'work')) return null;
+    const lines = callSaid(idx + 1, idx);
+    // after a Surf check test, how many first ("How many pop-ups? Next: ...")
+    return { w: idx + 1, lines: p.tally !== undefined ? [...lines.map(l => `${p.a.name} ${l}`), ...lines] : lines };
   }
   if (p.kind === 'work') return coach.called === idx ? null : { w: idx, lines: workSaid(p) };
   const first = p.kind === 'warmup' ? !p.warmIdx && 'Warm-up. ' : p.kind === 'cooldown' ? !p.coolIdx && 'Cool-down. ' : '';
@@ -1294,11 +1361,13 @@ function renderToday() {
   if (!line) return;
   els.todayCard.prepend(line);
   // with today's program day waiting to be resumed, Resume is the way on:
-  // its Start, which builds the day afresh, becomes a small link
+  // its Start, which builds the day afresh, becomes a small link (a Surf
+  // check left part-way, only while the card is the check too)
   const run = readRun(), ps = programStatus(PROGRAMS[0]);
   const go = els.todayCard.querySelector('.program-go:not(.today-go)');
   if (go && run && run.programRun && ps && !ps.finished
-      && run.programRun.id === PROGRAMS[0].id && run.programRun.n === ps.n) {
+      && run.programRun.id === PROGRAMS[0].id && run.programRun.n === ps.n
+      && !!run.programRun.check === checkToday(PROGRAMS[0], ps.st, ps.n)) {
     go.className = 'link-btn today-fresh';
     go.textContent = 'Start a fresh one instead';
   }
@@ -1333,7 +1402,7 @@ function fillToday() {
     card.appendChild(top);
     tagline = '';
   } else if (ps && ps.doneToday) {
-    const counts = ps.last.surfed ? ' (a surf counts)' : ps.last.water ? ' (a paddle counts)' : '';
+    const counts = ps.last.surfed ? ' (a surf counts)' : ps.last.water ? ' (a paddle counts)' : ps.last.check ? ' (the Surf check)' : '';
     tagline = `<div class="card-tagline today-line">${esc(`${prog.name}: today's done${counts}. Next up: ${ps.day.name}.`)}</div>`;
   }
   const head = document.createElement('div');
@@ -1396,7 +1465,7 @@ function todayStyleText() {
 // The Programs card says where you're up to.
 function renderProgramPath(prog, ps) {
   els.pathProgramGo.textContent = !ps ? `Start ${prog.name} →`
-    : ps.finished ? `${prog.name} · all ${prog.weeks} weeks done →`
+    : ps.finished ? (finalCheckDue(prog, ps.st) ? `${prog.name} · the last Surf check →` : `${prog.name} · all ${prog.weeks} weeks done →`)
     : `${prog.name} · Week ${ps.day.week} of ${prog.weeks} →`;
 }
 function linkButton(text, onClick) {
@@ -2065,6 +2134,7 @@ function namedCard(w) {
 // routine is "Stretching" (older entries kept the style picked in setup).
 function styleLabel(rec) {
   if (rec.intervalId === 'stretch' || STRETCH_ROUTINES.some(x => x.id === rec.workoutId)) return 'Stretching';
+  if (rec.intervalId === 'check') return 'Three tests';
   if (rec.intervalId === 'mix') {
     const list = (rec.request && rec.request.mix) || [];
     return `Mix: ${list.map(id => (INTERVALS[id] || {}).label).filter(Boolean).join(', ')}`;
@@ -2232,6 +2302,9 @@ function openWorkout(workout) {
   state.pick = {};
   state.skipped = [];
   state.skippedSec = 0;
+  // a Surf check's entry, once it's kept (see recordCheck)
+  state.checkAt = null;
+  state.holdDoneAt = null;
   coachFresh();
   const before = state.history.find(h => h.key === historyKey(workout) && h.scores
     && h.intervalId === styleIdOf(workout));       // a classic can be run in any style
@@ -2263,6 +2336,8 @@ function openWorkout(workout) {
   const alreadySaved = gen && state.saved.some(s => s.seed === workout.seed);
   els.btnSave.textContent = alreadySaved ? '★ Saved' : '☆ Save as favourite';
   els.btnSave.disabled = alreadySaved;
+  // a Surf check is your own numbers, not a workout to pass on
+  els.btnShare.style.display = workout.format === 'check' ? 'none' : '';
   els.workoutNote.textContent = '';
   clearGoingNote();
 
@@ -2314,6 +2389,15 @@ function renderPreview() {
 
   if (w.format === 'stretch') {
     stretchList(w).forEach((s, i) => add(`${i + 1}. ${s.name}`, `${s.hold}s hold`));
+    return;
+  }
+  if (w.format === 'check') {
+    // each test and the one way of doing it, so the numbers mean the same every time
+    const around = bookendOpts(w), shape = checkShape(w);
+    add('How it works', 'Each test is done the same way every time, so the numbers compare. After each minute, put in how many you did. In the paddle hold, tap Done when your chest touches down.');
+    add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupPlan(shape, around).map(m => warmupCard(m.id, m.sec).name).join(' · '));
+    w.stations.forEach((t, i) => add(`Test ${i + 1}: ${t.label}${t.hold ? `, up to ${fmtMin(t.sec)}` : ''}`, t.standard));
+    add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownPlan(shape, around).map(m => cooldownCard(m.id).name).join(' · '));
     return;
   }
   // the warm-up and cool-down by their moves, as the timer will run them
@@ -2394,9 +2478,11 @@ window.addEventListener('fitdeck-ready', () => {
 // after each, and on the last one Done logs the time. Either score is saved
 // with the session in history, so the next go can be compared against it.
 function renderCircuit(w, ex, phase) {
+  if (phase.check) return renderCheckCount(w, phase);
   const W = w.toUpperCase();
   const list = els['circuit' + W], counter = els['counter' + W];
   const card = list.closest('.person');
+  counter.classList.remove('check-count');
   const lap = ex && ex.circuit;
   card.classList.toggle('amrap', !!lap);
   list.hidden = !lap;
@@ -2444,6 +2530,39 @@ function renderDone(w, counter, k, rounds) {
        <div class="count-now"><b>${n + 1}</b> of ${rounds} rounds${lastLine}</div>
        <button class="count-more" data-step="1"${final ? ' aria-label="Done: that was the last round"' : ''}>${final ? 'Done' : '+1 round'}</button>`;
 }
+// A Surf check: in the rest after a test, how many each person did (one
+// fewer, one or five more, and their last time); in the paddle hold, a
+// big Done for when their chest touches down (said above, with how it's
+// done), then the time held, with an undo.
+function renderCheckCount(w, phase) {
+  const W = w.toUpperCase();
+  const list = els['circuit' + W], counter = els['counter' + W];
+  list.closest('.person').classList.remove('amrap');
+  list.hidden = true;
+  const k = phase.hold ? phase.stationIdx : phase.tally;
+  counter.hidden = k === undefined;
+  if (k === undefined) return;
+  const test = state.workout.stations[k];
+  const v = (state.scores[k] && state.scores[k][w]) || 0;
+  const last = lastCheck(w, test.id);
+  const key = `c${k}:${v}:${last ?? ''}`;
+  if (counter.dataset.key === key) return;
+  counter.dataset.key = key;
+  counter.classList.add('check-count');
+  const lastLine = last ? `<span>Last time ${esc(checkValue(test, last))}</span>` : '';
+  counter.innerHTML = !test.hold ? countButtons(test, v, lastLine)
+    : v ? `<button class="secondary count-less" data-step="undo" aria-label="Not done yet">↺</button>
+           <div class="count-now"><b>${fmt(v)}</b> held${lastLine}</div>`
+    : `${lastLine ? `<div class="count-now">${lastLine}</div>` : ''}
+       <button class="count-more check-done" data-step="done" aria-label="Done: my chest touched down">Done</button>`;
+}
+// One fewer, the count, one more and five more, for a test of reps.
+function countButtons(test, v, lastLine = '') {
+  return `<button class="secondary count-less" data-step="-1" aria-label="One fewer"${v ? '' : ' disabled'}>−</button>
+    <div class="count-now"><b>${v}</b> ${esc(test.short)}${lastLine}</div>
+    <button class="count-more" data-step="1" aria-label="One more">+1</button>
+    <button class="count-more" data-step="5" aria-label="Five more">+5</button>`;
+}
 // For Time rounds finished so far, below the number to do.
 const lapsDone = (k, w, rounds) => Math.min(Math.max(0, rounds - 1), (state.laps[k] && state.laps[k][w]) || 0);
 // Seconds into the current phase.
@@ -2474,6 +2593,7 @@ function onCounterTap(e) {
   if (!b) return;
   const w = e.currentTarget.dataset.who;
   const phase = state.sequence[state.currentIdx];
+  if (phase && phase.check) return checkTap(w, b.dataset.step, phase);
   if (!phase || !(phase.amrap || phase.forTime)) return;
   const s = state.scores[phase.blockIdx] || (state.scores[phase.blockIdx] = { a: 0, b: 0 });
   const step = b.dataset.step;
@@ -2490,6 +2610,27 @@ function onCounterTap(e) {
   delete s.skipped;                        // done after a reset, so not skipped after all
   saveScores();
   render();
+  saveRun();
+}
+// A count put in, or a paddle hold done (see renderCheckCount). Kept with
+// the session (see RESUME) until the check finishes.
+function checkTap(w, step, phase) {
+  const k = phase.hold ? phase.stationIdx : phase.tally;
+  if (k === undefined) return;
+  const s = state.scores[k] || (state.scores[k] = { a: 0, b: 0 });
+  if (phase.hold) {
+    // to the second the clock is on, which it shows from here
+    const held = Math.min(phase.duration, elapsedNow() - startOf(state.currentIdx));
+    state.remainingInPhase = phase.duration - held;
+    if (step === 'undo') s[w] = 0;
+    else if (step === 'done') s[w] = Math.max(1, Math.floor(held));
+  } else s[w] = Math.min(state.workout.stations[k].most, Math.max(0, (s[w] || 0) + +step));
+  delete s.skipped;
+  // the buttons are drawn again: from a keyboard, back on the one pressed
+  const keyboard = document.activeElement && document.activeElement.closest('.round-counter');
+  render();
+  const again = keyboard && els['counter' + w.toUpperCase()].querySelector(`button[data-step="${step}"]`);
+  if (again) again.focus();
   saveRun();
 }
 for (const w of ['A', 'B']) {
@@ -2662,6 +2803,13 @@ function renderRoundDots(phase) {
     label.textContent = phase.explain || (phase.forTime ? `Finish the rounds, ${fmtMin(phase.duration)} cap`
       : `As many rounds as you can in ${fmtMin(phase.duration)}`);
     els.roundDots.appendChild(label);
+  } else if (phase.check) {
+    // a Surf check: the test it's on or getting ready for, and how it's done
+    renderSegBar(phase.stationIdx + 1, phase.totalStations, phase.kind, 'Test');
+    const how = document.createElement('div');
+    how.className = 'round-hint check-standard';
+    how.textContent = state.workout.stations[phase.stationIdx].standard;
+    els.roundDots.appendChild(how);
   } else if (phase.totalRounds) {
     renderSegBar(phase.round, phase.totalRounds, phase.kind, phase.emom ? 'Minute' : 'Round');
     if (phase.explain) {
@@ -2761,7 +2909,8 @@ function render() {
   els.finishA.hidden = els.finishB.hidden = true;
   els.timerCard.className = 'timer-card ' + phase.kind;
   let label = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
-    : phase.changeover ? 'Change over' : (PHASE_LABEL[phase.kind] || '');
+    : phase.changeover ? 'Change over' : phase.check && phase.kind === 'rest' && !phase.stationIdx ? 'Get ready'
+    : (PHASE_LABEL[phase.kind] || '');
   els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
   if (phase.forTime) {
     // the clock counts up while you race it; once everyone's done it counts
@@ -2769,21 +2918,27 @@ function render() {
     const done = allDone(phase);
     label = done ? 'Rest' : 'For time';
     if (!done) els.timeDisplay.textContent = fmt(Math.floor(phaseElapsed(phase)));
+  } else if (phase.hold) {
+    // a paddle hold counts up, and stops at the longest once everyone's done
+    const done = allDone(phase), s = state.scores[phase.blockIdx] || {};
+    label = done ? 'Done' : 'Hold';
+    els.timeDisplay.textContent = fmt(done ? Math.max(s.a || 0, s.b || 0) : Math.floor(phaseElapsed(phase)));
   }
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
   // the phase and block are read out as they change (aria-live), so only
   // write them when they do, not five times a second
   setText(els.phaseLabel, label);
   setText(els.blockName, phase.name);
-  setText(els.btnSkip, SKIP_LABEL[phase.kind] || 'Skip block');
+  setText(els.btnSkip, phase.check ? (phase.kind === 'work' ? 'Skip test' : 'Skip rest') : SKIP_LABEL[phase.kind] || 'Skip block');
   els.overallProgress.style.width =
     `${Math.min(100, (state.elapsedTotal / state.totalDuration) * 100)}%`;
 
   renderRoundDots(phase);
 
   // During a rest the person cards show what's coming, at full size, so
-  // there's time to read it and get the gear ready.
-  const restLike = phase.kind === 'rest' || phase.kind === 'blockrest';
+  // there's time to read it and get the gear ready. The rest after a Surf
+  // check test asks how many instead (what's next is under it).
+  const restLike = (phase.kind === 'rest' || phase.kind === 'blockrest') && phase.tally === undefined;
   let dispA = phase.a, dispB = phase.b;
   if (restLike) {
     let j = state.currentIdx + 1;
@@ -2839,14 +2994,16 @@ function renderUpcoming() {
   if (!next) { els.upcoming.innerHTML = ''; return; }
   const short = (which, fallback) =>
     ((which === 'a' ? state.nameA : state.nameB) || '').trim() || fallback;
-  const work = (p) => state.people === 2
+  // (a Surf check test is the same for both)
+  const work = (p) => state.people === 2 && !p.check
     ? `${short('a', 'A')}: ${withReps(p.a)} · ` +
       `${short('b', 'B')}: ${withReps(p.b)}`
     : withReps(p.a);
   // a rest says what it's resting for
   const then = state.sequence[state.currentIdx + 2];
   let preview;
-  if (next.kind === 'rest') preview = then && then.kind === 'work'
+  if (next.tally !== undefined && then) preview = `Rest ${next.duration}s and put in how many, then ${work(then)}`;
+  else if (next.kind === 'rest') preview = then && then.kind === 'work'
     ? `Rest ${next.duration}s, then ${work(then)}` : `Rest ${next.duration}s`;
   else if (next.amrap) preview = `AMRAP: ${next.a.circuit.map(x => x.name).join(', ')}`;
   else if (next.forTime) preview = `For time, ${next.a.lapRounds} rounds: ${next.a.circuit.map(x => x.name).join(', ')}`;
@@ -2911,6 +3068,7 @@ function tickClock() {
   const { idx, remaining } = locate(elapsed);
 
   if (idx >= state.sequence.length) {
+    holdRanOut(state.currentIdx, idx);
     state.elapsedTotal = state.totalDuration;
     finish();
     return;
@@ -2918,6 +3076,7 @@ function tickClock() {
 
   state.elapsedTotal = elapsed;
   if (idx !== state.currentIdx) {
+    holdRanOut(state.currentIdx, idx);
     // May have crossed several phases at once if we were backgrounded;
     // only announce the one we actually landed on.
     state.currentIdx = idx;
@@ -2929,6 +3088,7 @@ function tickClock() {
     if (kind === 'work' || kind === 'stretch' || kind === 'warmup') closeMove();
   }
   state.remainingInPhase = remaining;
+  if (state.sequence[idx].hold && holdOver(state.sequence[idx])) return;
 
   const whole = Math.ceil(remaining);
   if (whole <= 3 && whole >= 1) {
@@ -2940,6 +3100,45 @@ function tickClock() {
   render();
   // kept every few seconds, so a reload picks up about where it was
   if (Date.now() - runSavedAt >= RUN_SAVE_MS) saveRun();
+}
+
+// A Surf check's paddle hold (see SURF_CHECK). Run out to its end, whoever
+// was still going held it all; stopped with Skip part-way, they held it
+// till then (from five seconds in, before which it was skipped).
+function holdRanOut(from, to) {
+  const p = state.sequence[from];
+  if (p && p.hold && to > from) holdStopped(p, p.duration);
+}
+function holdStopped(p, sec) {
+  if (sec < 5) return;
+  const s = state.scores[p.blockIdx] || (state.scores[p.blockIdx] = { a: 0, b: 0 });
+  (state.people === 2 ? ['a', 'b'] : ['a']).forEach(w => { if (!(s[w] > 0)) s[w] = Math.round(sec); });
+}
+// Everyone's tapped Done: a moment to take back a mis-tap, then on to the
+// cool-down. True once it has moved on.
+const HOLD_GRACE_MS = 3000;
+function holdOver(p) {
+  if (!allDone(p)) { state.holdDoneAt = null; return false; }
+  if (!state.holdDoneAt) state.holdDoneAt = Date.now();
+  if (Date.now() - state.holdDoneAt < HOLD_GRACE_MS) return false;
+  state.holdDoneAt = null;
+  const target = state.currentIdx + 1;
+  // the cap's time not used, so the finish screen's minutes are what was done
+  state.skippedSec += Math.max(0, startOf(target) - elapsedNow());
+  if (target >= state.sequence.length) {
+    state.elapsedTotal = state.totalDuration;
+    state.currentIdx = state.sequence.length;
+    finish();
+    return true;
+  }
+  hush();
+  seekTo(target);
+  enterPhaseVisual(state.sequence[target].kind, state.remainingInPhase);
+  chimeFor(state.sequence[target]);
+  if (state.running) beginBleed(state.remainingInPhase);
+  render();
+  saveRun();
+  return true;
 }
 
 function startTimer() {
@@ -3003,6 +3202,9 @@ function resetWorkout() {
   state.skipped = [];
   state.skippedSec = 0;
   state.started = false;
+  // a Surf check gone again is a new one
+  state.checkAt = null;
+  state.holdDoneAt = null;
   coachFresh();
   seekTo(0);
   if (state.sequence[0]) enterPhaseVisual(state.sequence[0].kind, state.remainingInPhase);
@@ -3020,6 +3222,7 @@ function finish() {
   if (state.started) {
     markHistoryComplete();
     completeProgramDay();
+    if (state.workout.format === 'check') recordCheck();
     clearRun();
   }
   bigBell();
@@ -3046,7 +3249,8 @@ function finish() {
   // skipped through on a program day still ticks the day off (see
   // programDoneLine below), so the top says that too
   setText(els.blockName, !state.started ? 'The end of the workout'
-    : endedEarly() ? (programDoneLine() ? 'Ended early, day ticked off' : 'Session ended early') : 'Workout complete. Nice work.');
+    : endedEarly() ? (programDoneLine() && !lastCheckRun() ? 'Ended early, day ticked off' : 'Session ended early')
+    : state.workout.format === 'check' ? 'Surf check done. Nice work.' : 'Workout complete. Nice work.');
   els.roundDots.innerHTML = '';
   finishSummary().forEach(text => {
     const line = document.createElement('div');
@@ -3095,10 +3299,12 @@ function finishSummary() {
   const w = state.workout;
   if (!state.started) return ["Skipped to the end without pressing Start, so it isn't counted as a session."];
   const sec = timeDone();
-  const stretch = w.format === 'stretch';
-  const total = stretch ? stretchList(w).length : w.blocks.length;
-  const unit = stretch ? (total === 1 ? 'stretch' : 'stretches') : (total === 1 ? 'block' : 'blocks');
-  const skipped = state.skipped.length;
+  const stretch = w.format === 'stretch', check = w.format === 'check';
+  const total = stretch ? stretchList(w).length : check ? w.stations.length : w.blocks.length;
+  const unit = stretch ? (total === 1 ? 'stretch' : 'stretches') : check ? (total === 1 ? 'test' : 'tests')
+    : (total === 1 ? 'block' : 'blocks');
+  // a test skipped that someone put a number in for anyway was done
+  const skipped = state.skipped.filter(k => !(check && checkScored(k))).length;
   // whole minutes, as the clock beside it has them (7:30 is 7 min)
   const lines = [`${sec < 60 ? 'Under a minute' : `${Math.floor(Math.round(sec) / 60)} min`} done · ${total - skipped} of ${total} ${unit}${skipped ? `, ${skipped} skipped` : ''}`];
   const day = programDoneLine();
@@ -3107,12 +3313,19 @@ function finishSummary() {
 }
 // Seconds of the session run through rather than skipped.
 const timeDone = () => Math.max(0, state.totalDuration - state.skippedSec);
+// The Surf check after a program's last day, which has no day to tick off.
+function lastCheckRun() {
+  const run = state.programRun;
+  const prog = run && run.check && PROGRAMS.find(p => p.id === run.id);
+  return !!prog && run.n >= prog.weeks * prog.days.length;
+}
 // "Day 9 of 42 done. Next: Pop-ups & legs"
 function programDoneLine() {
   const run = state.programRun;
   const prog = run && PROGRAMS.find(p => p.id === run.id);
   const ps = prog && programStatus(prog);
   if (!ps) return '';
+  if (lastCheckRun()) return `The last Surf check of ${prog.name}.`;
   return `Day ${run.n + 1} of ${prog.weeks * prog.days.length} done. ${ps.finished ? `That's the whole of ${prog.name}.` : `Next: ${ps.day.name}`}`;
 }
 // Each AMRAP and For Time score this person made, against last time:
@@ -3136,8 +3349,8 @@ function finishScores(who) {
 let feelBefore = {};
 // The history entry of the session just finished, which keeps how it felt;
 // a stretch routine says nothing about reps, so it doesn't ask, nor does
-// one skipped through.
-const finishedEntry = () => (state.started && !endedEarly() && state.workout && state.workout.format !== 'stretch'
+// a Surf check (flat out, by design) or one skipped through.
+const finishedEntry = () => (state.started && !endedEarly() && state.workout && state.workout.format !== 'stretch' && state.workout.format !== 'check'
   && state.history.find(h => h.key === historyKey(state.workout))) || null;
 function renderFinishPeople() {
   const entry = finishedEntry();
@@ -3145,6 +3358,9 @@ function renderFinishPeople() {
     const box = els['finish' + who.toUpperCase()];
     box.innerHTML = '';
     if (who === 'b' && state.people !== 2) { box.hidden = true; return; }
+    // a Surf check: each test's result, a count still to be changed, and
+    // against last time
+    if (state.started && state.workout.format === 'check') box.append(...checkFinish(who));
     const scores = finishScores(who);
     if (scores.length) {
       const list = document.createElement('ul');
@@ -3230,6 +3446,10 @@ function skipBlock() {
   let target = state.currentIdx + 1;
   if (cur.kind === 'warmup' || cur.kind === 'cooldown') {
     while (target < state.sequence.length && state.sequence[target].kind === cur.kind) target++;
+  } else if (cur.check) {
+    // a Surf check skips a test, or the rest before one, at a time; Skip in
+    // the paddle hold stops it for whoever hasn't tapped Done
+    if (cur.hold) holdStopped(cur, from - startOf(state.currentIdx));
   } else if (cur.kind !== 'stretch') {
     // Walk to the first phase that isn't part of this block.
     while (target < state.sequence.length) {
@@ -3242,7 +3462,7 @@ function skipBlock() {
   // it was scored (a For Time finished early, say) or as good as done, and
   // the time
   const s = state.scores[cur.blockIdx];
-  const scored = (cur.amrap || cur.forTime) && s && (s.a || s.b);
+  const scored = (cur.amrap || cur.forTime || cur.hold) && s && (s.a || s.b);
   const leftOut = (cur.kind === 'work' || cur.kind === 'rest') && !scored && skipsBlock(cur, target, from);
   // a scored block left out before anyone logged a score says skipped, in
   // history and on the finish screen, not 0 rounds or capped; one as good
@@ -3345,7 +3565,9 @@ function programRunLabel(run = state.programRun) {
   const prog = run && PROGRAMS.find(p => p.id === run.id);
   if (!prog) return null;
   const day = programDay(prog, run.n);
-  return { id: prog.id, n: run.n, day: day.name, where: `${prog.name} · Week ${day.week}, Day ${run.n + 1}` };
+  // a Surf check in the day's place, or the last one, after the end
+  if (run.check && run.n >= prog.weeks * prog.days.length) return { id: prog.id, n: run.n, day: SURF_CHECK.name, where: `${prog.name} · after ${prog.weeks} weeks` };
+  return { id: prog.id, n: run.n, day: run.check ? SURF_CHECK.name : day.name, where: `${prog.name} · Week ${day.week}, Day ${run.n + 1}` };
 }
 
 function markHistoryComplete() {
@@ -3401,11 +3623,11 @@ function openFromRecord(rec) {
   openWorkout(w);
   return null;
 }
-// A classic or stretch routine the way it was run: a classic takes
+// A classic, stretch routine or Surf check the way it was run: a classic takes
 // whichever interval was selected at the time, so carry the recorded one,
 // not today's preference. Null if it's no longer in the library.
 function namedAsRun(id, intervalId) {
-  const w = CLASSICS.find(x => x.id === id) || STRETCH_ROUTINES.find(x => x.id === id);
+  const w = CLASSICS.find(x => x.id === id) || STRETCH_ROUTINES.find(x => x.id === id) || (id === SURF_CHECK.id ? SURF_CHECK : null);
   if (!w) return null;
   return w.format === 'tabata' && intervalId && INTERVALS[intervalId] ? { ...w, intervalId } : w;
 }
@@ -3531,7 +3753,7 @@ function cleanRun(s) {
     frozen: plain(s.frozen) ? s.frozen : null,
     workoutId: s.workoutId, intervalId: typeof s.intervalId === 'string' ? s.intervalId : null,
     names: { a: name(names.a), b: name(names.b) },
-    programRun: prog ? { id: s.programRun.id, n: s.programRun.n } : null,
+    programRun: prog ? { id: s.programRun.id, n: s.programRun.n, ...(s.programRun.check === true ? { check: true } : {}) } : null,
     scores, laps, pick,
     lastScores: Array.isArray(s.lastScores) ? s.lastScores.map(x => (plain(x) ? { a: last(x.a), b: last(x.b) } : null)) : null,
     // saved before the finish screen counted skips: none
@@ -3564,6 +3786,7 @@ function rebuildRun(s) {
 function phaseWhere(p) {
   if (p.kind === 'warmup') return 'the warm-up';
   if (p.kind === 'cooldown') return 'the cool-down';
+  if (p.check) return p.kind === 'work' ? `test ${p.stationIdx + 1}` : p.stationIdx ? `the rest before test ${p.stationIdx + 1}` : 'getting ready';
   if (p.kind === 'stretch') return `stretch ${p.stretchIdx + 1}`;
   if (p.kind === 'blockrest') return `the rest before block ${p.blockIdx + 2}`;
   return `block ${p.blockIdx + 1}`;
@@ -3576,6 +3799,7 @@ function phaseStart(p) {
   const block = `block ${p.blockIdx + 1}`;
   if (p.kind === 'warmup') return p.warmIdx ? `warm-up move ${p.warmIdx + 1}` : 'the warm-up';
   if (p.kind === 'cooldown') return p.coolIdx ? `cool-down stretch ${p.coolIdx + 1}` : 'the cool-down';
+  if (p.check) return phaseWhere(p);
   if (p.kind === 'rest') return `the rest after round ${p.round} of ${block}`;
   if (p.kind === 'work' && p.round > 1) return `${p.emom ? 'minute' : 'round'} ${p.round} of ${block}`;
   return phaseWhere(p);
@@ -3778,12 +4002,14 @@ function readBackup(text) {
   } catch (e) { return null; }
 }
 // What's in a set of prefs, to check before replacing anything: "12
-// sessions, 3 favourites, 2 places (Home, Mate's place) and Surf Fit week 3".
+// sessions, 3 favourites, 2 places (Home, Mate's place), 2 Surf checks and
+// Surf Fit week 3".
 function dataSummary(p) {
   const count = (n, one) => `${n || 'no'} ${one}${n === 1 ? '' : 's'}`;
   const parts = [count(p.history.length, 'session')];
   if (p.saved.length) parts.push(count(p.saved.length, 'favourite'));
   if (p.gearSets.length) parts.push(`${count(p.gearSets.length, 'place')} (${p.gearSets.map(g => g.name).join(', ')})`);
+  if (p.checks.length) parts.push(count(p.checks.length, 'Surf check'));
   PROGRAMS.forEach(prog => {
     const st = p.programs[prog.id];
     if (!st) return;
@@ -3951,7 +4177,7 @@ function dataSection() {
     p2.className = 'picker-hint';
     // a new device has only the defaults (the Home it makes for itself)
     const here = currentPrefs();
-    const blank = !here.gearAsked && !here.history.length && !here.saved.length && !Object.keys(here.programs).length;
+    const blank = !here.gearAsked && !here.history.length && !here.saved.length && !Object.keys(here.programs).length && !here.checks.length;
     p2.textContent = blank ? 'Nothing is saved here yet.' : `It replaces everything here now: ${dataSummary(here)}.`;
     const row = document.createElement('div');
     row.className = 'data-actions';
@@ -4150,6 +4376,8 @@ function renderProgram() {
       renderProgram();
     });
     c.appendChild(go);
+    const results = checkResults(null);
+    if (results) body.appendChild(results);
     return;
   }
 
@@ -4157,6 +4385,13 @@ function renderProgram() {
     const c = add(`<div class="card-name">${prog.weeks} weeks done</div>
       <div class="card-blurb">That's the whole of ${esc(prog.name)}. Go again from the start, or keep choosing Surf fitness in Build a workout.</div>`);
     c.appendChild(restartButton(prog));
+    // one more Surf check, to see how far you've come
+    if (finalCheckDue(prog, ps.st)) {
+      const last = add('', 'workout-card program-card program-today');
+      fillCheckDay(last, prog, ps.st, null, { tagline: `${prog.name} · after ${prog.weeks} weeks`, rerender: renderProgram, final: true });
+    }
+    const results = checkResults(ps.st);
+    if (results) body.appendChild(results);
     return;
   }
   const { st, n, day, last, doneToday } = ps;
@@ -4167,8 +4402,9 @@ function renderProgram() {
   const surfing = surfsOf(st).length > 0 || st.done.some(d => d.surfed);
   const felt = surfsOf(st).filter(x => x.paddle).slice(-6).map(x => PADDLE_FEEL[x.paddle]);
   // what a day in the strip was: a session, a surf in its place (before
-  // surfs sat beside the program) or a paddle
-  const mark = (rec) => (rec.surfed ? ['Surf', 'surfed'] : rec.water ? ['Water', 'paddled'] : ['✓', 'done']);
+  // surfs sat beside the program), a paddle or a Surf check
+  const mark = (rec) => (rec.surfed ? ['Surf', 'surfed'] : rec.water ? ['Water', 'paddled']
+    : rec.check ? ['Check', 'Surf check done'] : ['✓', 'done']);
   add(`<div class="program-progress">
       <div><b>Week ${day.week}</b> of ${prog.weeks}</div>
       <div><b>Day ${n + 1}</b> of ${total}</div>
@@ -4186,7 +4422,7 @@ function renderProgram() {
 
   if (doneToday && !state.programAhead) {
     const c = add(`<div class="card-name">Today's done</div>
-      <div class="card-blurb">${last.surfed ? 'A surf counts. ' : last.water ? 'A paddle counts. ' : ''}Next up: <b>${esc(day.name)}</b>. ${esc(day.about)}</div>`);
+      <div class="card-blurb">${last.surfed ? 'A surf counts. ' : last.water ? 'A paddle counts. ' : last.check ? 'Surf check done. ' : ''}Next up: <b>${esc(day.name)}</b>. ${esc(day.about)}</div>`);
     const again = document.createElement('button');
     again.className = 'secondary';
     again.textContent = 'Do the next one now anyway';
@@ -4196,6 +4432,8 @@ function renderProgram() {
   } else {
     renderProgramToday(prog, st, day);
   }
+  const results = checkResults(st);
+  if (results) body.appendChild(results);
   const foot = add(`<div class="picker-label">Each week</div>${rhythm}`, 'program-foot');
   foot.appendChild(restartButton(prog));
 }
@@ -4205,7 +4443,8 @@ function restartButton(prog) {
   b.textContent = 'Start the program again';
   b.addEventListener('click', () => {
     if (b.dataset.sure) {
-      // from day 1 again, keeping the surfs: they're a log of surfing, not days of the program
+      // from day 1 again, keeping the surfs: they're a log of surfing, not
+      // days of the program (and the Surf checks are kept apart anyway)
       const was = state.programs[prog.id];
       state.programs[prog.id] = { ...newProgram(), surfs: was ? surfsOf(was) : [] };
       savePrefs();
@@ -4231,6 +4470,8 @@ function renderProgramToday(prog, st, day) {
 // screen and the home card both show it, so they say how to redraw and
 // where a message goes.
 function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint }) {
+  // every two weeks, a Surf check in the day's place (see SURF CHECKS)
+  if (checkToday(prog, st, day.n)) return fillCheckDay(c, prog, st, day, { tagline, rerender });
   // back after time off, an earlier week's reps and timing (as Start builds it)
   const ease = programEaseFor(prog, st, day.n);
   if (ease) day = easedDay(prog, day, ease.week);
@@ -4267,6 +4508,19 @@ function fillProgramDay(c, prog, st, day, { tagline, rerender, note, gearHint })
       line.appendChild(linkButton('Change', () => { openSetup(); setMoreOptions(true); }));
       notes.push(line);
     }
+  }
+  // the Surf check put off till tomorrow, with the way back to it
+  if (isCheckDay(prog, day.n) && checkFits()) {
+    const line = programHint('Not doing the Surf check today. ');
+    line.classList.add('check-later');
+    const back = linkButton('Do the Surf check', () => {
+      const now = state.programs[prog.id];
+      if (now) { delete now.checkLater; savePrefs(); }
+      rerender();
+    });
+    back.id = 'btnCheckBack';
+    line.appendChild(back);
+    notes.push(line);
   }
   c.append(...peopleGearRows(!day.stretch, rerender, gearHint));
   const go = document.createElement('button');
@@ -4476,16 +4730,270 @@ function startProgramDay(prog, day) {
   if (err) state.programRun = null;
   return err;
 }
-// Called when a session finishes: tick off the program day it was.
+// Called when a session finishes: tick off the program day it was (a
+// Surf check in its place says so; the last one, after the end, has no
+// day to tick).
 function completeProgramDay() {
   const run = state.programRun;
   if (!run) return;
   const st = state.programs[run.id];
-  if (st && !st.done.some(d => d.n === run.n)) {
+  const prog = PROGRAMS.find(p => p.id === run.id);
+  if (st && prog && run.n < prog.weeks * prog.days.length && !st.done.some(d => d.n === run.n)) {
     noteEase(st);
-    st.done.push({ n: run.n, at: Date.now() });
+    st.done.push({ n: run.n, at: Date.now(), ...(run.check ? { check: true } : {}) });
     savePrefs();
   }
+}
+
+// =====================================================================
+// SURF CHECKS
+// Every two weeks Surf Fit offers a Surf check (see SURF_CHECK in
+// js/workouts.js) in place of the day's session, with Not today to do the
+// session instead (for today: tomorrow it's offered again, unless the
+// session was done), and one more after the last day. It's done as that
+// day ({ n, at, check: true } in done), so where you're up to moves on as
+// it would have.
+//
+// The results are kept apart from the history (which keeps 200 sessions
+// and can be cleared), one entry a check, oldest first: { at, n, results:
+// { [person]: { name, popups, pushups, paddle } } }, each person by their
+// name as their level is (or their spot, '#a', with no name), with the
+// name as it was written, and only what they put in (paddle is seconds).
+// n is the program day it was on (the last one past the end); a check run
+// again from the history has none. Starting the program again keeps them,
+// shown as earlier, by date. They're under their own key too (CHECKS_KEY),
+// so a tab on an older release, which doesn't know them, can't lose them.
+// =====================================================================
+const CHECKS_CAP = 100;          // checks kept, newest: 4 a program, years of them
+// The checks as stored (or from another tab, or a backup), each part
+// checked, with anything that can't be used let go.
+function cleanChecks(x) {
+  const plain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  const list = (Array.isArray(x) ? x : []).filter(c => plain(c) && typeof c.at === 'number' && Number.isFinite(c.at) && plain(c.results)).map(c => {
+    const results = {};
+    Object.keys(c.results).slice(0, 4).forEach(key => {
+      const r = c.results[key];
+      if (!key || key.length > 30 || key === '__proto__' || !plain(r)) return;
+      const one = { name: typeof r.name === 'string' ? r.name.trim().slice(0, 14) : '' };
+      SURF_CHECK.stations.forEach(t => { if (Number.isInteger(r[t.id]) && r[t.id] > 0 && r[t.id] <= t.most) one[t.id] = r[t.id]; });
+      if (Object.keys(one).length > 1) results[key] = one;
+    });
+    return { at: c.at, ...(Number.isInteger(c.n) && c.n >= 0 ? { n: c.n } : {}), results };
+  });
+  return list.filter(c => Object.keys(c.results).length).sort((a, b) => a.at - b.at).slice(-CHECKS_CAP);
+}
+const checkHas = (key) => state.checks.some(c => ownKey(c.results, key));
+// Whose results a spot's are: their name's, or until that name has any,
+// the spot's from before it had a name (Wayne on his own, say, before
+// Dave came round and they put their names in).
+function checkKey(which) {
+  const key = levelKey(which), spot = `#${which}`;
+  return key !== spot && !checkHas(key) && checkHas(spot) ? spot : key;
+}
+// This person's last result in a test, before the check under way, or null.
+function lastCheck(which, testId) {
+  const key = checkKey(which);
+  for (let i = state.checks.length - 1; i >= 0; i--) {
+    const c = state.checks[i];
+    const r = c.at !== state.checkAt && ownKey(c.results, key) && c.results[key];
+    if (r && r[testId]) return r[testId];
+  }
+  return null;
+}
+// Someone has a result in test k of the check under way.
+const checkScored = (k) => !!state.scores[k] && (state.scores[k].a > 0 || state.scores[k].b > 0);
+// "12", "1:35", or a dash for a test not put in.
+const checkValue = (test, v) => (v ? (test.hold ? fmt(v) : String(v)) : '–');
+// Keep the check under way (at its finish, and as a count is changed
+// after): its entry, made the first time anyone has a result in it, or
+// taken out again if all of them are taken back.
+function recordCheck() {
+  const w = state.workout;
+  const who = state.people === 2 ? ['a', 'b'] : ['a'];
+  // a name's first results take in its spot's from before it had one
+  who.forEach(x => {
+    const key = levelKey(x), spot = checkKey(x);
+    if (spot !== key) state.checks.forEach(c => { if (ownKey(c.results, spot) && !ownKey(c.results, key)) { c.results[key] = c.results[spot]; delete c.results[spot]; } });
+  });
+  const results = {};
+  who.forEach(x => {
+    const r = { name: ((x === 'a' ? state.nameA : state.nameB) || '').trim().slice(0, 14) };
+    w.stations.forEach((t, k) => {
+      const v = state.scores[k] && state.scores[k][x];
+      if (v > 0) r[t.id] = Math.min(Math.round(v), t.most);
+    });
+    if (Object.keys(r).length > 1) results[levelKey(x)] = r;
+  });
+  const i = state.checks.findIndex(c => c.at === state.checkAt);
+  if (i >= 0 && !Object.keys(results).length) state.checks.splice(i, 1);
+  else if (i >= 0) state.checks[i].results = results;
+  else if (Object.keys(results).length) {
+    state.checkAt = Date.now();
+    const run = state.programRun;
+    state.checks.push({ at: state.checkAt, ...(run && run.check ? { n: run.n } : {}), results });
+    state.checks = state.checks.slice(-CHECKS_CAP);
+  }
+  savePrefs();
+  keepStorage();
+}
+// On the finish screen, each test for one person: what they did (a count
+// can still be changed, for one not put in in the rest), and against
+// their last.
+function checkFinish(who) {
+  return state.workout.stations.map((t, k) => {
+    const v = (state.scores[k] && state.scores[k][who]) || 0;
+    const last = lastCheck(who, t.id);
+    const row = document.createElement('div');
+    row.className = 'check-result';
+    const head = document.createElement('div');
+    head.className = 'check-label';
+    head.textContent = t.label;
+    const count = document.createElement('div');
+    count.className = 'round-counter check-count';
+    count.dataset.who = who;
+    count.dataset.test = k;
+    count.innerHTML = t.hold ? `<div class="count-now check-time"><b>${checkValue(t, v)}</b> ${v ? 'held' : 'not timed'}</div>` : countButtons(t, v);
+    const change = document.createElement('div');
+    change.className = 'check-change';
+    change.setAttribute('role', 'status');
+    change.textContent = !v ? '' : last ? checkChange(t, v, last) : 'Your first one: the number to beat.';
+    row.append(head, count, change);
+    return row;
+  });
+}
+// A count changed on the finish screen: kept at once.
+function onCheckFinishTap(e) {
+  const b = e.target.closest('button[data-step]');
+  const box = b && b.closest('.check-count');
+  if (!box || !isFinished() || !state.workout || state.workout.format !== 'check') return;
+  const who = box.dataset.who, k = +box.dataset.test, test = state.workout.stations[k];
+  const s = state.scores[k] || (state.scores[k] = { a: 0, b: 0 });
+  s[who] = Math.min(test.most, Math.max(0, (s[who] || 0) + +b.dataset.step));
+  recordCheck();
+  const keyboard = document.activeElement === b;
+  renderFinishPeople();
+  const again = els['finish' + who.toUpperCase()].querySelector(`.check-count[data-test="${k}"] button[data-step="${b.dataset.step}"]`);
+  if (keyboard && again) again.focus();
+}
+els.finishA.addEventListener('click', onCheckFinishTap);
+els.finishB.addEventListener('click', onCheckFinishTap);
+
+// A check fits what Build a workout leaves out: all three tests are on the
+// floor, so with No floor work (or one of its moves left out) it isn't
+// offered, and the day is its usual session.
+const checkFits = () => !state.blockedTags.includes('floor')
+  && !SURF_CHECK.stations.some(t => state.excluded.includes(t.ex));
+// Day n's Surf check is on offer today: a check day, and not put off.
+const checkToday = (prog, st, n) => isCheckDay(prog, n) && checkFits() && st.checkLater !== dayKey(Date.now());
+// The last check, after the last day: offered until it's done, this time through.
+function finalCheckDue(prog, st) {
+  const total = prog.weeks * prog.days.length;
+  return !!prog.finalCheck && checkFits() && !state.checks.some(c => c.n === total && c.at >= (st.startedAt || 0));
+}
+function startCheck(prog, n) {
+  state.programRun = { id: prog.id, n, check: true };
+  openWorkout(SURF_CHECK);
+}
+// The Surf check in the day's place, on the program screen and the home
+// card (see fillProgramDay), or the last one after the end: what it is,
+// who's doing it, and go; and Not today, for the day's session instead.
+function fillCheckDay(c, prog, st, day, { tagline, rerender, final }) {
+  const n = final ? prog.weeks * prog.days.length : day.n;
+  c.innerHTML = `<div class="card-tagline">${esc(tagline)}</div>
+    <div class="card-name">${final ? 'The last Surf check' : 'Surf check'}</div>
+    <div class="card-blurb">${final ? "The same three tests once more, to see how far you've come"
+      : `Every two weeks, in place of ${esc(day.name)}: three quick tests to see your pop-ups and paddling getting better`}.
+      Pop-ups in a minute, push-ups in a minute, then a paddle hold. About ${checkMinutes(SURF_CHECK)} minutes.</div>`;
+  c.append(...peopleGearRows(false, rerender));
+  if (state.people === 2) c.append(...checkNames());
+  const go = document.createElement('button');
+  go.className = 'program-go';
+  go.textContent = final ? 'Start the last Surf check' : 'Start the Surf check';
+  go.addEventListener('click', () => startCheck(prog, n));
+  c.append(go);
+  if (!final) {
+    const later = programHint('');
+    later.classList.add('check-later');
+    const no = linkButton('Not today', () => {
+      const now = state.programs[prog.id];
+      if (now) { now.checkLater = dayKey(Date.now()); savePrefs(); }
+      rerender();
+    });
+    no.id = 'btnCheckLater';
+    later.append(no, ` does ${day.name} instead, and the next check comes in two weeks.`);
+    c.append(later, surfLog(prog, st, rerender, true));
+  }
+}
+// With two of you and a name missing, the names the results are kept
+// under (the same as in setup).
+function checkNames() {
+  const label = pickerLabel('Your names, so you each keep your own results');
+  const row = document.createElement('div');
+  row.className = 'name-inputs check-names';
+  ['a', 'b'].forEach(w => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 14;
+    input.autocomplete = 'off';
+    input.enterKeyHint = 'done';
+    input.placeholder = w === 'a' ? 'First name' : 'Second name';
+    input.setAttribute('aria-label', `Person ${w.toUpperCase()}'s name`);
+    input.dataset.name = w;
+    input.value = w === 'a' ? state.nameA : state.nameB;
+    input.addEventListener('input', () => {
+      if (w === 'a') state.nameA = els.nameA.value = input.value; else state.nameB = els.nameB.value = input.value;
+      savePrefs();
+    });
+    row.appendChild(input);
+  });
+  return (state.nameA || '').trim() && (state.nameB || '').trim() ? [] : [label, row];
+}
+// What a person's results go by: their name, as last written.
+function checkPeople(list) {
+  const people = new Map();
+  list.forEach(c => Object.entries(c.results).forEach(([key, r]) => {
+    if (!people.has(key)) people.set(key, { key, rows: [] });
+    people.get(key).rows.push({ at: c.at, ...r });
+  }));
+  return [...people.values()].map(p => {
+    const named = [...p.rows].reverse().find(r => r.name);
+    return { ...p, name: named ? named.name : p.key === '#b' ? 'Person B' : 'You' };
+  });
+}
+// "12 pop-ups, 20 push-ups and a 1:35 paddle hold"
+function checkSaid(r) {
+  const parts = SURF_CHECK.stations.filter(t => r[t.id]).map(t => (t.hold ? `a ${fmt(r[t.id])} ${t.short}` : `${r[t.id]} ${t.short}`));
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join('');
+}
+// The results on the Programs screen, each person's line for each test,
+// oldest first ("Pop-ups in a minute: 9, 12, 14"), since the program was
+// started; from before it was started again, closed, by date. Null with
+// no checks yet.
+function checkResults(st) {
+  if (!state.checks.length) return null;
+  const from = st && typeof st.startedAt === 'number' ? st.startedAt : 0;
+  const now = state.checks.filter(c => c.at >= from), before = state.checks.filter(c => c.at < from);
+  const box = document.createElement('div');
+  box.className = 'workout-card program-card check-results';
+  box.innerHTML = '<div class="card-name">Surf check results</div>';
+  checkPeople(now).forEach(p => {
+    const el = document.createElement('div');
+    el.className = 'check-person';
+    el.innerHTML = `<div class="check-who"><b>${esc(p.name)}</b> <span>${esc(p.rows.map(r => shortDate(r.at)).join(', '))}</span></div>`
+      + SURF_CHECK.stations.filter(t => p.rows.some(r => r[t.id])).map(t =>
+        `<div class="check-line">${esc(t.label)}: <b>${esc(p.rows.map(r => checkValue(t, r[t.id])).join(', '))}</b></div>`).join('');
+    box.appendChild(el);
+  });
+  if (!now.length) box.appendChild(programHint("None yet since you started again. Your earlier ones are here."));
+  if (before.length) {
+    const old = document.createElement('details');
+    old.className = 'check-earlier';
+    old.innerHTML = '<summary>Earlier, before you started again</summary>' + checkPeople(before).map(p =>
+      `<div class="check-person"><div class="check-who"><b>${esc(p.name)}</b></div>${p.rows.map(r =>
+        `<div class="check-line">${esc(shortDate(r.at))}: ${esc(checkSaid(r))}</div>`).join('')}</div>`).join('');
+    box.appendChild(old);
+  }
+  return box;
 }
 
 // =====================================================================
