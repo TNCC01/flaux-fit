@@ -3144,8 +3144,11 @@ try {
     // with no tab of this release open, its save can't lose them either: the next tab finds them under their own key
     await mine.close();
     await old.evaluate(() => { state.minutes = 30; savePrefs(); });
-    // (with no git the old tab is this release, which keeps them itself)
-    if (lastApp) assert(await old.evaluate(() => !('checks' in JSON.parse(localStorage.getItem('fit-prefs-2')))), 'the last release saved without them');
+    // (with no git the old tab is this release, which keeps them itself, as
+    // does a last release that has the Surf check too)
+    if (lastApp && !/^const CHECKS_KEY /m.test(String(lastApp))) {
+      assert(await old.evaluate(() => !('checks' in JSON.parse(localStorage.getItem('fit-prefs-2')))), 'the last release saved without them');
+    }
     const next = await both.newPage(); watch(next, 'this release, later');
     await next.goto(URL);
     assert(await next.evaluate((m) => JSON.stringify(state.checks) === m && state.minutes === 30, k3.mem), 'a tab of this release opened after has them again');
@@ -4164,6 +4167,231 @@ try {
   await p.click('#btnStart');
   assert(await activeView() === 'welcomeView', 'Done goes home after a session that is not a program day');
   ok(`aria-live phase and block, labelled text sizes, Start ${startContrast.toFixed(1)}:1 and Pause ${pauseContrast.toFixed(1)}:1; Done goes home`);
+
+  step = 'landscape, a trial: layouts A, B and C on an iPad and an opened fold on their side, and everything else as it was';
+  {
+    const lx = await browser.newContext({ viewport: { width: 1180, height: 820 }, serviceWorkers: 'block' });
+    await lx.addInitScript((schema) => {
+      if (location.pathname !== '/' || localStorage.getItem('fit-prefs-2')) return;
+      localStorage.setItem('fit-prefs-2', JSON.stringify({ schema, gearAsked: true, people: 2, nameA: 'Wayne', nameB: 'Dave', minutes: 20,
+        equipment: { kettlebells: true }, weights: { kb: [12, 16], db: [], bar: 10 } }));
+    }, HERE_SCHEMA);
+    const L = await lx.newPage();
+    L.on('pageerror', e => errors.push('landscape: ' + e));
+    L.on('console', m => { if (m.type() === 'error') errors.push('landscape: ' + m.text()); });
+    const ev = (fn, arg) => L.evaluate(fn, arg);
+    const frame = () => ev(() => new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame)));
+    const land = () => ev(() => ({ land: document.documentElement.dataset.land, kept: localStorage.getItem('fit-land'), search: location.search,
+      pick: getComputedStyle(document.getElementById('landPick')).display !== 'none' }));
+
+    // the switch: off unless asked for; ?layout= or ?land= picks one, comes
+    // off the address and is kept; ?land=off forgets it
+    await L.goto(URL);
+    let s = await land();
+    assert(s.land === 'off' && s.kept === null, 'a new visitor has the layout as it was: ' + JSON.stringify(s));
+    await L.goto(URL + '?layout=a');
+    s = await land();
+    assert(s.land === 'a' && s.kept === 'a' && s.search === '', '?layout=a picks A, keeps it and comes off the address: ' + JSON.stringify(s));
+    await L.reload();
+    assert((await land()).land === 'a', 'and A is still there after a reload');
+    await L.goto(URL + '?land=off');
+    s = await land();
+    assert(s.land === 'off' && s.kept === null && s.search === '', '?land=off forgets it: ' + JSON.stringify(s));
+
+    // a workout for two, started, at a phase found by a test
+    const open = async (how, find) => {
+      await ev((how) => {
+        state.people = 2;
+        if (how === 'check') { state.programRun = null; openWorkout(SURF_CHECK); }
+        else buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: how, minutes: 20 }, 4242);
+      }, how);
+      await L.click('#btnStart');
+      await ev((find) => {
+        seekTo(state.sequence.findIndex(new Function('x', `return ${find}`)));
+        render();
+        els.scroller.scrollTop = 0;
+      }, find);
+    };
+    const use = async (v) => { await ev((v) => { setLand(v, true); render(); planKey = undefined; markPlan(); els.scroller.scrollTop = 0; }, v); await frame(); };
+    // what's off the screen, of these (a selector each)
+    const offScreen = (sels) => ev((sels) => sels.filter(q => {
+      const e = document.querySelector(q), b = e && e.getBoundingClientRect();
+      return !(b && b.width > 0 && b.height > 0 && b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth);
+    }), sels);
+    const wide = () => ev(() => els.scroller.scrollWidth > els.scroller.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth);
+    const SCENES = [
+      ['work', 'short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2", ['#exerciseA', '#exerciseB']],
+      ['rest', 'short', "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2", ['#exerciseA', '#exerciseB', '.person.a .next-eyebrow', '.person.b .next-eyebrow', '#btnNextBlock']],
+      ['AMRAP', 'amrap', 'x.amrap && x.blockIdx === 0', ['#counterA .count-more', '#counterB .count-more']],
+      ['Surf check count', 'check', 'x.tally !== undefined', ['#exerciseA', '#exerciseB', '#counterA .count-more', '#counterB .count-more']]
+    ];
+    const SIZES = [[1180, 820], [1180, 740], [1133, 650], [951, 585], [951, 669], [884, 700], [800, 830], [984, 1092]];
+    const always = ['#timeDisplay', '#labelA', '#labelB', '#btnStart', '#btnSkip', '#btnReset'];
+    for (const [scene, how, find, more] of SCENES) {
+      await open(how, find);
+      for (const [width, height] of SIZES) {
+        await L.setViewportSize({ width, height });
+        for (const v of ['a', 'b', 'c']) {
+          await use(v);
+          const lanes = v === 'c' ? ['#laneNextA', '#laneNextB'] : ['#upcoming'];
+          const off = await offScreen([...always, ...more, ...(scene === 'work' ? lanes : [])]);
+          assert(!off.length, `${v.toUpperCase()} at ${width} x ${height}, ${scene}: off the screen: ${off}`);
+          assert(!(await wide()), `${v.toUpperCase()} at ${width} x ${height}, ${scene}: no sideways scroll`);
+          if (scene === 'work' && width <= 1050) {
+            const half = await ev(() => ({ clock: els.timerCard.getBoundingClientRect().right, a: document.querySelector('.person.a').getBoundingClientRect().left, mid: innerWidth / 2 }));
+            assert(half.clock < half.mid - 6 && half.a > half.mid + 6, `${v.toUpperCase()} at ${width} x ${height}: the clock in one half, the people in the other, the middle clear: ${JSON.stringify(half)}`);
+          }
+        }
+      }
+    }
+    // the clock fits its box at "0:19" and at "20:00", and still reads M:SS
+    await open('short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2");
+    for (const [width, height] of [[1180, 820], [1366, 1024], [1133, 650], [951, 585]]) {
+      await L.setViewportSize({ width, height });
+      for (const v of ['a', 'b', 'c']) {
+        await use(v);
+        for (const sec of [19, 1200]) {
+          const fit = await ev((sec) => {
+            showClock(sec, sec <= 60);
+            return { text: els.timeDisplay.textContent, len: els.timeDisplay.dataset.len, w: els.timeDisplay.scrollWidth, card: els.timerCard.clientWidth,
+                     px: parseFloat(getComputedStyle(els.timeDisplay).fontSize) };
+          }, sec);
+          assert(/^\d+:\d\d$/.test(fit.text) && fit.len === String(fit.text.length) && fit.w <= fit.card,
+                 `${v.toUpperCase()} at ${width} x ${height}: "${fit.text}" fits its card: ${JSON.stringify(fit)}`);
+          if (sec === 19 && width === 1180) note(`${v.toUpperCase()} at 1180 x 820: "0:19" at ${Math.round(fit.px)}px`);
+        }
+        await ev(() => render());
+      }
+    }
+    // C: seconds-led in a 20s work phase, not in an AMRAP; on an iPad the
+    // rail is wider in work than in a rest, on a fold it's half in both
+    await L.setViewportSize({ width: 1180, height: 820 });
+    await use('c');
+    const rail = () => ev(() => ({ rail: els.timerCard.getBoundingClientRect().width, stage: els.exerciseGrid.getBoundingClientRect().width, secs: els.timeDisplay.classList.contains('secs') }));
+    const work = await rail();
+    await ev(() => { seekTo(state.currentIdx + 1); render(); });
+    await frame();
+    const rest = await rail();
+    assert(work.secs && rest.secs && work.rail > rest.rail + 40, 'C on an iPad: seconds-led, and the rail wider in work than in a rest: ' + JSON.stringify([work, rest]));
+    await L.setViewportSize({ width: 951, height: 585 });
+    await frame();
+    const restHalf = await rail();
+    await ev(() => { seekTo(state.currentIdx - 1); render(); });
+    await frame();
+    const workHalf = await rail();
+    assert([restHalf, workHalf].every(r => Math.abs(r.rail - r.stage) <= 1), 'C on a fold: the rail is half, in work and in a rest: ' + JSON.stringify([workHalf, restHalf]));
+    await open('amrap', 'x.amrap && x.blockIdx === 0');
+    assert(!(await ev(() => els.timeDisplay.classList.contains('secs'))), "C: an AMRAP's clock is M:SS, not seconds-led");
+
+    // B: the plan, in step with the clock
+    await L.setViewportSize({ width: 1180, height: 820 });
+    await open('short', "x.kind === 'work' && x.blockIdx === 1 && x.round === 1");
+    await use('b');
+    const plan = () => ev(() => {
+      const now = [...document.querySelectorAll('#previewList li.now')];
+      const b = els.previewCard.getBoundingClientRect();
+      return { shown: b.width > 0 && b.height > 0 && b.bottom <= innerHeight, now: now.map(li => li.dataset.key), want: keyOf(state.sequence[state.currentIdx]),
+               tag: now[0] && now[0].querySelector('.tag').textContent, done: document.querySelectorAll('#previewList li.done').length,
+               keyed: document.querySelectorAll('#previewList li[data-key]').length, top: els.previewCard.scrollTop };
+    });
+    let pl = await plan();
+    assert(pl.shown && pl.now.length === 1 && pl.now[0] === pl.want && pl.want === 'b1' && pl.tag === 'Now' && pl.done === 2,
+           'B: the plan is on screen with block 2 lit NOW, the warm-up and block 1 ticked off: ' + JSON.stringify(pl));
+    // its moves are to read now, not to tap: a tap on one opens nothing,
+    // paused too (Swap is on the cards then)
+    await ev(() => pauseTimer());
+    assert(await ev(() => getComputedStyle(document.querySelector('#previewList li.now .preview-move')).pointerEvents) === 'none', 'B: the pills ignore taps once underway');
+    await L.click('#previewList li.now .preview-move', { force: true });
+    assert(await ev(() => document.getElementById('swapSheet').hidden), 'B: and a tap on one opens no swap');
+    // a touch on the plan holds the scrolling for five seconds, then it
+    // catches up with the part you're on
+    await L.click('#btnStart');
+    await ev(() => { els.previewCard.scrollTop = 0; els.previewCard.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); });
+    await ev(() => { seekTo(state.sequence.findIndex(x => x.kind === 'cooldown')); render(); });
+    await L.waitForTimeout(800);
+    pl = await plan();
+    const held = await ev(() => planKey);
+    assert(pl.want === 'cool' && pl.now[0] === 'cool' && pl.top === 0 && held === 'b1', 'B: touched, the plan stays where it was: ' + JSON.stringify({ ...pl, held }));
+    await ev(() => { planTouched = Date.now() - 5100; render(); });
+    assert(await ev(() => planKey) === 'cool', 'B: five seconds on, it goes to the part you are on');
+    await ev(() => finish());
+    pl = await plan();
+    assert(pl.done === pl.keyed && pl.now.length === 0, 'B: at the end, every part of the plan is ticked off: ' + JSON.stringify(pl));
+
+    // a fold that says where its fold is (Chromium on Android): a column
+    // either side of it, the hinge in the gap
+    {
+      const F = await lx.newPage();
+      F.on('pageerror', e => errors.push('landscape, fold: ' + e));
+      const cdp = await lx.newCDPSession(F);
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1114, height: 705, deviceScaleFactor: 1, mobile: false,
+        displayFeature: { orientation: 'vertical', offset: 540, maskLength: 34 } });
+      await F.goto(URL);
+      assert(await F.evaluate(() => matchMedia('(horizontal-viewport-segments: 2)').matches), 'the fold is there to see');
+      await F.evaluate(() => {
+        state.people = 2;
+        buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'short', minutes: 20 }, 4242);
+      });
+      await F.click('#btnStart');
+      for (const find of ["x.kind === 'work' && x.blockIdx === 0 && x.round === 2", "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2"]) {
+        for (const v of ['a', 'b', 'c']) {
+          const at = await F.evaluate(({ v, find }) => {
+            setLand(v, true);
+            seekTo(state.sequence.findIndex(new Function('x', `return ${find}`)));
+            render();
+            const r = (e) => e.getBoundingClientRect();
+            return { clock: r(els.timerCard).right, a: r(document.querySelector('.person.a')).left, b: r(document.querySelector('.person.b')).left,
+                     pause: r(els.btnStart).right, bottom: Math.max(r(els.btnStart).bottom, r(document.querySelector('.person.b')).bottom), h: innerHeight };
+          }, { v, find });
+          assert(at.clock <= 540 && at.pause <= 540 && at.a >= 574 && at.b >= 574 && at.bottom <= at.h,
+                 `${v.toUpperCase()} on a fold at 540 to 574: the clock and Pause left of it, the people right of it: ${JSON.stringify(at)}`);
+        }
+      }
+      await F.close();
+    }
+
+    // the buttons under a workout flip between them, once one has been picked
+    await ev(() => resetWorkout());
+    await ev(() => { els.scroller.scrollTop = els.scroller.scrollHeight; });
+    assert((await land()).pick, 'once one has been picked, the Landscape buttons show under the workout');
+    await L.click('#landPick .mini-btn[data-land="c"]');
+    s = await land();
+    assert(s.land === 'c' && s.kept === 'c' && await ev(() => document.querySelector('#landPick [data-land="c"]').getAttribute('aria-pressed')) === 'true',
+           'a tap on C picks C: ' + JSON.stringify(s));
+    await L.click('#landPick .mini-btn[data-land="off"]');
+    s = await land();
+    assert(s.land === 'off' && s.kept === 'off' && s.pick, 'Today puts the layout back, and leaves the buttons there to come back: ' + JSON.stringify(s));
+
+    // everywhere else, each one is the layout as it was: an iPad upright,
+    // Split View, a Duo closed or upright, every phone either way up
+    await open('short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2");
+    const look = () => ev(() => {
+      const css = (e, ...k) => k.map(p => getComputedStyle(e)[p]).join('/');
+      return [css(els.workoutView, 'display', 'gridTemplateAreas', 'gridTemplateColumns'), css(els.timeDisplay, 'fontSize'), css(els.timerCard, 'padding', 'width'),
+              css(document.querySelector('.person.a'), 'padding', 'width', 'display'), css(els.exerciseA, 'fontSize'), css(document.querySelector('#workoutView .controls'), 'gridTemplateColumns'),
+              css(els.upcoming, 'display'), css(document.getElementById('landPick'), 'display'), css(els.scroller, 'padding')].join(' | ');
+    });
+    const STILL = [[820, 1180], [1024, 1270], [669, 902], [382, 580], [385, 571], [390, 844], [594, 368], [678, 466], [844, 390], [874, 402], [956, 440], [667, 375]];
+    for (const [width, height] of STILL) {
+      await L.setViewportSize({ width, height });
+      await use('off');
+      const before = await look();
+      for (const v of ['a', 'b', 'c']) {
+        await use(v);
+        assert(await look() === before, `${v.toUpperCase()} at ${width} x ${height} is the layout as it was:\n${await look()}\n${before}`);
+      }
+      if (height <= 500) {
+        // the phone on its side, as the step above has it, with each one picked
+        for (const v of ['a', 'b', 'c']) {
+          await use(v);
+          const off = await offScreen(['#timeDisplay', '#labelA', '#exerciseA', '#labelB', '#exerciseB', '#btnStart', '#btnSkip', '#btnReset']);
+          assert(!off.length && !(await wide()), `${v.toUpperCase()} on a phone on its side, ${width} x ${height}: off screen: ${off}`);
+        }
+      }
+    }
+    await lx.close();
+    ok('landscape, a trial: ?layout= picks A, B or C and keeps it, ?land=off forgets it, and the buttons under a workout flip between them once one is picked; at 1180 x 820, 1180 x 740, 1133 x 650 and on opened folds (951 x 585 and 669, 884 x 700, 800 x 830, 984 x 1092) each has the clock, both people, their moves and Pause, Skip and Reset on one screen in work, a rest, an AMRAP and a Surf check count, with Up next (in C, each lane\'s Next) in work, the clock fitting at 0:19 and 20:00, and a fold\'s middle clear; C leads with the seconds and its rail narrows in a rest, half on a fold; B\'s plan lights the part you\'re on, waits after a touch and ticks it all off at the end; a fold that says where it folds has a column either side of it; an iPad upright, Split View, the Duo closed and every phone are as they were');
+  }
 
   step = 'opens offline after the first visit';
   // every file sw.js lists, in a cache named for its release

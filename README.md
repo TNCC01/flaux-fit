@@ -419,6 +419,18 @@ rather than hardcoded.
   stays hidden until one is tapped). A shorter spell just carries on
 - A phone on its side gets its own layout: the timer and its buttons on
   the left, the two people side by side on the right, all on one screen
+- An iPad on its side (in its keyboard case, say) and a folding phone
+  opened out have three layouts on trial, beside the one there's always
+  been. A: the clock and its buttons on the left, both people on the
+  right, Up next under them. B: the workout preview down the left as a
+  live plan (parts tick off, the one you're on fills as it goes and
+  scrolls itself into view), the clock beside it, the people under the
+  clock. C: a tall clock rail, the seconds filling it under a minute, and
+  a lane for each person with their own Next at the foot. Open FIT with
+  `?land=a` (or `b`, `c`; `?land=off` forgets it) and it's kept on that
+  device; once one is picked, Landscape under a workout flips between
+  them, mid-workout too. On a fold opened out each is two even halves,
+  the fold in the gap. Until one is picked, nothing changes for anyone
 - The badge by the workout's name ("1 person · Add a mate", "Wayne & Dave
   · Just me?") is a button until Start: a tap changes one person for two
   and back, the same moves shared out again, for when a mate turns up (or
@@ -596,7 +608,9 @@ replaying a favourite, the interval preference surviving a replay, history,
 the timer recovering time after a suspension, exclusions, stretch, text
 size, a share link opened in a fresh browser context, corrupt preferences,
 picking a session back up after a reload and coming back after time away,
-a phone-width layout and a phone on its side, favourites and history
+a phone-width layout and a phone on its side, the three landscape
+layouts on trial (an iPad, opened folds and everything else as it was),
+favourites and history
 keeping their moves through a library change, backing up, copying and
 restoring your data on a second device (and putting it back), the finish
 screen's summary and How was that? (two Too easy taps lifting one

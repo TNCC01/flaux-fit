@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v21';
+const RELEASE = 'fit-v22';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -671,9 +671,9 @@ const els = {
   personB: $('personB'), exerciseB: $('exerciseB'), repsB: $('repsB'), cueB: $('cueB'),
   levelA: $('levelA'), levelB: $('levelB'), finishA: $('finishA'), finishB: $('finishB'),
   circuitA: $('circuitA'), counterA: $('counterA'), circuitB: $('circuitB'), counterB: $('counterB'),
-  animB: $('animB'), alternativeB: $('alternativeB'),
+  animB: $('animB'), alternativeB: $('alternativeB'), laneNextA: $('laneNextA'), laneNextB: $('laneNextB'),
   upcoming: $('upcoming'), preStart: $('preStart'),
-  previewList: $('previewList'), previewHint: $('previewHint'), swapA: $('swapA'), swapB: $('swapB'),
+  previewList: $('previewList'), previewHint: $('previewHint'), previewCard: $('previewCard'), swapA: $('swapA'), swapB: $('swapB'),
   btnShuffle: $('btnShuffle'), btnSave: $('btnSave'), btnShare: $('btnShare'),
   btnStart: $('btnStart'), btnSkip: $('btnSkip'), btnReset: $('btnReset'), btnAgain: $('btnAgain'),
   workoutNote: $('workoutNote'), goingNote: $('goingNote'),
@@ -2548,13 +2548,22 @@ function lastScoresFrom(rec) {
 }
 
 function renderPreview() {
+  fillPreview();
+  // a new list: the plan in layout B finds its place in it again
+  planKey = undefined;
+  markPlan();
+}
+function fillPreview() {
   const w = state.workout;
   if (!w) return;
   els.previewList.innerHTML = '';
   // a block's moves are buttons: a tap swaps one (see SWAP A MOVE)
   els.previewHint.hidden = !canSwap(w);
-  const add = (name, sub, moves) => {
+  // each part of the session has a key, the one keyOf gives its phases, so
+  // the plan in layout B can follow the clock; a note has none
+  const add = (name, sub, moves, key) => {
     const li = document.createElement('li');
+    if (key) li.dataset.key = key; else li.className = 'info';
     const n = document.createElement('div');
     n.className = 'preview-item-name';
     n.textContent = name;
@@ -2585,28 +2594,28 @@ function renderPreview() {
   if (w.notes && w.notes.length) add('Heads up', w.notes.join(' '));
 
   if (w.format === 'stretch') {
-    stretchList(w).forEach((s, i) => add(`${i + 1}. ${s.name}`, `${s.hold}s hold`));
+    stretchList(w).forEach((s, i) => add(`${i + 1}. ${s.name}`, `${s.hold}s hold`, null, 's' + i));
     return;
   }
   if (w.format === 'check') {
     // each test and the one way of doing it, so the numbers mean the same every time
     const around = bookendOpts(w), shape = checkShape(w);
     add('How it works', 'Each test is done the same way every time, so the numbers compare. After each minute, put in how many you did. In the paddle hold, tap Done when your chest touches down.');
-    add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupPlan(shape, around).map(m => warmupCard(m.id, m.sec).name).join(' · '));
-    w.stations.forEach((t, i) => add(`Test ${i + 1}: ${t.label}${t.hold ? `, up to ${fmtMin(t.sec)}` : ''}`, t.standard));
-    add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownPlan(shape, around).map(m => cooldownCard(m.id).name).join(' · '));
+    add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupPlan(shape, around).map(m => warmupCard(m.id, m.sec).name).join(' · '), null, 'warm');
+    w.stations.forEach((t, i) => add(`Test ${i + 1}: ${t.label}${t.hold ? `, up to ${fmtMin(t.sec)}` : ''}`, t.standard, null, 't' + i));
+    add(`Cool-down: ${fmtMin(w.cooldownSec)}`, cooldownPlan(shape, around).map(m => cooldownCard(m.id).name).join(' · '), null, 'cool');
     return;
   }
   // the warm-up and cool-down by their moves, as the timer will run them
   const fitAround = bookendOpts(w);
-  if (w.warmupSec > 0) add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupPlan(w, fitAround).map(m => warmupCard(m.id, m.sec).name).join(' · '));
+  if (w.warmupSec > 0) add(`Warm-up: ${fmtMin(w.warmupSec)}`, warmupPlan(w, fitAround).map(m => warmupCard(m.id, m.sec).name).join(' · '), null, 'warm');
   // two people at different levels: each one's reps ("Burpees (Wayne 9 reps, Dave 7 reps)")
   const duo = state.people === 2;
   const short = (which) => nameOn(which) || which.toUpperCase();
   sectionsOf(w).forEach((sec, si) => {
     const iv = sectionInterval(sec, w.workRest);
     const ctxA = buildCtx(w, iv, 'a'), ctxB = buildCtx(w, iv, 'b');
-    if (si > 0) add(`Change over: ${fmtMin(w.changeoverSec || CHANGEOVER_SEC)}`, `Next up, ${iv.label}: ${styleHow(iv)}`);
+    if (si > 0) add(`Change over: ${fmtMin(w.changeoverSec || CHANGEOVER_SEC)}`, `Next up, ${iv.label}: ${styleHow(iv)}`, null, 'chg' + sec.start);
     w.blocks.slice(sec.start, sec.start + sec.count).forEach((b, j) => {
       const i = sec.start + j;
       // with each person's swaps in: one who swapped a move does another
@@ -2631,7 +2640,7 @@ function renderPreview() {
       ids.forEach(id => { const text = both(id); if (!moves.some(m => m.text === text)) moves.push({ text, block: i, from: id }); });
       add(`Block ${i + 1}: ${b.name}`,
           `${iv.forTime ? `For time, ${iv.workSec / 60} min cap` : iv.amrap ? `AMRAP, ${iv.workSec / 60} min` : iv.reps ? `EMOM, ${iv.rounds} min` : `${iv.label}, ${iv.rounds} × ${iv.workSec}s`}`,
-          moves);
+          moves, 'b' + i);
     });
   });
   if (w.cooldownSec > 0) {
@@ -2639,7 +2648,7 @@ function renderPreview() {
     const names = cooldownPlan(w, fitAround).map(m => cooldownCard(m.id).name)
       .filter((n, i, all) => !(/, right$/.test(n) && all[i - 1] === n.replace(/right$/, 'left')))
       .map(n => n.replace(/, left$/, ', both sides'));
-    add(`Cool-down: ${fmtMin(w.cooldownSec)}`, names.join(' · '));
+    add(`Cool-down: ${fmtMin(w.cooldownSec)}`, names.join(' · '), null, 'cool');
   }
 }
 
@@ -3087,7 +3096,8 @@ for (const k of ['a', 'b']) {
 }
 els.previewList.addEventListener('click', (e) => {
   const b = e.target.closest('.preview-move');
-  if (!b || state.running) return;
+  // (once it's going, the preview is the plan in layout B: Swap is on the cards)
+  if (!b || state.running || els.preStart.classList.contains('underway')) return;
   // for whoever does it: both of you, or on your own, whoever opens it
   // later (a mate from a link, you once your name's in), kept for nobody
   // in particular, so it comes back the same for them
@@ -3297,19 +3307,20 @@ function render() {
   let label = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
     : phase.changeover ? 'Change over' : phase.check && phase.kind === 'rest' && !phase.stationIdx ? 'Get ready'
     : (PHASE_LABEL[phase.kind] || '');
-  els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
+  let clockSec = Math.ceil(state.remainingInPhase);
   if (phase.forTime) {
     // the clock counts up while you race it; once everyone's done it counts
     // down the rest of the cap
     const done = allDone(phase);
     label = done ? 'Rest' : 'For time';
-    if (!done) els.timeDisplay.textContent = fmt(Math.floor(phaseElapsed(phase)));
+    if (!done) clockSec = Math.floor(phaseElapsed(phase));
   } else if (phase.hold) {
     // a paddle hold counts up, and stops at the longest once everyone's done
     const done = allDone(phase), s = state.scores[phase.blockIdx] || {};
     label = done ? 'Done' : 'Hold';
-    els.timeDisplay.textContent = fmt(done ? Math.max(s.a || 0, s.b || 0) : Math.floor(phaseElapsed(phase)));
+    clockSec = done ? Math.max(s.a || 0, s.b || 0) : Math.floor(phaseElapsed(phase));
   }
+  showClock(clockSec, phase.duration <= 60 && !phase.forTime && !phase.hold);
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
   // the phase and block are read out as they change (aria-live), so only
   // write them when they do, not five times a second
@@ -3338,7 +3349,7 @@ function render() {
   document.getElementById('btnNextBlock').hidden = !(prep && upcomingBlock());
   if (!prep) closeNextSheet();
 
-  els.exerciseA.textContent = dispA ? (dispA.display || dispA.name) : '';
+  showName(els.exerciseA, dispA);
   els.repsA.textContent = dispA ? (dispA.reps || '') : '';
   const showA = shownFor('a', dispA);
   setText(els.levelA, levelLine('a', showA));
@@ -3346,7 +3357,7 @@ function render() {
   setAlt(els.alternativeA, showA ? showA.alt : '');
   updateAnim(els.animA, showA);
   if (state.people === 2 && dispB) {
-    els.exerciseB.textContent = dispB.display || dispB.name;
+    showName(els.exerciseB, dispB);
     els.repsB.textContent = dispB.reps || '';
     const showB = shownFor('b', dispB);
     setText(els.levelB, levelLine('b', showB));
@@ -3371,6 +3382,34 @@ function render() {
   // once it's going, only Share is left of the pre-start strip (css)
   els.preStart.classList.toggle('underway', state.running || state.elapsedTotal > 0);
   renderPeopleBadge();
+  markPlan();
+}
+
+// The clock, as "0:19". Under a minute the "0:" is a span of its own, so
+// layout C (LANDSCAPE, A TRIAL) can make it small and let the seconds fill
+// its rail; that's decided per phase (secsLed), so an EMOM minute that
+// starts at 1:00 never jumps size. Everywhere else it reads and looks as
+// it always has. Its length goes on it too (data-len, 4 for "0:19" and 5
+// for "20:00"), so a landscape layout can size each to fit. Written only
+// when it changes, not five times a second.
+function showClock(sec, secsLed) {
+  const t = fmt(sec), key = `${t}${secsLed}`;
+  const el = els.timeDisplay;
+  if (el.dataset.t === key) return;
+  el.dataset.t = key;
+  el.classList.toggle('secs', secsLed);
+  el.innerHTML = `<span class="tmin">${t.slice(0, -2)}</span>${t.slice(-2)}`;
+  el.dataset.len = String(el.textContent.length);
+}
+// A person's move on their card: "Goblet squats · 15kg", with the weight
+// in a span of its own when it has one, so a landscape layout can put it
+// on a line of its own in the person's colour. The text is the same.
+function showName(el, d) {
+  const text = d ? (d.display || d.name) : '';
+  if (el.textContent === text) return;
+  if (!(d && d.load && d.display === `${d.name} · ${d.load}`)) { el.textContent = text; return; }
+  const part = (cls, t) => { const s = document.createElement('span'); s.className = cls; s.textContent = t; return s; };
+  el.replaceChildren(part('ex-base', d.name), part('load-sep', ' · '), part('load', d.load));
 }
 
 // "+1 rep: you said too easy", under a target that a person's level moved
@@ -3381,6 +3420,8 @@ function levelLine(who, ex) {
 }
 
 function renderUpcoming() {
+  setText(els.laneNextA, laneNext('a'));
+  setText(els.laneNextB, laneNext('b'));
   const next = state.sequence[state.currentIdx + 1];
   if (!next) { els.upcoming.innerHTML = ''; return; }
   const short = (which, fallback) => nameOn(which) || fallback;
@@ -3409,6 +3450,27 @@ function renderUpcoming() {
   els.upcoming.innerHTML =
     `<div class="swatch" style="${swatch}"></div>
      <div class="txt"><span class="eyebrow">Up next</span><strong>${esc(preview)}</strong></div>`;
+}
+
+// Each person's own next, for the foot of their lane in layout C
+// (LANDSCAPE, A TRIAL): Up next above, but just theirs ("Rest 10s, then
+// Surf stance holds"). Shown nowhere else.
+function laneNext(w) {
+  const next = state.sequence[state.currentIdx + 1];
+  if (!next || (w === 'b' && state.people !== 2)) return '';
+  const then = state.sequence[state.currentIdx + 2];
+  const mine = (p) => withReps(p.check ? p.a : (p[w] || p.a));
+  const lap = (p) => p[w].circuit.map(x => x.display || x.name).join(', ');
+  if (next.tally !== undefined && then) return `Rest ${next.duration}s, put in how many, then ${mine(then)}`;
+  if (next.kind === 'rest') return then && then.kind === 'work' ? `Rest ${next.duration}s, then ${mine(then)}` : `Rest ${next.duration}s`;
+  if (next.amrap) return `AMRAP: ${lap(next)}`;
+  if (next.forTime) return `For time, ${next[w].lapRounds} rounds: ${lap(next)}`;
+  if (next.kind === 'work' || next.kind === 'stretch') return mine(next);
+  if (next.kind === 'warmup' || next.kind === 'cooldown') {
+    const cur = state.sequence[state.currentIdx];
+    return cur && cur.kind === next.kind ? next.a.name : `${PHASE_LABEL[next.kind]}: ${next.a.name}`;
+  }
+  return next.name;
 }
 
 // =====================================================================
@@ -3632,6 +3694,9 @@ function finish() {
   els.timerCard.className = 'timer-card';
   setText(els.phaseLabel, 'Done');
   els.timeDisplay.textContent = '✓';
+  els.timeDisplay.dataset.t = '';
+  els.timeDisplay.dataset.len = '1';
+  els.timeDisplay.classList.remove('secs');
   // the time it ran, out of the whole: all of it unless something was
   // skipped (the last tick can land a fraction short of the end, and that
   // isn't "19:59 / 20:00")
@@ -3664,6 +3729,7 @@ function finish() {
     els['circuit' + w].closest('.person').classList.remove('amrap');
   }
   els.upcoming.innerHTML = '';
+  els.laneNextA.textContent = els.laneNextB.textContent = '';
   document.getElementById('btnNextBlock').hidden = true;
   closeNextSheet();
   closeSwapSheet();
@@ -3679,6 +3745,7 @@ function finish() {
   state.feel = {};
   feelBefore = {};
   renderFinishPeople();
+  markPlan();
 }
 const isFinished = () => state.currentIdx >= state.sequence.length;
 // Started, then skipped through with under a minute of it run.
@@ -5721,6 +5788,8 @@ document.querySelectorAll('.text-size .mini-btn').forEach(btn => {
 });
 function applyTextScale() {
   document.documentElement.style.setProperty('--ex-scale', String(state.textScale));
+  // for a landscape layout to make room at the largest (LANDSCAPE, A TRIAL)
+  document.documentElement.dataset.scale = String(state.textScale);
   document.querySelectorAll('.text-size .mini-btn').forEach(b => {
     b.classList.toggle('active', Number(b.dataset.scale) === state.textScale);
   });
@@ -5888,6 +5957,149 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', saveRun);
 
 // =====================================================================
+// LANDSCAPE, A TRIAL
+// Three ways to lay out the workout screen on a big screen on its side (an
+// iPad in its keyboard case, a folding phone opened out), to try side by
+// side until one is picked. A: the clock and its buttons on the left, both
+// people on the right, Up next under them. B: the workout as a live plan
+// down the left, the clock beside it, the people under the clock. C: a
+// tall clock rail, and a lane each with their own Next at the foot. Each
+// is a section of its own in css/app.css, on <html data-land>, and only
+// for a screen that size; 'off', the default, is the layout as it's always
+// been, everywhere. ?land=a (b, c, or off; ?layout= says the same) picks
+// one on this device, and once one has been picked the Landscape buttons
+// in the settings under a workout flip between them, mid-workout too.
+// =====================================================================
+const LAND_KEY = 'fit-land';
+const LANDS = ['off', 'a', 'b', 'c'];
+function setLand(land, picked) {
+  const root = document.documentElement;
+  root.dataset.land = LANDS.includes(land) ? land : 'off';
+  root.toggleAttribute('data-land-pick', picked);
+  for (const b of document.querySelectorAll('#landPick .mini-btn')) {
+    const on = b.dataset.land === root.dataset.land;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
+// On load: one asked for in the address is kept and comes off it (so a
+// reload or a link copied from the bar doesn't carry it), and ?land=off
+// forgets the choice; otherwise the one picked last time.
+function pickLand() {
+  const q = new URLSearchParams(location.search);
+  const asked = q.has('land') ? q.get('land') : q.has('layout') ? q.get('layout') : null;
+  let land = null, picked = false;
+  if (asked !== null) {
+    land = LANDS.includes(asked) ? asked : 'off';
+    picked = land !== 'off';
+    try {
+      if (land === 'off') localStorage.removeItem(LAND_KEY); else localStorage.setItem(LAND_KEY, land);
+    } catch (e) { /* storage off: this visit only */ }
+    q.delete('land'); q.delete('layout');
+    const rest = q.toString();
+    history.replaceState(history.state, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+  } else {
+    try { land = localStorage.getItem(LAND_KEY); } catch (e) { /* storage off */ }
+    picked = land !== null;
+  }
+  setLand(land || 'off', picked);
+}
+document.querySelectorAll('#landPick .mini-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    try { localStorage.setItem(LAND_KEY, btn.dataset.land); } catch (e) { /* this visit only */ }
+    setLand(btn.dataset.land, true);
+    render();
+    planKey = undefined;
+    markPlan();
+    // the 3D figures size themselves to their new boxes
+    window.dispatchEvent(new Event('resize'));
+  });
+});
+
+// B: the plan, in step with the clock. The workout preview stays on
+// screen the whole way: the parts done tick off, the one you're on is lit
+// in its colour and fills as it goes, with the moves on the cards marked,
+// the next one says so, and the list scrolls itself to keep your place
+// near the top. Touched in the last five seconds, it waits.
+const PLAN_HANDS_OFF_MS = 5000;
+let planKey;                     // the part the list last scrolled to
+let planTouched = 0;
+for (const type of ['pointerdown', 'touchstart', 'wheel']) {
+  els.previewCard.addEventListener(type, () => { planTouched = Date.now(); }, { passive: true });
+}
+// The part of the plan a phase belongs to (renderPreview's keys): the rest
+// before a Surf check test, a block rest and a mix's change over are all
+// getting ready for what comes after them.
+function keyOf(p) {
+  if (!p) return null;
+  if (p.kind === 'warmup') return 'warm';
+  if (p.kind === 'cooldown') return 'cool';
+  if (p.kind === 'stretch') return 's' + p.stretchIdx;
+  if (p.check) return 't' + p.stationIdx;
+  if (p.changeover) return 'chg' + (p.blockIdx + 1);
+  if (p.kind === 'blockrest') return 'b' + (p.blockIdx + 1);
+  return p.blockIdx !== undefined ? 'b' + p.blockIdx : null;
+}
+function markPlan() {
+  if (document.documentElement.dataset.land !== 'b' || !state.workout) return;
+  const items = [...els.previewList.querySelectorAll('li[data-key]')];
+  const over = isFinished();
+  const phase = state.sequence[state.currentIdx];
+  const key = over ? null : keyOf(phase);
+  const at = over ? items.length : items.findIndex(li => li.dataset.key === key);
+  // a block rest and the rest before a test are getting ready for it
+  const ready = !!phase && ((phase.kind === 'blockrest' && !phase.changeover) || (!!phase.check && phase.kind === 'rest'));
+  items.forEach((li, i) => {
+    const next = at >= 0 && i === at + 1;
+    li.classList.toggle('done', i < at);
+    li.classList.toggle('now', i === at);
+    li.classList.toggle('next', next);
+    const label = i === at ? (ready ? 'Up next' : 'Now') : next ? 'Next' : '';
+    let tag = li.querySelector(':scope > .tag');
+    if (label && !tag) {
+      tag = document.createElement('span');
+      tag.className = 'tag';
+      li.prepend(tag);
+    }
+    if (tag && label) setText(tag, label);
+    else if (tag) tag.remove();
+    if (i !== at) li.style.removeProperty('--p');
+  });
+  const now = items[at];
+  for (const b of els.previewList.querySelectorAll('.preview-move.cur')) {
+    if (b.closest('li') !== now) b.classList.remove('cur');
+  }
+  if (now) {
+    // how far through the part, in its colour (a block is work through its rests)
+    let from = -1, to = 0, t = 0;
+    for (const p of state.sequence) {
+      if (keyOf(p) === key) { if (from < 0) from = t; to = t + p.duration; }
+      t += p.duration;
+    }
+    now.style.setProperty('--p', (to > from ? Math.min(1, Math.max(0, (state.elapsedTotal - from) / (to - from))) : 0).toFixed(3));
+    now.style.setProperty('--rgb', PHASE_COLOR[{ warm: 'warmup', cool: 'cooldown' }[key] || (key[0] === 's' ? 'stretch' : 'work')].rgb);
+    // the moves on the cards, which in a rest are the ones coming up
+    let shown = phase;
+    if ((phase.kind === 'rest' || phase.kind === 'blockrest') && phase.tally === undefined) {
+      let j = state.currentIdx + 1;
+      while (j < state.sequence.length && state.sequence[j].kind !== 'work') j++;
+      shown = state.sequence[j] || phase;
+    }
+    const ids = [shown.a, shown.b].flatMap(x => (x ? x.circuit || [x] : [])).flatMap(x => [x.base, x.id]).filter(Boolean);
+    for (const b of now.querySelectorAll('.preview-move')) b.classList.toggle('cur', ids.includes(b.dataset.from));
+  }
+  // a new part: up near the top of the list, a sliver of the one before
+  // showing above it (and if the list is out of sight, once it's back)
+  const box = els.previewCard, target = now || items[items.length - 1];
+  if (key === planKey || !target || !box.clientHeight || Date.now() - planTouched < PLAN_HANDS_OFF_MS) return;
+  planKey = key;
+  // (the first part: the top, with the title and the hint)
+  const y = target === items[0] ? 0
+    : box.scrollTop + target.getBoundingClientRect().top - box.getBoundingClientRect().top - (target.previousElementSibling ? 30 : 0);
+  box.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+}
+
+// =====================================================================
 // INIT
 // =====================================================================
 // The settings into the controls that show them: on load, and after a
@@ -5903,6 +6115,7 @@ function showSettings() {
   applyTextScale();
   renderPeoplePicker();
 }
+pickLand();
 loadPrefs();
 showSettings();
 setupFullscreen();

@@ -320,6 +320,9 @@
         <div class="exercise-cue" id="cueA"></div>
         <div class="ex-anim" id="animA"></div>
         <div class="alternative" id="alternativeA"></div>
+        <!-- this person's own next, at the foot of their lane in landscape
+             layout C (LANDSCAPE, A TRIAL in js/app.js); hidden otherwise -->
+        <div class="lane-next" id="laneNextA"></div>
       </div>
       <div class="person b" id="personB">
         <div class="person-label" id="labelB">Person B</div>
@@ -334,6 +337,7 @@
         <div class="exercise-cue" id="cueB"></div>
         <div class="ex-anim" id="animB"></div>
         <div class="alternative" id="alternativeB"></div>
+        <div class="lane-next" id="laneNextB"></div>
       </div>
     </div>
 
@@ -390,6 +394,16 @@
         <button class="mini-btn" data-scale="1" aria-label="Text size normal">A</button>
         <button class="mini-btn" data-scale="1.2" aria-label="Text size large">A</button>
         <button class="mini-btn" data-scale="1.45" aria-label="Text size largest">A</button>
+      </span>
+      <!-- the three landscape layouts on trial and the one there was
+           (LANDSCAPE, A TRIAL in js/app.js): only on a big screen on its
+           side, and only once one has been picked -->
+      <span class="toggle land-pick" id="landPick">
+        Landscape
+        <button class="mini-btn" data-land="off" aria-label="Landscape layout as it was">Today</button>
+        <button class="mini-btn" data-land="a" aria-label="Landscape layout A, clock and moves">A</button>
+        <button class="mini-btn" data-land="b" aria-label="Landscape layout B, plan and clock">B</button>
+        <button class="mini-btn" data-land="c" aria-label="Landscape layout C, big clock and lanes">C</button>
       </span>
     </div>
   </div>

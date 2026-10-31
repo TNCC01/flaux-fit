@@ -1179,6 +1179,914 @@ body.show-alternatives .alternative.has-alt { display: block; }
   .controls button { padding: 0.6rem 0.25rem; font-size: 0.95rem; }
 }
 
+/* ============== Landscape, a trial: three layouts ============== */
+/*
+  Three ways to lay out the workout on a big screen on its side (an iPad in
+  its keyboard case, a folding phone opened out), to try side by side; see
+  LANDSCAPE, A TRIAL in js/app.js. Each is a section of its own below, on
+  <html data-land="a">, "b" or "c", and only for a screen that size:
+    L       on its side, 760 wide or more and taller than a phone (501 up,
+            where the phone rule above stops); or near square (9 wide to
+            10 tall or wider) and 600 up, a book-style fold opened flat.
+            Never an iPad upright, Split View or a phone.
+    iPad    L and over 1050 wide
+    halves  L and 1050 wide or less (a Duo or a fold opened out, a narrow
+            window): two even halves, the gap on the screen's middle, so
+            a fold falls in it
+    short   L and 680 tall or less (the Duo, an iPad mini in Safari)
+  and where the screen says where its fold is, the columns sit either side.
+  The default, "off", is none of it: the layout as it's always been. The
+  one picked stays, and the other two sections go.
+*/
+.lane-next { display: none; }
+.land-pick { display: none; gap: 0.35rem; color: var(--muted); font-weight: 600; }
+.land-pick .mini-btn { padding: 0.3rem 0.6rem; line-height: 1; font-size: 0.9rem; }
+.preview-list .tag { display: none; }
+@media (orientation: landscape) and (min-width: 760px) and (min-height: 501px),
+       (min-aspect-ratio: 9/10) and (min-width: 760px) and (min-height: 600px) {
+  html[data-land-pick] #workoutView .land-pick { display: inline-flex; }
+}
+
+/* ---- A · Clock and moves ---- */
+/* The clock and its buttons on the left, both people on the right with Up
+   next under them, all of it on the first screen; the note, Share and the
+   settings a scroll below. Before Start the preview sits where the people
+   go, and at the end their scores do. On a fold opened out, two even
+   halves: the clock in one, Wayne over Dave in the other. */
+@media (orientation: landscape) and (min-width: 760px) and (min-height: 501px),
+       (min-aspect-ratio: 9/10) and (min-width: 760px) and (min-height: 600px) {
+  html[data-land=a] #workoutView.active {
+    display: grid; gap: 0.75rem; align-items: stretch;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    grid-template-rows: auto auto auto 1fr auto auto;
+    grid-template-areas:
+      "top top" "prog prog"
+      "block people" "timer people" "timer nextb" "ctrl up"
+      "note note" "pre pre" "tog tog";
+  }
+  /* the first screen is the screen: an empty item over the first six rows
+     (a row added above means a new span here), the height of the screen,
+     which the clock's row (1fr) grows to fill, so the buttons and Up next
+     sit on the bottom edge */
+  html[data-land=a] #workoutView.active::before {
+    content: ''; grid-row: 1 / 7; grid-column: 1; visibility: hidden; pointer-events: none;
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1rem);
+  }
+  html[data-land=a] #workoutView > .top-bar { grid-area: top; padding: 0.35rem 0.25rem 0; }
+  /* the question after time away covers the top bar until it's answered */
+  html[data-land=a] #workoutView > .away-bar { grid-area: top; position: relative; z-index: 6; }
+  html[data-land=a] #workoutView > .progress-bar-wrap { grid-area: prog; }
+  html[data-land=a] #workoutView > .block-info { grid-area: block; }
+  html[data-land=a] #workoutView > .timer-card { grid-area: timer; }
+  /* the people never make the screen taller than the screen: they get
+     what the clock's side leaves, and a card scrolls if it has to */
+  html[data-land=a] #workoutView > .exercise-grid { grid-area: people; align-self: stretch; min-height: 0; contain: size; }
+  html[data-land=a] #workoutView > .next-block-btn { grid-area: nextb; margin: 0; }
+  /* in a rest the cards are what's next, so the button takes Up next's place */
+  html[data-land=a] #workoutView.resting > .next-block-btn { grid-area: up; }
+  html[data-land=a] #workoutView > .upcoming { grid-area: up; align-self: stretch; }
+  html[data-land=a] #workoutView > .controls {
+    grid-area: ctrl; align-self: end;
+    padding-top: 0; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.25rem);
+  }
+  html[data-land=a] #workoutView > #workoutNote { grid-area: note; }
+  html[data-land=a] #workoutView > .pre-start { grid-area: pre; }
+  html[data-land=a] #workoutView > .toggle-row { grid-area: tog; }
+
+  /* the clock: as big as its column allows (and the height the column has
+     left), the same in a rest; "0:19" and "20:00" each fitted (data-len),
+     today's size where there are no container units */
+  html[data-land=a] #workoutView > .timer-card {
+    container-type: size;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    padding: 1rem;
+  }
+  html[data-land=a] #workoutView .phase-label { font-size: 1.6rem; letter-spacing: 0.25em; }
+  html[data-land=a] #workoutView .time-display { font-size: clamp(6rem, 12vw, 9rem); white-space: nowrap; margin: 0.05em 0 0.08em; }
+  html[data-land=a] #workoutView .time-display[data-len='4'] { font-size: min(calc((100cqw - 2rem) / 2.25), 34dvh, calc((100cqh - 3.6rem) * 0.88)); }
+  html[data-land=a] #workoutView .time-display[data-len='5'] { font-size: min(calc((100cqw - 2rem) / 2.85), 30dvh, calc((100cqh - 3.6rem) * 0.88)); }
+  html[data-land=a] #workoutView .total-time { font-size: 1.15rem; }
+
+  html[data-land=a] #workoutView .block-name { font-size: 1.25rem; }
+  html[data-land=a] #workoutView .controls button { padding: 1.1rem 0.4rem; font-size: 1.2rem; }
+  html[data-land=a] #workoutView .upcoming { padding: 0.7rem 1rem; }
+  html[data-land=a] #workoutView .upcoming .txt { font-size: 1.12rem; line-height: 1.3; }
+  html[data-land=a] #workoutView .upcoming .txt strong {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+
+  /* the people: each card's figure takes whatever height the words leave */
+  html[data-land=a] #workoutView .exercise-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  html[data-land=a] #workoutView .exercise-grid.solo { grid-template-columns: minmax(0, 1fr); }
+  html[data-land=a] #workoutView .person { padding: 0.9rem 1rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  html[data-land=a] #workoutView .ex-anim {
+    flex: 1 1 0; aspect-ratio: auto; max-height: none; min-height: 6rem; margin-top: 0.6rem;
+  }
+  html[data-land=a] #workoutView .ex-anim.no-3d { flex: none; min-height: 0; }
+  /* a lap's figure takes what the lap and the count leave */
+  html[data-land=a] #workoutView .person.amrap .ex-anim { min-height: 0; }
+  /* the weight on a line of its own, in the person's colour */
+  html[data-land=a] #workoutView .load-sep { display: none; }
+  html[data-land=a] #workoutView .load { display: block; color: var(--teal-bright); }
+  html[data-land=a] #workoutView .person.b .load { color: var(--accent-b); }
+
+  /* an AMRAP lap reads as lines ("8 reps KB sumo deadlifts"), not columns */
+  html[data-land=a] #workoutView .circuit:not([hidden]) { display: block; }
+  html[data-land=a] #workoutView .circuit li {
+    display: block; font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.2));
+    padding-top: 0.2rem; padding-bottom: 0.2rem;
+  }
+  html[data-land=a] #workoutView .round-counter:not([hidden]) { flex-wrap: wrap; gap: 0.4rem 0.5rem; }
+  html[data-land=a] #workoutView .round-counter .count-more { flex: 1 0 auto; }
+  /* the count beside its −, clear of Swap at the top right */
+  html[data-land=a] #workoutView .round-counter:not(.check-count) .count-now { align-items: flex-start; }
+  /* a Surf check count: the number and its words on one line, then
+     − +1 +5 in a row, the same width */
+  html[data-land=a] #workoutView .check-count .count-now {
+    flex: 1 0 100%; order: -1; flex-direction: row; flex-wrap: wrap; justify-content: center;
+    align-items: baseline; column-gap: 0.4rem;
+  }
+  html[data-land=a] #workoutView .check-count .count-now span { margin-top: 0; }
+  html[data-land=a] #workoutView .check-count .count-less,
+  html[data-land=a] #workoutView .check-count .count-more { flex: 1 0 0; width: auto; padding: 0 0.4rem; }
+  /* the largest text: a lap's cue makes way, so the count stays on screen */
+  html[data-land=a][data-scale='1.45'] #workoutView .person.amrap .exercise-cue { display: none; }
+
+  /* before Start: the preview where the people will be, scrolling on its
+     own; the first phase on the clock, Start under it */
+  html[data-land=a] #workoutView:has(> .pre-start:not(.underway)):not(.finished) > :is(.exercise-grid, .upcoming, .next-block-btn) { display: none; }
+  html[data-land=a] #workoutView:has(> .pre-start:not(.underway)):not(.finished) > .pre-start {
+    grid-column: 2; grid-row: 3 / 7; contain: size; overflow-y: auto; overscroll-behavior: contain; gap: 0.6rem;
+  }
+  html[data-land=a] #workoutView .pre-start .sound-line { text-align: left; }
+
+  /* the end: a big tick, Done and Start over on the left; each person's
+     scores and How was that? on the right, Save and Share under them */
+  html[data-land=a] #workoutView.finished > .timer-card { flex-direction: column; flex-wrap: nowrap; gap: 0.3rem; }
+  html[data-land=a] #workoutView.finished .time-display { order: 0; font-size: min(22cqw, 20dvh, calc(100cqh - 4rem)); margin: 0; }
+  html[data-land=a] #workoutView.finished > .pre-start { grid-area: up; align-self: end; }
+  /* nobody did anything (skipped to the end, or ended inside a minute):
+     no cards saying well done, so what the end says takes their place */
+  html[data-land=a] #workoutView.finished.unstarted > .block-info {
+    grid-area: people; align-self: center; justify-self: center; max-width: 34rem; padding: 1.4rem 1.6rem; gap: 0.6rem;
+  }
+  html[data-land=a] #workoutView.finished.unstarted .block-name { font-size: 1.6rem; }
+  html[data-land=a] #workoutView.finished.unstarted .finish-line { font-size: 1.2rem; }
+
+  /* an iPad: the clock a little narrower than the people */
+  @media (min-width: 1051px) {
+    html[data-land=a] body.view-workout .app { max-width: 1500px; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(1.9rem, 3.4vw, 3rem) * var(--ex-scale));
+    }
+    html[data-land=a] #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(2.6rem, 5vw, 4.4rem) * var(--ex-scale));
+    }
+  }
+
+  /* a fold opened out: two even halves, the gap on the middle; Wayne over
+     Dave, the words down the left of each card and the figure the card's
+     full height on the right */
+  @media (max-width: 1050px), (horizontal-viewport-segments: 2) and (min-height: 501px) {
+    html[data-land=a] body.view-workout .app { max-width: none; }
+    html[data-land=a] body.view-workout #scroller {
+      padding-left: max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+      padding-right: max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+    }
+    html[data-land=a] #workoutView.active { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 1.5rem; }
+    /* a count to tap (a lap, a Surf check): the people have their half to
+       the foot, and Up next goes over under the clock */
+    html[data-land=a] #workoutView.active:has(.round-counter:not([hidden])) {
+      grid-template-areas:
+        "top top" "prog prog"
+        "block people" "timer people" "up people" "ctrl people"
+        "note note" "pre pre" "tog tog";
+    }
+    html[data-land=a] #workoutView .upcoming { padding: 0.5rem 0.8rem; }
+    html[data-land=a] #workoutView .upcoming .txt { font-size: 1rem; line-height: 1.25; }
+    html[data-land=a] #workoutView .person { padding: 0.7rem 0.9rem; }
+    html[data-land=a] #workoutView .person-label { margin-bottom: 0.2rem; }
+    html[data-land=a][data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+    html[data-land=a] #workoutView .person {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); column-gap: 0.8rem;
+      grid-template-rows: repeat(10, auto) minmax(0, 1fr);
+    }
+    html[data-land=a] #workoutView .exercise-grid.solo .person { grid-template-columns: minmax(0, 1.22fr) minmax(0, 1fr); }
+    /* no figure (the end, a count after a Surf check test, the demos off):
+       the words have the card */
+    html[data-land=a] #workoutView .person:has(> .ex-anim:empty),
+    html[data-land=a] body.hide-photos #workoutView .person { grid-template-columns: minmax(0, 1fr); }
+    html[data-land=a] #workoutView .person > * { grid-column: 1; }
+    html[data-land=a] #workoutView .person > .ex-anim { grid-column: 2; grid-row: 1 / -1; margin-top: 0; min-height: 0; }
+    html[data-land=a] #workoutView .person > .swap-btn { right: calc(44% + 0.6rem); }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.a { border-top: 2px solid var(--border); border-left: 6px solid var(--accent); }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.b { border-top: 2px solid var(--border); border-left: 6px solid var(--accent-b); }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(1.5rem, 3vw, 2.1rem) * min(var(--ex-scale), 1.25));
+    }
+    html[data-land=a] #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(2rem, 4.2vw, 2.8rem) * var(--ex-scale));
+    }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .load { display: inline; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .load::before { content: ' '; }
+    /* a lap and its counter for each of two: the words get more of the
+       card, the count and +1 on one line, the lap a little closer */
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.amrap { grid-template-columns: minmax(0, 1fr) minmax(0, 0.42fr); }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.amrap .exercise-cue { display: none; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count):not([hidden]) { flex-wrap: nowrap; margin: 0.1rem 0 0.2rem; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .round-counter button { min-height: 2.9rem; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .count-now b { font-size: 1.8rem; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-now {
+      flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 0.3rem; line-height: 1.1;
+    }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-now span { flex-basis: 100%; margin-top: 0; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .circuit:not([hidden]) { margin: 0.1rem 0 0; }
+    html[data-land=a] #workoutView .exercise-grid:not(.solo) .circuit li {
+      font-size: calc(1.05rem * min(var(--ex-scale), 1.2)); padding-top: 0.08rem; padding-bottom: 0.08rem;
+    }
+    /* and not as tall: the lap and its count take the whole card (tap one
+       for its figure in 3D, as ever) */
+    @media (max-height: 680px) {
+      html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.amrap { grid-template-columns: minmax(0, 1fr); }
+      html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.amrap > .ex-anim { display: none; }
+      html[data-land=a] #workoutView .exercise-grid:not(.solo) .person:has(> .round-counter:not([hidden])) .exercise-cue { display: none; }
+      html[data-land=a] #workoutView .exercise-grid:not(.solo) .circuit li { padding-top: 0.06rem; padding-bottom: 0.06rem; }
+    }
+  }
+
+  /* not as tall (a Duo, an iPad mini in Safari): a little closer all round */
+  @media (max-height: 680px) {
+    html[data-land=a] #workoutView > .top-bar { padding: 0; }
+    html[data-land=a] #workoutView .workout-title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html[data-land=a] #workoutView > .progress-bar-wrap { margin: 0; }
+    html[data-land=a] #workoutView > .block-info { padding: 0.45rem 0.75rem; gap: 0.25rem; }
+    html[data-land=a] #workoutView .block-name { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html[data-land=a] #workoutView .seg { height: 10px; }
+    html[data-land=a] #workoutView .round-hint {
+      font-size: 0.85rem; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    }
+    html[data-land=a] #workoutView .phase-label { font-size: 1.1rem; }
+    html[data-land=a] #workoutView .controls button { padding: 0.7rem 0.3rem; font-size: 1.05rem; }
+    html[data-land=a] #workoutView .ex-anim { min-height: 3.5rem; }
+    html[data-land=a] #workoutView .exercise-cue:not(:empty) {
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    }
+    html[data-land=a] #workoutView .person.amrap .exercise-cue { display: none; }
+    /* the question after time away, as small as it goes over the top bar,
+       and the line on how a style works makes way for it */
+    html[data-land=a] #workoutView > .away-bar { padding: 0.4rem 0.6rem 0.4rem 0.9rem; }
+    html[data-land=a] #workoutView .away-text { font-size: 1.05rem; }
+    html[data-land=a] #workoutView .away-actions button { padding: 0.6rem 0.5rem; }
+    html[data-land=a] #workoutView:is(.asking-away, .going-noted) :is(.round-hint, .round-how) { display: none; }
+  }
+
+  /* the screen says where its fold is: a column either side of it */
+  @media (horizontal-viewport-segments: 2) and (min-height: 501px) {
+    html[data-land=a] #workoutView.active {
+      grid-template-columns: calc(env(viewport-segment-right 0 0, 50vw) - max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)) - 0.75rem) minmax(0, 1fr);
+      column-gap: calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-right 0 0, 50vw) + 1.5rem);
+    }
+  }
+}
+
+/* ---- B · Plan and clock ---- */
+/* Wayne's idea: the workout preview down the left as a live plan (the
+   parts done ticked off, the one you're on lit and filling, its moves on
+   the cards marked, the next one marked, scrolling itself; see markPlan in
+   js/app.js), the clock and the block beside it, both people under the
+   clock, and Up next and the buttons along the bottom. One screen tall;
+   the settings a scroll below it. On a fold opened out, the clock half
+   and the people half, the plan under the people. */
+@media (orientation: landscape) and (min-width: 760px) and (min-height: 501px),
+       (min-aspect-ratio: 9/10) and (min-width: 760px) and (min-height: 600px) {
+  html[data-land=b] body.view-workout .app { max-width: none; }
+  html[data-land=b] body.view-workout #scroller {
+    --pt: max(0.6rem, env(safe-area-inset-top, 0px));
+    --pb: max(0.6rem, env(safe-area-inset-bottom, 0px));
+    padding: var(--pt) max(0.9rem, env(safe-area-inset-right, 0px)) var(--pb) max(0.9rem, env(safe-area-inset-left, 0px));
+  }
+  html[data-land=b] #workoutView.active {
+    position: relative; display: grid; gap: 0.65rem 0.8rem;
+    height: calc(100dvh - var(--pt) - var(--pb));
+  }
+  html[data-land=b] #workoutView > .top-bar { grid-area: top; padding: 0; }
+  html[data-land=b] #workoutView .back-btn { padding: 0.45rem 0.9rem; }
+  html[data-land=b] #workoutView .workout-title { font-size: 1.2rem; }
+  /* the question after time away covers the top bar until it's answered,
+     over the top of the screen rather than pushing it down */
+  html[data-land=b] #workoutView > .away-bar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 6; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  }
+  html[data-land=b] #workoutView > .block-info { grid-area: block; }
+  html[data-land=b] #workoutView > .timer-card { grid-area: timer; }
+  html[data-land=b] #workoutView > .exercise-grid { grid-area: people; }
+  html[data-land=b] #workoutView > .upcoming { grid-area: up; padding: 0.6rem 1rem; min-height: 3.4rem; }
+  html[data-land=b] #workoutView .upcoming .txt { font-size: clamp(1.02rem, 1.4vw, 1.25rem); }
+  /* See what's coming up shares Up next's row (in the warm-up), and has it
+     to itself in a rest, when the cards are what's next */
+  html[data-land=b] #workoutView > .next-block-btn {
+    grid-area: up; margin: 0; width: auto; justify-self: end; align-self: stretch; padding: 0.6rem 1.2rem; font-size: 1rem;
+  }
+  html[data-land=b] #workoutView:not(.resting):has(> .next-block-btn:not([hidden])) > .upcoming { margin-right: 15.5rem; }
+  html[data-land=b] #workoutView.resting > .next-block-btn { justify-self: stretch; }
+  html[data-land=b] #workoutView > .controls { grid-area: ctrl; position: static; padding: 0; background: none; }
+  html[data-land=b] #workoutView .controls button { padding: 0.95rem 0.5rem; font-size: 1.2rem; }
+  html[data-land=b] #workoutView > .pre-start { grid-area: rail; }
+  /* the whole session's progress, along the top of the plan */
+  html[data-land=b] #workoutView > .progress-bar-wrap {
+    grid-area: rail; align-self: start; margin: 0.85rem 1rem 0; height: 5px; z-index: 1;
+    background: rgba(148, 163, 184, 0.18);
+  }
+  /* a note (link copied, opened from a link) pops up over the foot of the
+     plan, by Share */
+  html[data-land=b] #workoutView > #workoutNote {
+    grid-area: rail; align-self: end; z-index: 2; margin: 0 0.6rem 4.4rem;
+    background: var(--card-hi); border: 2px solid var(--accent-b); border-radius: 0.9rem;
+    padding: 0.6rem 0.8rem; text-align: left; font-size: 0.95rem;
+  }
+  /* the settings, a scroll below the screen (Change on the sound line
+     jumps there) */
+  html[data-land=b] #workoutView > .toggle-row { position: absolute; top: calc(100% + 0.9rem); left: 0; right: 0; margin-bottom: 1rem; }
+
+  /* the clock: as big as its box allows, the same in a rest; "0:19" and
+     "20:00" each fitted (data-len), today's size where there are no
+     container units */
+  html[data-land=b] #workoutView > .timer-card {
+    container-type: size;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    padding: 0.6rem 1rem; min-height: 0;
+  }
+  html[data-land=b] #workoutView .phase-label { font-size: clamp(1.1rem, 2vw, 1.6rem); letter-spacing: 0.25em; }
+  html[data-land=b] #workoutView .time-display { font-size: clamp(6rem, 12vw, 9rem); white-space: nowrap; margin: 0.1rem 0 0.15rem; }
+  html[data-land=b] #workoutView .time-display[data-len='4'] { font-size: min(calc((100cqw - 1rem) / 2.15), calc(100cqh - 4.4rem)); }
+  html[data-land=b] #workoutView .time-display[data-len='5'] { font-size: min(calc((100cqw - 1rem) / 2.75), calc(100cqh - 4.4rem)); }
+  html[data-land=b] #workoutView .total-time { font-size: 1rem; }
+
+  /* beside it, the block: its name, the round and how it works */
+  html[data-land=b] #workoutView > .block-info {
+    justify-content: center; gap: 0.6rem; padding: 1rem 1.2rem; border-radius: 1.5rem; min-height: 0; overflow: hidden;
+  }
+  html[data-land=b] #workoutView .block-name { font-size: clamp(1.15rem, 1.7vw, 1.5rem); line-height: 1.25; }
+  html[data-land=b] #workoutView .round-count { font-size: clamp(1.3rem, 2.1vw, 1.9rem); }
+  html[data-land=b] #workoutView .remaining-tag { font-size: 1rem; }
+  html[data-land=b] #workoutView .seg { height: 18px; border-radius: 5px; }
+  html[data-land=b] #workoutView :is(.round-hint, .going-note) { font-size: 1rem; }
+
+  /* each person's move, the figure to the right of the words */
+  html[data-land=b] #workoutView > .exercise-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; gap: 0.8rem;
+  }
+  html[data-land=b] #workoutView > .exercise-grid.solo { grid-template-columns: minmax(0, 1fr); }
+  html[data-land=b] #workoutView .person { min-height: 0; overflow: hidden auto; overscroll-behavior: contain; padding: 0.85rem 1.1rem; }
+  html[data-land=b] body:not(.hide-photos) #workoutView .person:has(> .ex-anim:not(:empty):not(.no-3d)) { padding-right: calc(40% + 0.4rem); }
+  html[data-land=b] #workoutView .person > .ex-anim {
+    position: absolute; top: 0.6rem; right: 0.6rem; bottom: 0.6rem; width: 40%;
+    aspect-ratio: auto; max-height: none; margin: 0;
+  }
+  html[data-land=b] #workoutView .person > .ex-anim.no-3d { position: static; width: auto; height: 2.6rem; margin-top: 0.6rem; }
+  /* Swap top right of the words, never on the figure */
+  html[data-land=b] body:not(.hide-photos) #workoutView .person:has(> .ex-anim:not(:empty):not(.no-3d)) > .swap-btn { right: calc(40% + 0.6rem); }
+  /* (at the largest text, a little less than the largest, and the cue
+     makes way: B gives the people the least room) */
+  html[data-land=b] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+    font-size: calc(clamp(1.8rem, 3.2vw, 3rem) * min(var(--ex-scale), 1.25));
+  }
+  html[data-land=b] #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
+    font-size: calc(clamp(2.4rem, 4.8vw, 4.4rem) * min(var(--ex-scale), 1.25));
+  }
+  html[data-land=b][data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
+  /* a Surf check's "As long as you can" is a line to read, not a name */
+  html[data-land=b] #workoutView .person:has(> .check-count:not([hidden])) .exercise-reps {
+    font-size: calc(clamp(1.2rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.25));
+  }
+  html[data-land=b] #workoutView .exercise-cue { font-size: calc(clamp(1rem, 1.5vw, 1.3rem) * var(--ex-scale)); }
+  /* the weight on a line of its own, in the person's colour */
+  html[data-land=b] #workoutView .load-sep { display: none; }
+  html[data-land=b] #workoutView .load { display: block; color: var(--teal-bright); }
+  html[data-land=b] #workoutView .person.b .load { color: var(--accent-b); }
+
+  /* AMRAP and For Time: the count across the card, the lap as lines under
+     it, a smaller figure beside the lap */
+  html[data-land=b] body:not(.hide-photos) #workoutView .person.amrap:has(> .ex-anim:not(:empty):not(.no-3d)) { padding-right: 1.1rem; }
+  html[data-land=b] body:not(.hide-photos) #workoutView .person.amrap:has(> .ex-anim:not(:empty):not(.no-3d)) > :is(.circuit, .exercise-cue, .exercise-level, .alternative) {
+    margin-right: calc(25% + 0.4rem);
+  }
+  html[data-land=b] #workoutView .person.amrap > .ex-anim { width: 25%; top: 6.2rem; }
+  html[data-land=b] #workoutView .person.amrap .circuit:not([hidden]) { display: block; margin: 0.1rem 0 0; }
+  html[data-land=b] #workoutView .person.amrap .circuit li {
+    display: block; font-size: calc(clamp(1rem, 1.5vw, 1.35rem) * min(var(--ex-scale), 1.2));
+    padding-top: 0.14rem; padding-bottom: 0.14rem;
+  }
+  html[data-land=b] #workoutView .person.amrap .circuit li.lap-head { font-size: 0.85rem; }
+  html[data-land=b] #workoutView .round-counter { margin: 0.3rem 0; }
+  /* the count on one line ("2 rounds", "Round 2 of 5"), last time under it */
+  html[data-land=b] #workoutView .round-counter .count-now {
+    flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: baseline; column-gap: 0.35rem;
+  }
+  html[data-land=b] #workoutView .round-counter .count-now span { flex-basis: 100%; text-align: center; }
+  /* a lap's cue, and a count's, make way where the room is short (the
+     test's standard is beside the clock) */
+  @media (max-height: 860px) {
+    html[data-land=b] #workoutView :is(.person.amrap, .person:has(> .round-counter:not([hidden]))) .exercise-cue { display: none; }
+    /* and an EMOM's, whose reps take a line or two above the name */
+    html[data-land=b] #workoutView .person:has(> .exercise-reps:not(:empty)) .exercise-cue { display: none; }
+  }
+  /* and shorter still (Safari on an iPad), the lap has the card's width */
+  @media (max-height: 760px) {
+    html[data-land=b] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(1.6rem, 2.7vw, 2.6rem) * min(var(--ex-scale), 1.25));
+    }
+    html[data-land=b] #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(2rem, 4vw, 3.6rem) * min(var(--ex-scale), 1.25));
+    }
+    html[data-land=b] #workoutView .exercise-cue { font-size: calc(0.95rem * var(--ex-scale)); }
+    html[data-land=b] #workoutView .person.amrap .circuit li { padding-top: 0.12rem; padding-bottom: 0.12rem; }
+    html[data-land=b] #workoutView .person.amrap > .ex-anim { display: none; }
+    html[data-land=b] body:not(.hide-photos) #workoutView .person.amrap:has(> .ex-anim:not(:empty):not(.no-3d)) > :is(.circuit, .exercise-cue, .exercise-level, .alternative) { margin-right: 0; }
+  }
+
+  /* THE PLAN: the workout preview, kept on screen the whole way */
+  html[data-land=b] #workoutView > .pre-start {
+    display: flex; flex-direction: column; gap: 0.6rem; min-height: 0;
+    background: var(--card); border-radius: 1.25rem; padding: 1.45rem 0.7rem 0.7rem;
+  }
+  html[data-land=b] #workoutView .preview-card {
+    display: block; order: 0; flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    background: none; border-radius: 0; padding: 0.5rem 0.3rem 1rem 0;
+    /* a soft edge where the list runs under the top and the foot */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 0.9rem, #000 calc(100% - 1.2rem), transparent);
+            mask-image: linear-gradient(to bottom, transparent 0, #000 0.9rem, #000 calc(100% - 1.2rem), transparent);
+  }
+  html[data-land=b] #workoutView .sound-line { order: 1; font-size: 0.88rem; }
+  html[data-land=b] #workoutView .pre-actions { order: 2; display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 0.4rem; }
+  html[data-land=b] #workoutView .pre-actions button { font-size: 0.9rem; padding: 0.6rem 0.4rem; line-height: 1.2; }
+  html[data-land=b] #workoutView :is(.preview-title, .preview-hint) { padding-left: 0.3rem; }
+  html[data-land=b] #workoutView .preview-title { margin-bottom: 0.4rem; }
+  html[data-land=b] #workoutView .preview-list { gap: 0.3rem; }
+  html[data-land=b] #workoutView .preview-list li {
+    padding: 0.5rem 0.65rem; border-radius: 0.8rem; border: 2px solid transparent; border-left-width: 5px;
+    transition: background-color 0.3s, opacity 0.3s;
+  }
+  html[data-land=b] #workoutView .preview-item-name { font-size: 1.02rem; }
+  /* once it's going: the notes and the hint go, and the moves are a list
+     to read, not buttons (Swap is on the cards, in a rest or paused); the
+     parts other than the one you're on list them as a line of text */
+  html[data-land=b] #workoutView .pre-start.underway :is(.preview-hint, .preview-list li.info),
+  html[data-land=b] #workoutView.finished :is(.preview-hint, .preview-list li.info) { display: none; }
+  html[data-land=b] #workoutView .pre-start.underway .preview-move,
+  html[data-land=b] #workoutView.finished .preview-move { pointer-events: none; }
+  html[data-land=b] #workoutView .pre-start.underway .preview-move::after,
+  html[data-land=b] #workoutView.finished .preview-move::after { content: none; }
+  html[data-land=b] #workoutView .pre-start.underway .preview-list li:not(.now):not(.done) .preview-moves {
+    display: block; margin-top: 0.15rem; color: var(--muted); font-size: 0.9rem; line-height: 1.4;
+  }
+  html[data-land=b] #workoutView .pre-start.underway .preview-list li:not(.now) .preview-move {
+    display: inline; background: none; border: 0; padding: 0; min-height: 0; border-radius: 0; margin-right: 0.35em;
+    color: inherit; font-size: inherit; font-weight: 600;
+  }
+  html[data-land=b] #workoutView .pre-start.underway .preview-list li:not(.now) .preview-move:not(:last-child)::after { content: '\00a0·'; color: var(--muted); }
+  /* done: a tick and the name */
+  html[data-land=b] #workoutView .preview-list li.done { opacity: 0.5; padding-top: 0.3rem; padding-bottom: 0.3rem; }
+  html[data-land=b] #workoutView .preview-list li.done :is(.preview-item-sub, .preview-moves) { display: none; }
+  html[data-land=b] #workoutView .preview-list li.done .preview-item-name::before { content: '✓ '; color: var(--teal-bright); }
+  /* the part you're on: its colour filling left to right as it goes */
+  html[data-land=b] #workoutView .preview-list li.now {
+    background:
+      linear-gradient(to right, rgba(var(--rgb, 20,184,166), 0.16) calc(var(--p, 0) * 100%), transparent 0) no-repeat,
+      var(--card-hi);
+    border-color: rgba(var(--rgb, 20,184,166), 0.45);
+    border-left-color: rgb(var(--rgb, 20,184,166));
+  }
+  html[data-land=b] #workoutView .preview-list li.now .preview-item-name { font-size: 1.15rem; font-weight: 800; }
+  html[data-land=b] #workoutView .preview-list li.now .preview-item-sub { color: var(--text); }
+  html[data-land=b] #workoutView .preview-move.cur { border-color: var(--teal-bright); background: rgba(20, 184, 166, 0.18); font-weight: 800; }
+  html[data-land=b] #workoutView .preview-list li.next { border-color: var(--border); border-left-color: var(--muted); }
+  html[data-land=b] #workoutView .preview-list li > .tag {
+    display: block; float: right; margin-left: 0.4rem;
+    font-size: 0.68rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); padding: 0.15rem 0.45rem; border-radius: 999px; border: 1px solid var(--border);
+  }
+  html[data-land=b] #workoutView .preview-list li.now > .tag { color: rgb(var(--rgb, 20,184,166)); border-color: rgba(var(--rgb, 20,184,166), 0.6); }
+
+  /* the end: DONE, a big tick and the total in the clock's place, the
+     summary beside it, the scores and How was that? on the cards, and the
+     plan as a recap, every part ticked */
+  html[data-land=b] #workoutView.finished > .timer-card { flex-direction: column; flex-wrap: nowrap; gap: 0; }
+  html[data-land=b] #workoutView.finished .time-display { order: 0; font-size: min(calc(100cqh - 5rem), 9rem); margin: 0; color: var(--teal-bright); }
+  html[data-land=b] #workoutView .finish-line { font-size: 1.1rem; }
+  /* nobody did anything (skipped to the end, or ended inside a minute):
+     no cards saying well done, so what the end says takes their place */
+  html[data-land=b] #workoutView.finished.unstarted > .block-info {
+    grid-area: people; align-self: center; justify-self: center; max-width: 34rem; padding: 1.4rem 1.6rem;
+  }
+  html[data-land=b] #workoutView.finished.unstarted .block-name { font-size: 1.6rem; }
+  html[data-land=b] #workoutView.finished .feel-row .chip {
+    font-size: 1.1rem; min-height: 3.2rem; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* an iPad: the plan, the clock, the block; the people under the clock */
+  @media (min-width: 1051px) {
+    html[data-land=b] #workoutView.active {
+      grid-template-columns: clamp(17rem, 27vw, 23rem) minmax(0, 1.3fr) minmax(0, 1fr);
+      grid-template-rows: auto clamp(13.5rem, 37dvh, 25rem) minmax(0, 1fr) auto auto;
+      grid-template-areas:
+        "top  top    top"
+        "rail timer  block"
+        "rail people people"
+        "rail up     up"
+        "rail ctrl   ctrl";
+    }
+    html[data-land=b] #workoutView.finished.unstarted > .timer-card { grid-column: 2 / -1; }
+    /* an AMRAP or For Time lap needs the room: the clock gives a little */
+    html[data-land=b] #workoutView.active:has(.person.amrap) { grid-template-rows: auto clamp(12rem, 31dvh, 21rem) minmax(0, 1fr) auto auto; }
+    @media (max-height: 680px) {
+      html[data-land=b] #workoutView.active { grid-template-rows: auto clamp(10rem, 30dvh, 25rem) minmax(0, 1fr) auto auto; }
+      /* a lap has the room Up next had (it says "Rest, then Block 2") */
+      html[data-land=b] #workoutView.active:has(.person.amrap) {
+        grid-template-rows: auto clamp(10rem, 28dvh, 21rem) minmax(0, 1fr) auto;
+        grid-template-areas: "top top top" "rail timer block" "rail people people" "rail ctrl ctrl";
+      }
+      html[data-land=b] #workoutView.active:has(.person.amrap) > .upcoming { display: none; }
+      html[data-land=b] #workoutView .round-count.round-how { font-size: 1.1rem; }
+    }
+  }
+
+  /* a fold opened out: the clock half (the block, the clock, the buttons)
+     and the people half (Wayne over Dave, Up next, then the plan); the
+     block over the clock, so the two halves share the height between them */
+  @media (max-width: 1050px), (horizontal-viewport-segments: 2) and (min-height: 501px) {
+    html[data-land=b] body.view-workout #scroller {
+      padding-left: max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+      padding-right: max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+    }
+    html[data-land=b] #workoutView.active {
+      column-gap: 1.5rem;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+      grid-template-areas:
+        "top   top"
+        "block people"
+        "timer people"
+        "timer up"
+        "timer rail"
+        "ctrl  rail";
+    }
+    html[data-land=b] #workoutView > .timer-card { min-height: 15rem; }
+    html[data-land=b] #workoutView > .block-info { justify-content: flex-start; }
+    html[data-land=b] #workoutView .controls { grid-template-columns: 1.4fr 1fr 1fr; }
+    html[data-land=b] #workoutView.finished .controls { grid-template-columns: 2fr 1fr; }
+    html[data-land=b] #workoutView.asking-away .controls { grid-template-columns: 1fr 1fr; }
+    html[data-land=b] #workoutView .controls button { font-size: 1.05rem; padding: 0.8rem 0.3rem; }
+    /* Wayne over Dave as short rows, the figure at the end of each */
+    html[data-land=b] #workoutView > .exercise-grid:not(.solo) { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 0.5rem; }
+    html[data-land=b] #workoutView .person { padding: 0.6rem 0.9rem; }
+    html[data-land=b] body:not(.hide-photos) #workoutView .person:has(> .ex-anim:not(:empty):not(.no-3d)) { padding-right: calc(30% + 0.4rem); min-height: 7.5rem; }
+    html[data-land=b] #workoutView .person > .ex-anim { width: 30%; top: 0.4rem; bottom: 0.4rem; right: 0.4rem; }
+    html[data-land=b] body:not(.hide-photos) #workoutView .person:has(> .ex-anim:not(:empty):not(.no-3d)) > .swap-btn { right: calc(30% + 0.6rem); }
+    html[data-land=b] #workoutView .person-label { margin-bottom: 0.15rem; }
+    html[data-land=b] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(1.4rem, 3vw, 2rem) * var(--ex-scale));
+    }
+    html[data-land=b] #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(1.8rem, 4vw, 2.6rem) * var(--ex-scale));
+    }
+    html[data-land=b] #workoutView .load { display: inline; }
+    html[data-land=b] #workoutView .load::before { content: ' '; }
+    html[data-land=b] #workoutView .exercise-cue { font-size: calc(0.95rem * var(--ex-scale)); margin-top: 0.2rem; }
+    html[data-land=b] #workoutView .person.amrap .circuit li { padding-top: 0.12rem; padding-bottom: 0.12rem; }
+    html[data-land=b] #workoutView .round-counter { margin: 0.15rem 0; }
+    /* no room for See what's coming up beside Up next; in a rest it has the row */
+    html[data-land=b] #workoutView:not(.resting) > .next-block-btn { display: none; }
+    html[data-land=b] #workoutView:not(.resting):has(> .next-block-btn:not([hidden])) > .upcoming { margin-right: 0; }
+    /* an AMRAP or For Time: the two laps are the plan for these minutes,
+       so they get the whole half, and Up next goes over with the clock */
+    html[data-land=b] #workoutView.active:has(.person.amrap) {
+      grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+      grid-template-areas:
+        "top   top"
+        "block people"
+        "timer people"
+        "up    people"
+        "ctrl  people";
+    }
+    html[data-land=b] #workoutView.active:has(.person.amrap) > :is(.pre-start, .progress-bar-wrap) { display: none; }
+    html[data-land=b] #workoutView.active:has(.person.amrap) > .exercise-grid:not(.solo) { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+
+  /* not as tall (a Duo, an iPad mini in Safari): a little closer all round */
+  @media (max-height: 680px) {
+    html[data-land=b] #workoutView .workout-title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html[data-land=b] #workoutView > .block-info { padding: 0.45rem 0.75rem; gap: 0.25rem; }
+    html[data-land=b] #workoutView .block-name { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html[data-land=b] #workoutView .seg { height: 10px; }
+    html[data-land=b] #workoutView .round-hint {
+      font-size: 0.85rem; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    }
+    html[data-land=b] #workoutView .phase-label { font-size: 1.1rem; }
+    html[data-land=b] #workoutView .controls button { padding: 0.7rem 0.3rem; font-size: 1.05rem; }
+    html[data-land=b] #workoutView .exercise-cue:not(:empty) {
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    }
+    html[data-land=b] #workoutView .person.amrap .exercise-cue { display: none; }
+  }
+
+  /* the screen says where its fold is: the halves either side of it */
+  @media (horizontal-viewport-segments: 2) and (min-height: 501px) {
+    html[data-land=b] #workoutView.active {
+      grid-template-columns: calc(env(viewport-segment-right 0 0, 50vw) - max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)) - 0.75rem) minmax(0, 1fr);
+      column-gap: calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-right 0 0, 50vw) + 1.5rem);
+    }
+  }
+}
+
+/* ---- C · Big clock and lanes ---- */
+/* The clock, the block and every button that isn't one person's run down
+   a rail on the left, the full height of the screen; each person gets a
+   lane, the full height too, with their own Next at the foot. In work the
+   rail is wide and the clock leads, under a minute the seconds filling it;
+   in a rest, the warm-up and the rest it narrows and the next move leads.
+   Below the first screen: the note, Share and the settings. On a fold
+   opened out, the rail is one half exactly and Wayne is over Dave. */
+@media (orientation: landscape) and (min-width: 760px) and (min-height: 501px),
+       (min-aspect-ratio: 9/10) and (min-width: 760px) and (min-height: 600px) {
+  html[data-land=c] body.view-workout #scroller {
+    padding: max(0.6rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px))
+             max(0.6rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
+  }
+  html[data-land=c] body.view-workout .app { max-width: 1600px; }
+  html[data-land=c] #workoutView.active {
+    /* the first screen, exactly */
+    --screen: calc(100dvh - max(0.6rem, env(safe-area-inset-top, 0px)) - max(0.6rem, env(safe-area-inset-bottom, 0px)));
+    /* the next move leads (a rest, the warm-up, before Start, the end): a narrow rail */
+    --rail: clamp(300px, 31vw, 470px);
+    display: grid; column-gap: 0.85rem; row-gap: 0.5rem; align-items: start;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(9rem, 1fr) auto auto auto;
+    grid-template-areas:
+      "top stage" "prog stage" "block stage" "timer stage" "nextb stage" "ctrl stage" "rpre stage"
+      "note note" "below below" "tog tog";
+  }
+  /* the clock leads (work, a Surf check test, a hold): a wide rail */
+  html[data-land=c] #workoutView.active:has(.timer-card.work) { --rail: clamp(360px, 40vw, 620px); }
+
+  html[data-land=c] #workoutView > .top-bar { grid-area: top; padding: 0; min-width: 0; flex-wrap: wrap; row-gap: 0.4rem; }
+  html[data-land=c] #workoutView > .progress-bar-wrap { grid-area: prog; }
+  html[data-land=c] #workoutView > .block-info { grid-area: block; }
+  html[data-land=c] #workoutView > .timer-card { grid-area: timer; align-self: stretch; }
+  html[data-land=c] #workoutView > .next-block-btn { grid-area: nextb; margin: 0; padding: 0.75rem; font-size: 1.05rem; }
+  html[data-land=c] #workoutView > .controls { grid-area: ctrl; }
+  html[data-land=c] #workoutView > .exercise-grid { grid-area: stage; height: var(--screen); }
+  /* the question after time away, across the top of the lanes */
+  html[data-land=c] #workoutView > .away-bar {
+    grid-area: stage; align-self: start; position: relative; z-index: 6; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  }
+  /* each lane says its own next instead */
+  html[data-land=c] #workoutView > .upcoming { display: none; }
+  html[data-land=c] #workoutView > #workoutNote { grid-area: note; }
+  html[data-land=c] #workoutView > .pre-start { grid-area: below; }
+  html[data-land=c] #workoutView > .toggle-row { grid-area: tog; }
+
+  /* the rail */
+  html[data-land=c] #workoutView .back-btn { padding: 0.5rem 0.8rem; }
+  html[data-land=c] #workoutView .workout-title { font-size: 1.05rem; }
+  /* once it's going the lanes say who's who; before Start, 2 people or 1
+     gets its own line, so the name has room */
+  html[data-land=c] #workoutView .people-badge:disabled { display: none; }
+  html[data-land=c] #workoutView .people-badge.can-flip { order: 3; flex: 1 0 100%; }
+  html[data-land=c] #workoutView > .block-info { padding: 0.65rem 0.9rem; gap: 0.35rem; }
+  html[data-land=c] #workoutView .block-name { font-size: 1.1rem; }
+  html[data-land=c] #workoutView .seg { height: 16px; }
+  html[data-land=c] #workoutView .round-hint { font-size: 0.92rem; }
+
+  /* the clock: as wide as the rail lets it, unless the rail is short;
+     today's size where there are no container units */
+  html[data-land=c] #workoutView > .timer-card {
+    container-type: size;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 0.5rem 0.8rem; min-height: 9rem;
+  }
+  html[data-land=c] #workoutView .time-display {
+    font-size: clamp(6rem, 12vw, 9rem);
+    font-size: min(41cqi, calc(100cqh - 4.8rem));
+    line-height: 0.92; white-space: nowrap; margin: 0.15rem 0 0.25rem;
+  }
+  /* ten minutes or more: five characters */
+  html[data-land=c] #workoutView .time-display[data-len='5'] { font-size: min(33cqi, calc(100cqh - 4.8rem)); }
+  /* under a minute: the "0:" goes small and the seconds fill the rail */
+  html[data-land=c] #workoutView .time-display.secs { font-size: min(60cqi, calc(100cqh - 4.8rem)); letter-spacing: -0.04em; }
+  html[data-land=c] #workoutView .time-display.secs .tmin { font-size: 0.3em; color: var(--muted); letter-spacing: 0; margin-right: 0.04em; }
+  html[data-land=c] #workoutView .phase-label { font-size: 1.45rem; letter-spacing: 0.24em; }
+  html[data-land=c] #workoutView .total-time { font-size: 1.05rem; }
+
+  /* Start (Pause, Resume) right across, Skip and Reset under it */
+  html[data-land=c] #workoutView .controls {
+    position: static; background: none; padding: 0; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+  }
+  html[data-land=c] #workoutView .controls button { padding: 0.8rem 0.4rem; font-size: 1.1rem; }
+  html[data-land=c] #workoutView .controls #btnStart { grid-column: 1 / -1; min-height: 4.4rem; font-size: 1.45rem; }
+  html[data-land=c] #workoutView:is(.finished, .asking-away) .controls { grid-template-columns: 1fr 1fr; }
+  html[data-land=c] #workoutView.finished .controls #btnStart { grid-column: auto; }
+
+  /* the lanes */
+  html[data-land=c] #workoutView .exercise-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; }
+  html[data-land=c] #workoutView .exercise-grid.solo { grid-template-columns: minmax(0, 1fr); }
+  html[data-land=c] #workoutView .person {
+    container-type: inline-size;
+    min-height: 0; overflow: hidden auto; overscroll-behavior: contain; padding: 0.85rem 1.1rem 1rem; border-top-width: 8px;
+  }
+  html[data-land=c] #workoutView .person-label { font-size: 1.15rem; letter-spacing: 0.14em; margin-bottom: 0.3rem; }
+  html[data-land=c] #workoutView .next-eyebrow { font-size: 1rem; letter-spacing: 0.16em; }
+  /* the name as big as the lane takes a long word ("Kettlebell") */
+  html[data-land=c] #workoutView .exercise-grid :is(.exercise-name, .exercise-reps) {
+    font-size: calc(min(4.4rem, 16cqi) * var(--ex-scale)); hyphens: auto;
+  }
+  html[data-land=c] #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
+    font-size: calc(min(5.6rem, 12cqi) * var(--ex-scale));
+  }
+  /* the weight on a line of its own, in the person's colour */
+  html[data-land=c] #workoutView .load-sep { display: none; }
+  html[data-land=c] #workoutView .load { display: block; color: var(--teal-bright); }
+  html[data-land=c] #workoutView .person.b .load { color: var(--accent-b); }
+  html[data-land=c] #workoutView .exercise-cue { font-size: calc(clamp(1rem, 5.6cqi, 1.4rem) * var(--ex-scale)); margin-top: 0.35rem; }
+  html[data-land=c] #workoutView .ex-anim { flex: 1 1 0; aspect-ratio: auto; max-height: none; min-height: 5rem; margin-top: 0.6rem; }
+  html[data-land=c] #workoutView .ex-anim.no-3d { flex: none; min-height: 0; }
+  html[data-land=c] #workoutView .alternative { order: 4; }
+  html[data-land=c] #workoutView .round-counter { order: 5; }
+  /* their own next, at the foot of the lane; not in a rest, when the lane
+     already is the next move */
+  html[data-land=c] #workoutView .lane-next {
+    order: 6; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    margin-top: 0.7rem; padding-top: 0.6rem; border-top: 2px solid var(--border);
+    font-size: calc(clamp(1.05rem, 6cqi, 1.45rem) * var(--ex-scale)); font-weight: 800; line-height: 1.22;
+  }
+  html[data-land=c] #workoutView .lane-next::before {
+    content: 'Next  '; white-space: pre; color: var(--muted);
+    font-size: 0.72em; letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  html[data-land=c] #workoutView .lane-next:empty, html[data-land=c] #workoutView.resting .lane-next { display: none; }
+
+  /* AMRAP and For Time: the lap, then the figure, the count at the foot */
+  html[data-land=c] #workoutView .circuit li { font-size: calc(clamp(1.1rem, 6.6cqi, 1.75rem) * min(var(--ex-scale), 1.2)); }
+  html[data-land=c] #workoutView .round-counter { margin: 0.7rem 0 0; }
+  html[data-land=c] #workoutView .round-counter button { min-height: 3.8rem; font-size: 1.3rem; }
+  html[data-land=c] #workoutView .count-now b { font-size: 2.6rem; }
+  html[data-land=c] #workoutView .count-now span { font-size: 0.95rem; }
+  html[data-land=c] #workoutView .round-counter .check-done { min-height: 6rem; font-size: 1.8rem; }
+  /* a Surf check count has no figure above it: it sits at the foot, big */
+  html[data-land=c] #workoutView .round-counter.check-count { margin-top: auto; }
+  html[data-land=c] #workoutView .check-count .count-now b { font-size: 4.5rem; }
+  html[data-land=c] #workoutView .check-count .count-now { font-size: 1.2rem; }
+  /* the largest text: a lap's cue makes way */
+  html[data-land=c][data-scale='1.45'] #workoutView .person.amrap .exercise-cue { display: none; }
+  /* a Surf check's "As long as you can" is a line to read, not a name */
+  html[data-land=c] #workoutView .person:has(> .check-count:not([hidden])) .exercise-reps {
+    font-size: calc(clamp(1.2rem, 7cqi, 1.8rem) * min(var(--ex-scale), 1.25));
+  }
+  @container (max-width: 430px) {
+    /* a narrow lane: the lap as lines, the count over its buttons */
+    html[data-land=c] #workoutView .circuit:not([hidden]) { display: block; }
+    html[data-land=c] #workoutView .circuit li { display: block; padding-top: 0.25rem; padding-bottom: 0.25rem; }
+    html[data-land=c] #workoutView .round-counter:not([hidden]) { flex-wrap: wrap; }
+    html[data-land=c] #workoutView .round-counter .count-now {
+      flex: 1 0 100%; order: -1; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: baseline; column-gap: 0.45rem;
+    }
+    html[data-land=c] #workoutView .round-counter .count-now span { margin-top: 0; }
+    html[data-land=c] #workoutView .round-counter :is(.count-less, .count-more) { flex: 1 0 0; width: auto; padding: 0 0.4rem; }
+  }
+
+  /* before Start: the whole workout in the lanes' place, Start in the rail */
+  html[data-land=c] #workoutView.active:not(.finished):has(> .pre-start:not(.underway)) > :is(.exercise-grid, .next-block-btn) { display: none; }
+  html[data-land=c] #workoutView.active:not(.finished):has(> .pre-start:not(.underway)) > .pre-start {
+    grid-area: stage; height: var(--screen); overflow-y: auto; overscroll-behavior: contain;
+  }
+  html[data-land=c] #workoutView .pre-start:not(.underway) .preview-list {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 0.9rem 1.2rem;
+  }
+
+  /* the end: the tick, the total and the summary in the rail, Done and
+     Start over, Save and Share under them; the scores and How was that?
+     in the lanes */
+  html[data-land=c] #workoutView.finished > .pre-start { grid-area: rpre; }
+  html[data-land=c] #workoutView.finished > .timer-card { flex-direction: column; flex-wrap: nowrap; }
+  html[data-land=c] #workoutView.finished .time-display { order: 0; font-size: min(40cqi, calc(100cqh - 5rem)); }
+  html[data-land=c] #workoutView.finished .finish-scores { font-size: 1.3rem; gap: 0.35rem; }
+  html[data-land=c] #workoutView.finished .feel-ask { font-size: 0.95rem; margin-top: 0.6rem; }
+  html[data-land=c] #workoutView.finished .feel-row .chip {
+    min-height: 4rem; font-size: 1.15rem; display: flex; align-items: center; justify-content: center;
+  }
+  html[data-land=c] #workoutView.finished .controls :is(#btnStart, #btnAgain) { min-height: 3.6rem; font-size: 1.2rem; }
+  /* nobody did anything (skipped to the end, or ended inside a minute):
+     no lanes saying well done, so what the end says takes their place */
+  html[data-land=c] #workoutView.finished.unstarted > .block-info {
+    grid-area: stage; height: var(--screen); justify-content: center; align-items: center; text-align: center;
+    padding: 1.4rem 2rem; gap: 0.6rem;
+  }
+  html[data-land=c] #workoutView.finished.unstarted .block-name { font-size: 1.6rem; }
+  html[data-land=c] #workoutView.finished.unstarted .finish-line { font-size: 1.2rem; }
+
+  /* an iPad: the lanes side by side */
+  @media (min-width: 1051px) {
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) { grid-template-rows: minmax(0, 1fr); }
+  }
+
+  /* a fold opened out: the rail is one half exactly, in every phase, so
+     the fold never runs through the clock or a name; Wayne over Dave, the
+     figure beside the words and +1, Done or a count under the right thumb */
+  @media (max-width: 1050px), (horizontal-viewport-segments: 2) and (min-height: 501px) {
+    html[data-land=c] body.view-workout .app { max-width: none; }
+    html[data-land=c] body.view-workout #scroller {
+      padding-left: max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+      padding-right: max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+    }
+    html[data-land=c] #workoutView.active, html[data-land=c] #workoutView.active:has(.timer-card.work) {
+      --rail: calc(50% - 0.75rem); column-gap: 1.5rem;
+    }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 40%); column-gap: 0.9rem;
+      grid-template-rows: repeat(11, auto) minmax(0, 1fr) auto; align-content: stretch;
+    }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person > * { grid-column: 1; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person > .ex-anim { grid-column: 2; grid-row: 1 / -2; margin-top: 0; min-height: 0; height: auto; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person > .round-counter { grid-column: 2; grid-row: -2 / -1; align-self: end; }
+    /* no figure (the count after a Surf check test, the demos off): one
+       column, the count across the foot */
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person:has(> .ex-anim:empty),
+    html[data-land=c] body.hide-photos #workoutView .exercise-grid:not(.solo) .person { grid-template-columns: minmax(0, 1fr); }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person:has(> .ex-anim:empty) > .round-counter,
+    html[data-land=c] body.hide-photos #workoutView .exercise-grid:not(.solo) .person > .round-counter { grid-column: 1; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter:not([hidden]) { flex-wrap: wrap; gap: 0.35rem; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter .count-now {
+      flex: 1 0 100%; order: -1; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: baseline; column-gap: 0.4rem;
+    }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter .count-now b { font-size: 2.2rem; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter .count-now span { margin-top: 0; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter :is(.count-less, .count-more) {
+      flex: 1 0 0; width: auto; padding: 0 0.3rem; font-size: 1.1rem;
+    }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter button { min-height: 3.2rem; }
+    /* the lap as single lines, and its cue makes way */
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .circuit:not([hidden]) { display: block; margin: 0.1rem 0 0; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .circuit li {
+      display: block; padding: 0.12rem 0.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-size: calc(1.1rem * min(var(--ex-scale), 1.2));
+    }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person.amrap .exercise-cue { display: none; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) { font-size: calc(min(3rem, 9.5cqi) * var(--ex-scale)); }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .exercise-cue { font-size: calc(1rem * var(--ex-scale)); }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .lane-next { font-size: calc(1.05rem * var(--ex-scale)); margin-top: 0.5rem; padding-top: 0.45rem; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter { margin-top: 0.5rem; }
+    /* the largest text: a little less in a lane this size, and no cue */
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) { font-size: calc(min(3rem, 9.5cqi) * min(var(--ex-scale), 1.25)); }
+    html[data-land=c][data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
+    /* not as tall (the Duo): a count goes right across the foot of the
+       card, on one line with its buttons, the figure beside the lap; the
+       lap's head and Next make way (the count says the round, and a lap
+       is the next few minutes) */
+    @media (max-height: 680px) {
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .person > .round-counter { grid-column: 1 / -1; }
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count):not([hidden]) { flex-wrap: nowrap; }
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-now { flex: 1 1 auto; order: 0; }
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-less { flex: 0 0 3.2rem; }
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-more { flex: 0 1 auto; padding: 0 1rem; }
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .person.amrap :is(.lap-head, .lane-next) { display: none; }
+    }
+  }
+
+  /* not as tall (a Duo, an iPad mini in Safari): a little closer all
+     round, and the buttons on one row so the clock keeps its height */
+  @media (max-height: 680px) {
+    html[data-land=c] #workoutView .workout-title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html[data-land=c] #workoutView > .progress-bar-wrap { margin: 0; }
+    html[data-land=c] #workoutView > .block-info { padding: 0.45rem 0.75rem; gap: 0.25rem; }
+    html[data-land=c] #workoutView .block-name { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    html[data-land=c] #workoutView .seg { height: 10px; }
+    html[data-land=c] #workoutView .round-hint {
+      font-size: 0.85rem; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    }
+    html[data-land=c] #workoutView .phase-label { font-size: 1.1rem; }
+    html[data-land=c] #workoutView .controls { grid-template-columns: 1.4fr 1fr 1fr; }
+    html[data-land=c] #workoutView .controls button,
+    html[data-land=c] #workoutView .controls #btnStart { grid-column: auto; min-height: 0; padding: 0.7rem 0.3rem; font-size: 1.05rem; }
+    html[data-land=c] #workoutView .ex-anim { min-height: 3.5rem; }
+    html[data-land=c] #workoutView .exercise-cue:not(:empty) {
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    }
+    html[data-land=c] #workoutView .person.amrap .exercise-cue { display: none; }
+  }
+
+  /* the screen says where its fold is: the rail is the screen to the left
+     of it, the lanes the one to the right */
+  @media (horizontal-viewport-segments: 2) and (min-height: 501px) {
+    html[data-land=c] #workoutView.active, html[data-land=c] #workoutView.active:has(.timer-card.work) {
+      --rail: calc(env(viewport-segment-right 0 0, 50vw) - max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)) - 0.75rem);
+      column-gap: calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-right 0 0, 50vw) + 1.5rem);
+    }
+  }
+}
+
 /* The eight times in even rows: two of four on a phone, one row once the
    card is wide enough (the home Today card and today's program session). */
 .today-card, .program-today { container-type: inline-size; }
