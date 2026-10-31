@@ -3220,6 +3220,9 @@ try {
   const peopleWas = await st(() => state.people);
   await p.click('#peoplePicker .chip[data-people="2"]');
   await p.click('#btnBuild');
+  // about 1 build in 100 uses no gear, and that one can't show the link
+  // keeping the sender's gear (below), so shuffle until it has some
+  for (let i = 0; i < 20 && !(await st(() => state.workout.exerciseIds.some(id => EXERCISES[id].equipment.length))); i++) await p.click('#btnShuffle');
   const sharedIds = await st(() => state.workout.exerciseIds.join(','));
   const sharedSeed = await st(() => state.workout.seed);
   const shareUrl = await st(() => shareUrlFor(state.workout));
