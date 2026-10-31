@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v22';
+const RELEASE = 'fit-v23';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -3344,6 +3344,9 @@ function render() {
     if (nxt) { dispA = nxt.a; dispB = nxt.b; }
   }
   els.workoutView.classList.toggle('resting', restLike);
+  // a Surf check's test or the rest after it, for a landscape layout to
+  // give its count and "As many as you can" the room (LANDSCAPE, A TRIAL)
+  els.workoutView.classList.toggle('checking', !!phase.check);
   // a rest (or the warm-up) is the time to look at what's coming
   const prep = restLike || phase.kind === 'warmup';
   document.getElementById('btnNextBlock').hidden = !(prep && upcomingBlock());
@@ -3390,8 +3393,10 @@ function render() {
 // its rail; that's decided per phase (secsLed), so an EMOM minute that
 // starts at 1:00 never jumps size. Everywhere else it reads and looks as
 // it always has. Its length goes on it too (data-len, 4 for "0:19" and 5
-// for "20:00"), so a landscape layout can size each to fit. Written only
-// when it changes, not five times a second.
+// for "20:00"), so a landscape layout can size each to fit, and its
+// minutes (data-min), so the "1:" of a minute just begun isn't greyed out
+// like a "0:" (it would read as "00"). Written only when it changes, not
+// five times a second.
 function showClock(sec, secsLed) {
   const t = fmt(sec), key = `${t}${secsLed}`;
   const el = els.timeDisplay;
@@ -3400,6 +3405,7 @@ function showClock(sec, secsLed) {
   el.classList.toggle('secs', secsLed);
   el.innerHTML = `<span class="tmin">${t.slice(0, -2)}</span>${t.slice(-2)}`;
   el.dataset.len = String(el.textContent.length);
+  el.dataset.min = t.slice(0, -3);
 }
 // A person's move on their card: "Goblet squats · 15kg", with the weight
 // in a span of its own when it has one, so a landscape layout can put it
@@ -3683,7 +3689,7 @@ function finish() {
   setTimeout(() => { if (!state.running) releaseAudio(); }, 2000);
   clearBleed();
   disarmBack();
-  els.workoutView.classList.remove('resting');
+  els.workoutView.classList.remove('resting', 'checking');
   els.workoutView.classList.add('finished');
   // never started, or skipped through inside a minute: nobody did
   // anything, so no cards saying well done
@@ -5385,7 +5391,8 @@ function checkFinish(who) {
     count.dataset.test = k;
     count.innerHTML = t.hold ? `<div class="count-now check-time"><b>${checkValue(t, v)}</b> ${v ? 'held' : 'not timed'}</div>` : countButtons(t, v);
     const change = document.createElement('div');
-    change.className = 'check-change';
+    // (marked when it's a first, so a landscape layout can say it once)
+    change.className = v && !last ? 'check-change first' : 'check-change';
     change.setAttribute('role', 'status');
     change.textContent = !v ? '' : last ? checkChange(t, v, last) : 'Your first one: the number to beat.';
     row.append(head, count, change);
@@ -5967,8 +5974,9 @@ window.addEventListener('pagehide', saveRun);
 // is a section of its own in css/app.css, on <html data-land>, and only
 // for a screen that size; 'off', the default, is the layout as it's always
 // been, everywhere. ?land=a (b, c, or off; ?layout= says the same) picks
-// one on this device, and once one has been picked the Landscape buttons
-// in the settings under a workout flip between them, mid-workout too.
+// one on this device (in an app on the Home Screen, five taps on Text
+// under a workout), and once one has been picked the Landscape buttons in
+// the settings under a workout flip between them, mid-workout too.
 // =====================================================================
 const LAND_KEY = 'fit-land';
 const LANDS = ['off', 'a', 'b', 'c'];
@@ -5984,26 +5992,44 @@ function setLand(land, picked) {
 }
 // On load: one asked for in the address is kept and comes off it (so a
 // reload or a link copied from the bar doesn't carry it), and ?land=off
-// forgets the choice; otherwise the one picked last time.
+// forgets the choice; otherwise the one picked last time. One it doesn't
+// know (?land=d, a typo) is ignored, and comes off the address too: only
+// ?land=off forgets. Capitals are the same (?land=B).
 function pickLand() {
   const q = new URLSearchParams(location.search);
   const asked = q.has('land') ? q.get('land') : q.has('layout') ? q.get('layout') : null;
-  let land = null, picked = false;
+  let land = null;
+  try { land = localStorage.getItem(LAND_KEY); } catch (e) { /* storage off */ }
   if (asked !== null) {
-    land = LANDS.includes(asked) ? asked : 'off';
-    picked = land !== 'off';
-    try {
-      if (land === 'off') localStorage.removeItem(LAND_KEY); else localStorage.setItem(LAND_KEY, land);
-    } catch (e) { /* storage off: this visit only */ }
+    const want = asked.trim().toLowerCase();
+    if (LANDS.includes(want)) {
+      land = want === 'off' ? null : want;
+      try {
+        if (land === null) localStorage.removeItem(LAND_KEY); else localStorage.setItem(LAND_KEY, land);
+      } catch (e) { /* storage off: this visit only */ }
+    }
     q.delete('land'); q.delete('layout');
     const rest = q.toString();
     history.replaceState(history.state, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
-  } else {
-    try { land = localStorage.getItem(LAND_KEY); } catch (e) { /* storage off */ }
-    picked = land !== null;
   }
-  setLand(land || 'off', picked);
+  setLand(land || 'off', land !== null);
 }
+// An app on the Home Screen opens at "/", never with ?land=, and keeps its
+// own storage, not Safari's, so a layout picked in Safari isn't there. The
+// way in from inside it, which nobody comes across by chance: five taps on
+// the word Text (not its buttons) under a workout, within a few seconds,
+// and the Landscape row is there, with Today picked until one is tapped.
+let landTaps = [];
+document.querySelector('#workoutView .text-size').addEventListener('click', (e) => {
+  if (e.target.closest('button') || document.documentElement.hasAttribute('data-land-pick')) return;
+  const now = Date.now();
+  landTaps = landTaps.filter(t => now - t < 4000).concat(now);
+  if (landTaps.length < 5) return;
+  landTaps = [];
+  const land = document.documentElement.dataset.land || 'off';
+  try { localStorage.setItem(LAND_KEY, land); } catch (e) { /* this visit only */ }
+  setLand(land, true);
+});
 document.querySelectorAll('#landPick .mini-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     try { localStorage.setItem(LAND_KEY, btn.dataset.land); } catch (e) { /* this visit only */ }

@@ -307,9 +307,13 @@
 
     <div class="exercise-grid" id="exerciseGrid">
       <div class="person a">
-        <div class="person-label" id="labelA">Person A</div>
-        <!-- in a rest or while paused: swap this person's move (SWAP A MOVE) -->
-        <button class="secondary swap-btn" id="swapA" hidden>⇄ Swap</button>
+        <!-- the name and Swap: a row of their own in a landscape layout
+             (LANDSCAPE, A TRIAL in js/app.js), nothing of its own otherwise -->
+        <div class="person-head">
+          <div class="person-label" id="labelA">Person A</div>
+          <!-- in a rest or while paused: swap this person's move (SWAP A MOVE) -->
+          <button class="secondary swap-btn" id="swapA" hidden>⇄ Swap</button>
+        </div>
         <div class="next-eyebrow">Up next</div>
         <div class="exercise-reps" id="repsA"></div>
         <div class="exercise-name" id="exerciseA"></div>
@@ -325,8 +329,10 @@
         <div class="lane-next" id="laneNextA"></div>
       </div>
       <div class="person b" id="personB">
-        <div class="person-label" id="labelB">Person B</div>
-        <button class="secondary swap-btn" id="swapB" hidden>⇄ Swap</button>
+        <div class="person-head">
+          <div class="person-label" id="labelB">Person B</div>
+          <button class="secondary swap-btn" id="swapB" hidden>⇄ Swap</button>
+        </div>
         <div class="next-eyebrow">Up next</div>
         <div class="exercise-reps" id="repsB"></div>
         <div class="exercise-name" id="exerciseB"></div>

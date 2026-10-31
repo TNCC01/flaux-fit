@@ -427,10 +427,16 @@ rather than hardcoded.
   scrolls itself into view), the clock beside it, the people under the
   clock. C: a tall clock rail, the seconds filling it under a minute, and
   a lane for each person with their own Next at the foot. Open FIT with
-  `?land=a` (or `b`, `c`; `?land=off` forgets it) and it's kept on that
-  device; once one is picked, Landscape under a workout flips between
-  them, mid-workout too. On a fold opened out each is two even halves,
-  the fold in the gap. Until one is picked, nothing changes for anyone
+  `?land=a` (or `b`, `c`; `?land=off` forgets it, and anything else is
+  ignored) and it's kept on that device, in that browser; once one is
+  picked, Landscape under a workout flips between them, mid-workout too.
+  An app on the Home Screen keeps its own storage and never opens with
+  `?land=`, so in one, tap the word Text under a workout five times and
+  the Landscape row appears. On a fold opened out each is two even
+  halves, the fold in the gap. They're for a screen on its side or near
+  square, which takes in an iPad's two-thirds Split View window when the
+  iPad is on its side (about 778 x 820, or 1014 x 1024 on the biggest).
+  Until one is picked, nothing changes for anyone
 - The badge by the workout's name ("1 person · Add a mate", "Wayne & Dave
   · Just me?") is a button until Start: a tap changes one person for two
   and back, the same moves shared out again, for when a mate turns up (or

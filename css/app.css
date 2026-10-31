@@ -725,6 +725,8 @@ button.running { background: linear-gradient(135deg, #b85a0a, #b45309); box-shad
   padding: 0.45rem 0.8rem; min-height: 2.5rem; border-radius: 999px; font-size: 0.95rem; font-weight: 800;
 }
 .swap-btn[hidden] { display: none; }
+/* the name and Swap: no box of its own (a row in a landscape layout) */
+.person-head { display: contents; }
 .person.a { border-top: 6px solid var(--accent); }
 .person.b { border-top: 6px solid var(--accent-b); }
 .person-label {
@@ -1187,8 +1189,10 @@ body.show-alternatives .alternative.has-alt { display: block; }
   <html data-land="a">, "b" or "c", and only for a screen that size:
     L       on its side, 760 wide or more and taller than a phone (501 up,
             where the phone rule above stops); or near square (9 wide to
-            10 tall or wider) and 600 up, a book-style fold opened flat.
-            Never an iPad upright, Split View or a phone.
+            10 tall or wider) and 600 up, a book-style fold opened flat,
+            which takes in an iPad's two-thirds Split View window with the
+            iPad on its side too (about 778 x 820, 1014 x 1024 on a 12.9").
+            Never an iPad upright, a narrower Split View or a phone.
     iPad    L and over 1050 wide
     halves  L and 1050 wide or less (a Duo or a fold opened out, a narrow
             window): two even halves, the gap on the screen's middle, so
@@ -1205,6 +1209,58 @@ body.show-alternatives .alternative.has-alt { display: block; }
 @media (orientation: landscape) and (min-width: 760px) and (min-height: 501px),
        (min-aspect-ratio: 9/10) and (min-width: 760px) and (min-height: 600px) {
   html[data-land-pick] #workoutView .land-pick { display: inline-flex; }
+
+  /* What the three have in common (it stays when two of them go). The
+     name and Swap on a row of their own, so Swap is never on the move's
+     name or its figure: the row is the button's height while it shows (a
+     rest, paused), the name's otherwise. */
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView .person-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-width: 0; margin-bottom: 0.4rem;
+  }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView .person-head > .person-label {
+    margin-bottom: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView .person-head > .swap-btn { position: static; flex: none; }
+  /* a word too long for the card at the size it's set ("Kettlebell" at
+     the largest text) breaks, rather than run off the card's edge (only
+     then: a name that fits is never broken) */
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(.exercise-name, .exercise-reps) { overflow-wrap: break-word; }
+
+  /* A Surf check's end: each test on a line, its name, the number to beat
+     and −, +1 and +5 to put a count right (on a narrow card, those under
+     the number), and "Your first one" said once. The results are the
+     card, so "Well done." makes way: the top says it. */
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView.finished .person:has(.check-result) .exercise-name { display: none; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) {
+    container: finish / inline-size; gap: 0.35rem; margin-top: 0.2rem;
+  }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .check-result {
+    grid-template-columns: minmax(0, 1fr) auto auto auto auto; grid-template-areas: "label now less one five";
+    align-items: center; gap: 0.3rem 0.45rem;
+  }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .check-result:has(.check-time) {
+    grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label now";
+  }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .check-result + .check-result { padding-top: 0.35rem; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .check-result > .check-count { display: contents; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .check-label { grid-area: label; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .count-now {
+    grid-area: now; justify-self: end; flex-direction: row; align-items: baseline; gap: 0.3rem; font-size: 1rem; white-space: nowrap;
+  }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .count-now b { font-size: 2.1rem; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) :is(.count-less, .count-more) {
+    width: auto; min-width: 2.9rem; min-height: 2.6rem; padding: 0 0.65rem; font-size: 1.05rem;
+  }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .count-less { grid-area: less; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .count-more[data-step="1"] { grid-area: one; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .count-more[data-step="5"] { grid-area: five; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .check-change { grid-column: 1 / -1; }
+  html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .check-result ~ .check-result .check-change.first { display: none; }
+  @container finish (max-width: 25rem) {
+    html:is([data-land=a], [data-land=b], [data-land=c]) #workoutView :is(#finishA, #finishB) .check-result:not(:has(.check-time)) {
+      grid-template-columns: minmax(0, 1fr) auto auto auto; grid-template-areas: "label now now now" ". less one five";
+    }
+  }
 }
 
 /* ---- A · Clock and moves ---- */
@@ -1278,7 +1334,7 @@ body.show-alternatives .alternative.has-alt { display: block; }
   /* the people: each card's figure takes whatever height the words leave */
   html[data-land=a] #workoutView .exercise-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   html[data-land=a] #workoutView .exercise-grid.solo { grid-template-columns: minmax(0, 1fr); }
-  html[data-land=a] #workoutView .person { padding: 0.9rem 1rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  html[data-land=a] #workoutView .person { padding: 0.9rem 1rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; container-type: inline-size; }
   html[data-land=a] #workoutView .ex-anim {
     flex: 1 1 0; aspect-ratio: auto; max-height: none; min-height: 6rem; margin-top: 0.6rem;
   }
@@ -1342,6 +1398,18 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html[data-land=a] #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
       font-size: calc(clamp(2.6rem, 5vw, 4.4rem) * var(--ex-scale));
     }
+    /* in a rest the cards are what's next, so bigger, as today's are, as
+       big as the card takes a long word ("Rotational") */
+    html[data-land=a] #workoutView.resting .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(min(clamp(2.3rem, 4.4vw, 3.6rem), 16.5cqi) * min(var(--ex-scale), 1.3));
+    }
+    /* (Safari on an iPad, at the largest text: the cue makes way) */
+    @media (max-height: 760px) {
+      html[data-land=a][data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
+    }
+    html[data-land=a] #workoutView.resting .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
+      font-size: calc(min(clamp(3rem, 6.5vw, 5.2rem), 16.5cqi) * var(--ex-scale));
+    }
   }
 
   /* a fold opened out: two even halves, the gap on the middle; Wayne over
@@ -1364,8 +1432,21 @@ body.show-alternatives .alternative.has-alt { display: block; }
     }
     html[data-land=a] #workoutView .upcoming { padding: 0.5rem 0.8rem; }
     html[data-land=a] #workoutView .upcoming .txt { font-size: 1rem; line-height: 1.25; }
+    /* (a fold opened out can be as wide as an iPad: its names in a rest
+       are put back to a half's) */
+    html[data-land=a] #workoutView.resting .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(1.5rem, 3vw, 2.1rem) * min(var(--ex-scale), 1.25));
+    }
+    html[data-land=a] #workoutView.resting .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(2rem, 4.2vw, 2.8rem) * var(--ex-scale));
+    }
+    /* Skip block on one line in a half (a two-thirds Split View window) */
+    html[data-land=a] #workoutView .controls { grid-template-columns: 1.4fr 1fr 1fr; }
+    html[data-land=a] #workoutView.finished .controls { grid-template-columns: 2fr 1fr; }
+    html[data-land=a] #workoutView.asking-away .controls { grid-template-columns: 1fr 1fr; }
+    html[data-land=a] #workoutView .controls button { font-size: 1.05rem; padding: 0.8rem 0.3rem; }
     html[data-land=a] #workoutView .person { padding: 0.7rem 0.9rem; }
-    html[data-land=a] #workoutView .person-label { margin-bottom: 0.2rem; }
+    html[data-land=a] #workoutView .person-head { margin-bottom: 0.2rem; }
     html[data-land=a][data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
     html[data-land=a] #workoutView .exercise-grid:not(.solo) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
     html[data-land=a] #workoutView .person {
@@ -1379,7 +1460,6 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html[data-land=a] body.hide-photos #workoutView .person { grid-template-columns: minmax(0, 1fr); }
     html[data-land=a] #workoutView .person > * { grid-column: 1; }
     html[data-land=a] #workoutView .person > .ex-anim { grid-column: 2; grid-row: 1 / -1; margin-top: 0; min-height: 0; }
-    html[data-land=a] #workoutView .person > .swap-btn { right: calc(44% + 0.6rem); }
     html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.a { border-top: 2px solid var(--border); border-left: 6px solid var(--accent); }
     html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.b { border-top: 2px solid var(--border); border-left: 6px solid var(--accent-b); }
     html[data-land=a] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
@@ -1411,6 +1491,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
       html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.amrap { grid-template-columns: minmax(0, 1fr); }
       html[data-land=a] #workoutView .exercise-grid:not(.solo) .person.amrap > .ex-anim { display: none; }
       html[data-land=a] #workoutView .exercise-grid:not(.solo) .person:has(> .round-counter:not([hidden])) .exercise-cue { display: none; }
+      /* (in a Surf check's test too: the test's standard is by the clock) */
+      html[data-land=a] #workoutView.checking .exercise-grid:not(.solo) .exercise-cue { display: none; }
       html[data-land=a] #workoutView .exercise-grid:not(.solo) .circuit li { padding-top: 0.06rem; padding-bottom: 0.06rem; }
     }
   }
@@ -1431,8 +1513,11 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html[data-land=a] #workoutView .ex-anim { min-height: 3.5rem; }
     html[data-land=a] #workoutView .exercise-cue:not(:empty) {
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+      flex-shrink: 0; min-height: min-content;
     }
-    html[data-land=a] #workoutView .person.amrap .exercise-cue { display: none; }
+    html[data-land=a] #workoutView .person.amrap .exercise-cue,
+    html[data-land=a][data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
+    html[data-land=a] #workoutView .circuit li { font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.05)); }
     /* the question after time away, as small as it goes over the top bar,
        and the line on how a style works makes way for it */
     html[data-land=a] #workoutView > .away-bar { padding: 0.4rem 0.6rem 0.4rem 0.9rem; }
@@ -1441,12 +1526,14 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html[data-land=a] #workoutView:is(.asking-away, .going-noted) :is(.round-hint, .round-how) { display: none; }
   }
 
-  /* the screen says where its fold is: a column either side of it */
+  /* the screen says where its fold is: a column either side of it (the
+     question after time away, and its buttons, in the left one) */
   @media (horizontal-viewport-segments: 2) and (min-height: 501px) {
     html[data-land=a] #workoutView.active {
       grid-template-columns: calc(env(viewport-segment-right 0 0, 50vw) - max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)) - 0.75rem) minmax(0, 1fr);
       column-gap: calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-right 0 0, 50vw) + 1.5rem);
     }
+    html[data-land=a] #workoutView > .away-bar { grid-area: 1 / 1; }
   }
 }
 
@@ -1473,11 +1560,11 @@ body.show-alternatives .alternative.has-alt { display: block; }
   html[data-land=b] #workoutView > .top-bar { grid-area: top; padding: 0; }
   html[data-land=b] #workoutView .back-btn { padding: 0.45rem 0.9rem; }
   html[data-land=b] #workoutView .workout-title { font-size: 1.2rem; }
-  /* the question after time away covers the top bar until it's answered,
-     over the top of the screen rather than pushing it down */
-  html[data-land=b] #workoutView > .away-bar {
-    position: absolute; top: 0; left: 0; right: 0; z-index: 6; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-  }
+  /* the question after time away covers the top bar until it's answered
+     (its row grows to fit it, and the people give a little) */
+  html[data-land=b] #workoutView > .away-bar { grid-area: top; position: relative; z-index: 6; }
+  /* (the cards' cues make way while it's asked) */
+  html[data-land=b] #workoutView.asking-away .exercise-cue { display: none; }
   html[data-land=b] #workoutView > .block-info { grid-area: block; }
   html[data-land=b] #workoutView > .timer-card { grid-area: timer; }
   html[data-land=b] #workoutView > .exercise-grid { grid-area: people; }
@@ -1538,15 +1625,13 @@ body.show-alternatives .alternative.has-alt { display: block; }
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; gap: 0.8rem;
   }
   html[data-land=b] #workoutView > .exercise-grid.solo { grid-template-columns: minmax(0, 1fr); }
-  html[data-land=b] #workoutView .person { min-height: 0; overflow: hidden auto; overscroll-behavior: contain; padding: 0.85rem 1.1rem; }
+  html[data-land=b] #workoutView .person { min-height: 0; overflow: hidden auto; overscroll-behavior: contain; padding: 0.85rem 1.1rem; container-type: inline-size; }
   html[data-land=b] body:not(.hide-photos) #workoutView .person:has(> .ex-anim:not(:empty):not(.no-3d)) { padding-right: calc(40% + 0.4rem); }
   html[data-land=b] #workoutView .person > .ex-anim {
     position: absolute; top: 0.6rem; right: 0.6rem; bottom: 0.6rem; width: 40%;
     aspect-ratio: auto; max-height: none; margin: 0;
   }
   html[data-land=b] #workoutView .person > .ex-anim.no-3d { position: static; width: auto; height: 2.6rem; margin-top: 0.6rem; }
-  /* Swap top right of the words, never on the figure */
-  html[data-land=b] body:not(.hide-photos) #workoutView .person:has(> .ex-anim:not(:empty):not(.no-3d)) > .swap-btn { right: calc(40% + 0.6rem); }
   /* (at the largest text, a little less than the largest, and the cue
      makes way: B gives the people the least room) */
   html[data-land=b] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
@@ -1561,6 +1646,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
     font-size: calc(clamp(1.2rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.25));
   }
   html[data-land=b] #workoutView .exercise-cue { font-size: calc(clamp(1rem, 1.5vw, 1.3rem) * var(--ex-scale)); }
+  /* Swap a little smaller: the people have the least room in B */
+  html[data-land=b] #workoutView .person-head > .swap-btn { min-height: 2.15rem; padding: 0.25rem 0.75rem; font-size: 0.88rem; }
   /* the weight on a line of its own, in the person's colour */
   html[data-land=b] #workoutView .load-sep { display: none; }
   html[data-land=b] #workoutView .load { display: block; color: var(--teal-bright); }
@@ -1604,6 +1691,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html[data-land=b] #workoutView .person.amrap .circuit li { padding-top: 0.12rem; padding-bottom: 0.12rem; }
     html[data-land=b] #workoutView .person.amrap > .ex-anim { display: none; }
     html[data-land=b] body:not(.hide-photos) #workoutView .person.amrap:has(> .ex-anim:not(:empty):not(.no-3d)) > :is(.circuit, .exercise-cue, .exercise-level, .alternative) { margin-right: 0; }
+    /* and in a rest or paused, when Swap takes a row, the cue makes way */
+    html[data-land=b] #workoutView .person:has(> .person-head > .swap-btn:not([hidden])) .exercise-cue { display: none; }
   }
 
   /* THE PLAN: the workout preview, kept on screen the whole way */
@@ -1690,7 +1779,7 @@ body.show-alternatives .alternative.has-alt { display: block; }
   @media (min-width: 1051px) {
     html[data-land=b] #workoutView.active {
       grid-template-columns: clamp(17rem, 27vw, 23rem) minmax(0, 1.3fr) minmax(0, 1fr);
-      grid-template-rows: auto clamp(13.5rem, 37dvh, 25rem) minmax(0, 1fr) auto auto;
+      grid-template-rows: auto var(--clock-row, clamp(13.5rem, 37dvh, 25rem)) minmax(0, 1fr) auto auto;
       grid-template-areas:
         "top  top    top"
         "rail timer  block"
@@ -1699,16 +1788,51 @@ body.show-alternatives .alternative.has-alt { display: block; }
         "rail ctrl   ctrl";
     }
     html[data-land=b] #workoutView.finished.unstarted > .timer-card { grid-column: 2 / -1; }
-    /* an AMRAP or For Time lap needs the room: the clock gives a little */
-    html[data-land=b] #workoutView.active:has(.person.amrap) { grid-template-rows: auto clamp(12rem, 31dvh, 21rem) minmax(0, 1fr) auto auto; }
+    /* a Surf check's end: the plan is all ticked, so the people have its
+       column too, under the clock */
+    html[data-land=b] #workoutView.active.finished:has(.check-result) {
+      grid-template-areas: "top top top" "rail timer block" "people people people" "up up up" "ctrl ctrl ctrl";
+    }
+    /* an AMRAP or For Time: the lap is what you read, so it has the room
+       Up next had ("Rest, then Block 2") and the card's width, at a size to
+       read across the room (tap one for its figure in 3D, as ever) */
+    html[data-land=b] #workoutView.active:has(.person.amrap) {
+      grid-template-rows: auto clamp(12rem, 31dvh, 21rem) minmax(0, 1fr) auto;
+      grid-template-areas: "top top top" "rail timer block" "rail people people" "rail ctrl ctrl";
+    }
+    html[data-land=b] #workoutView.active:has(.person.amrap) > .upcoming { display: none; }
+    html[data-land=b] #workoutView .person.amrap > .ex-anim { display: none; }
+    html[data-land=b] body:not(.hide-photos) #workoutView .person.amrap:has(> .ex-anim:not(:empty):not(.no-3d)) > :is(.circuit, .exercise-cue, .exercise-level, .alternative) { margin-right: 0; }
+    html[data-land=b] #workoutView .person.amrap .circuit li { font-size: calc(clamp(1.1rem, 7.5cqi, 1.8rem) * min(var(--ex-scale), 1.1)); }
+    /* in a rest the cards are what's next: the figure a little narrower
+       and the name bigger, as big as the words' room takes a long word */
+    html[data-land=b] body:not(.hide-photos) #workoutView.resting .person:not(.amrap):has(> .ex-anim:not(:empty):not(.no-3d)) { padding-right: calc(32% + 0.4rem); }
+    html[data-land=b] #workoutView.resting .person:not(.amrap) > .ex-anim { width: 32%; }
+    html[data-land=b] #workoutView.resting .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(min(clamp(2.2rem, 4vw, 3.6rem), 17cqi) * min(var(--ex-scale), 1.25));
+    }
+    @media (max-height: 760px) {
+      html[data-land=b] #workoutView.resting .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+        font-size: calc(min(clamp(1.75rem, 3vw, 2.9rem), 17cqi) * min(var(--ex-scale), 1.25));
+      }
+    }
+    /* the largest text: bigger than Large is today, so the words have the
+       card's width, the figure under them taking what they leave, and the
+       clock gives a little */
+    html[data-land=b][data-scale='1.45'] #workoutView.active { --clock-row: clamp(11rem, 29dvh, 21rem); }
+    html[data-land=b][data-scale='1.45'] body:not(.hide-photos) #workoutView .person:not(.amrap):has(> .ex-anim:not(:empty):not(.no-3d)) { padding-right: 1.1rem; }
+    html[data-land=b][data-scale='1.45'] #workoutView .person:not(.amrap) > .ex-anim { position: static; width: auto; flex: 1 1 0; min-height: 0; margin-top: 0.5rem; }
+    html[data-land=b][data-scale='1.45'] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(min(clamp(1.8rem, 3.2vw, 3rem), 17cqi) * 1.35);
+    }
+    /* not as tall (Safari on an iPad): the lap a little smaller */
+    @media (max-height: 760px) {
+      html[data-land=b] #workoutView .person.amrap .circuit li { font-size: calc(clamp(1.1rem, 6.5cqi, 1.6rem) * min(var(--ex-scale), 1.05)); }
+    }
     @media (max-height: 680px) {
       html[data-land=b] #workoutView.active { grid-template-rows: auto clamp(10rem, 30dvh, 25rem) minmax(0, 1fr) auto auto; }
-      /* a lap has the room Up next had (it says "Rest, then Block 2") */
-      html[data-land=b] #workoutView.active:has(.person.amrap) {
-        grid-template-rows: auto clamp(10rem, 28dvh, 21rem) minmax(0, 1fr) auto;
-        grid-template-areas: "top top top" "rail timer block" "rail people people" "rail ctrl ctrl";
-      }
-      html[data-land=b] #workoutView.active:has(.person.amrap) > .upcoming { display: none; }
+      html[data-land=b] #workoutView.active:has(.person.amrap) { grid-template-rows: auto clamp(10rem, 28dvh, 21rem) minmax(0, 1fr) auto; }
+      html[data-land=b] #workoutView .person.amrap .circuit li { font-size: clamp(1.1rem, 6.2cqi, 1.5rem); }
       html[data-land=b] #workoutView .round-count.round-how { font-size: 1.1rem; }
     }
   }
@@ -1744,8 +1868,7 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html[data-land=b] #workoutView .person { padding: 0.6rem 0.9rem; }
     html[data-land=b] body:not(.hide-photos) #workoutView .person:has(> .ex-anim:not(:empty):not(.no-3d)) { padding-right: calc(30% + 0.4rem); min-height: 7.5rem; }
     html[data-land=b] #workoutView .person > .ex-anim { width: 30%; top: 0.4rem; bottom: 0.4rem; right: 0.4rem; }
-    html[data-land=b] body:not(.hide-photos) #workoutView .person:has(> .ex-anim:not(:empty):not(.no-3d)) > .swap-btn { right: calc(30% + 0.6rem); }
-    html[data-land=b] #workoutView .person-label { margin-bottom: 0.15rem; }
+    html[data-land=b] #workoutView .person-head { margin-bottom: 0.15rem; }
     html[data-land=b] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
       font-size: calc(clamp(1.4rem, 3vw, 2rem) * var(--ex-scale));
     }
@@ -1773,6 +1896,30 @@ body.show-alternatives .alternative.has-alt { display: block; }
     }
     html[data-land=b] #workoutView.active:has(.person.amrap) > :is(.pre-start, .progress-bar-wrap) { display: none; }
     html[data-land=b] #workoutView.active:has(.person.amrap) > .exercise-grid:not(.solo) { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+    /* a Surf check's end: the plan is all ticked, so the people have the
+       whole half, Wayne over Dave */
+    html[data-land=b] #workoutView.active.finished:has(.check-result) {
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      grid-template-areas: "top top" "block people" "timer people" "ctrl people";
+    }
+    html[data-land=b] #workoutView.active.finished:has(.check-result) > :is(.pre-start, .progress-bar-wrap) { display: none; }
+    html[data-land=b] #workoutView.active.finished:has(.check-result) > #workoutNote { grid-area: people; }
+    /* (a fold opened out can be as wide as an iPad: what the iPad does in
+       a rest, at the largest text and in an AMRAP is put back here) */
+    html[data-land=b] body:not(.hide-photos) #workoutView.resting .person:not(.amrap):has(> .ex-anim:not(:empty):not(.no-3d)),
+    html[data-land=b][data-scale='1.45'] body:not(.hide-photos) #workoutView .person:not(.amrap):has(> .ex-anim:not(:empty):not(.no-3d)) { padding-right: calc(30% + 0.4rem); }
+    html[data-land=b] #workoutView.resting .person:not(.amrap) > .ex-anim,
+    html[data-land=b][data-scale='1.45'] #workoutView .person:not(.amrap) > .ex-anim { position: absolute; width: 30%; margin: 0; }
+    html[data-land=b] #workoutView.resting .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps),
+    html[data-land=b][data-scale='1.45'] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(1.4rem, 3vw, 2rem) * var(--ex-scale));
+    }
+    html[data-land=b] #workoutView.active:has(.person.amrap) > .upcoming:not(:empty) { display: flex; }
+    html[data-land=b] #workoutView .person.amrap .circuit li { font-size: calc(clamp(1rem, 5cqi, 1.4rem) * min(var(--ex-scale), 1.1)); }
+    @media (max-height: 680px) {
+      html[data-land=b] #workoutView .person.amrap .circuit li { font-size: calc(clamp(1rem, 4.2cqi, 1.25rem) * min(var(--ex-scale), 1.05)); }
+    }
+    html[data-land=b] #workoutView.active.finished:has(.check-result) > .exercise-grid:not(.solo) { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   }
 
   /* not as tall (a Duo, an iPad mini in Safari): a little closer all round */
@@ -1788,16 +1935,19 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html[data-land=b] #workoutView .controls button { padding: 0.7rem 0.3rem; font-size: 1.05rem; }
     html[data-land=b] #workoutView .exercise-cue:not(:empty) {
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+      flex-shrink: 0; min-height: min-content;
     }
     html[data-land=b] #workoutView .person.amrap .exercise-cue { display: none; }
   }
 
-  /* the screen says where its fold is: the halves either side of it */
+  /* the screen says where its fold is: the halves either side of it (the
+     question after time away, and its buttons, in the left one) */
   @media (horizontal-viewport-segments: 2) and (min-height: 501px) {
     html[data-land=b] #workoutView.active {
       grid-template-columns: calc(env(viewport-segment-right 0 0, 50vw) - max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)) - 0.75rem) minmax(0, 1fr);
       column-gap: calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-right 0 0, 50vw) + 1.5rem);
     }
+    html[data-land=b] #workoutView > .away-bar { grid-area: 1 / 1; }
   }
 }
 
@@ -1830,6 +1980,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
   }
   /* the clock leads (work, a Surf check test, a hold): a wide rail */
   html[data-land=c] #workoutView.active:has(.timer-card.work) { --rail: clamp(360px, 40vw, 620px); }
+  /* but in an AMRAP or For Time the lap is what you read, so a little less */
+  html[data-land=c] #workoutView.active:has(.person.amrap) { --rail: clamp(330px, 35vw, 540px); }
 
   html[data-land=c] #workoutView > .top-bar { grid-area: top; padding: 0; min-width: 0; flex-wrap: wrap; row-gap: 0.4rem; }
   html[data-land=c] #workoutView > .progress-bar-wrap { grid-area: prog; }
@@ -1838,10 +1990,9 @@ body.show-alternatives .alternative.has-alt { display: block; }
   html[data-land=c] #workoutView > .next-block-btn { grid-area: nextb; margin: 0; padding: 0.75rem; font-size: 1.05rem; }
   html[data-land=c] #workoutView > .controls { grid-area: ctrl; }
   html[data-land=c] #workoutView > .exercise-grid { grid-area: stage; height: var(--screen); }
-  /* the question after time away, across the top of the lanes */
-  html[data-land=c] #workoutView > .away-bar {
-    grid-area: stage; align-self: start; position: relative; z-index: 6; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-  }
+  /* the question after time away covers the top of the rail until it's
+     answered (the clock, stopped, gives it the room), the lanes as they were */
+  html[data-land=c] #workoutView > .away-bar { grid-area: top; position: relative; z-index: 6; }
   /* each lane says its own next instead */
   html[data-land=c] #workoutView > .upcoming { display: none; }
   html[data-land=c] #workoutView > #workoutNote { grid-area: note; }
@@ -1877,6 +2028,9 @@ body.show-alternatives .alternative.has-alt { display: block; }
   /* under a minute: the "0:" goes small and the seconds fill the rail */
   html[data-land=c] #workoutView .time-display.secs { font-size: min(60cqi, calc(100cqh - 4.8rem)); letter-spacing: -0.04em; }
   html[data-land=c] #workoutView .time-display.secs .tmin { font-size: 0.3em; color: var(--muted); letter-spacing: 0; margin-right: 0.04em; }
+  /* (a minute just begun: its "1:" in the clock's own colour, so 1:00
+     never reads as 00) */
+  html[data-land=c] #workoutView .time-display.secs:not([data-min='0']) .tmin { color: inherit; }
   html[data-land=c] #workoutView .phase-label { font-size: 1.45rem; letter-spacing: 0.24em; }
   html[data-land=c] #workoutView .total-time { font-size: 1.05rem; }
 
@@ -1896,7 +2050,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
     container-type: inline-size;
     min-height: 0; overflow: hidden auto; overscroll-behavior: contain; padding: 0.85rem 1.1rem 1rem; border-top-width: 8px;
   }
-  html[data-land=c] #workoutView .person-label { font-size: 1.15rem; letter-spacing: 0.14em; margin-bottom: 0.3rem; }
+  html[data-land=c] #workoutView .person-label { font-size: 1.15rem; letter-spacing: 0.14em; }
+  html[data-land=c] #workoutView .person-head { margin-bottom: 0.3rem; }
   html[data-land=c] #workoutView .next-eyebrow { font-size: 1rem; letter-spacing: 0.16em; }
   /* the name as big as the lane takes a long word ("Kettlebell") */
   html[data-land=c] #workoutView .exercise-grid :is(.exercise-name, .exercise-reps) {
@@ -1918,6 +2073,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
      already is the next move */
   html[data-land=c] #workoutView .lane-next {
     order: 6; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    /* whole lines or none: never squeezed through the middle of one */
+    flex-shrink: 0; min-height: min-content;
     margin-top: 0.7rem; padding-top: 0.6rem; border-top: 2px solid var(--border);
     font-size: calc(clamp(1.05rem, 6cqi, 1.45rem) * var(--ex-scale)); font-weight: 800; line-height: 1.22;
   }
@@ -1928,7 +2085,13 @@ body.show-alternatives .alternative.has-alt { display: block; }
   html[data-land=c] #workoutView .lane-next:empty, html[data-land=c] #workoutView.resting .lane-next { display: none; }
 
   /* AMRAP and For Time: the lap, then the figure, the count at the foot */
-  html[data-land=c] #workoutView .circuit li { font-size: calc(clamp(1.1rem, 6.6cqi, 1.75rem) * min(var(--ex-scale), 1.2)); }
+  html[data-land=c] #workoutView .circuit li { font-size: calc(clamp(1.2rem, 9cqi, 1.9rem) * min(var(--ex-scale), 1.2)); }
+  /* (not as tall, Safari on an iPad or a mini: a little smaller) */
+  @media (max-height: 760px) {
+    html[data-land=c] #workoutView .circuit li { font-size: calc(clamp(1.1rem, 7.5cqi, 1.7rem) * min(var(--ex-scale), 1.2)); }
+  }
+  /* the largest text: a lap's Next makes way (the block says what's next) */
+  html[data-land=c][data-scale='1.45'] #workoutView .person.amrap .lane-next { display: none; }
   html[data-land=c] #workoutView .round-counter { margin: 0.7rem 0 0; }
   html[data-land=c] #workoutView .round-counter button { min-height: 3.8rem; font-size: 1.3rem; }
   html[data-land=c] #workoutView .count-now b { font-size: 2.6rem; }
@@ -2027,20 +2190,38 @@ body.show-alternatives .alternative.has-alt { display: block; }
       flex: 1 0 0; width: auto; padding: 0 0.3rem; font-size: 1.1rem;
     }
     html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter button { min-height: 3.2rem; }
-    /* the lap as single lines, and its cue makes way */
+    /* the lap as lines, a long one running on under its name (never cut
+       short: the end of it is the weight, the one thing that's different
+       for each of you), and its cue and Next make way, the lap being the
+       next few minutes; a Surf check's count, its Next too */
     html[data-land=c] #workoutView .exercise-grid:not(.solo) .circuit:not([hidden]) { display: block; margin: 0.1rem 0 0; }
     html[data-land=c] #workoutView .exercise-grid:not(.solo) .circuit li {
-      display: block; padding: 0.12rem 0.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: block; padding: 0.12rem 0.4rem 0.12rem 1.4rem; text-indent: -1rem;
       font-size: calc(1.1rem * min(var(--ex-scale), 1.2));
     }
     html[data-land=c] #workoutView .exercise-grid:not(.solo) .person.amrap .exercise-cue { display: none; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person:is(.amrap, :has(> .round-counter:not([hidden]))) .lane-next { display: none; }
+    /* and the lap has the lane's width, the count across its foot (tap one
+       for its figure in 3D, as ever) */
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person.amrap { grid-template-columns: minmax(0, 1fr); }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person.amrap > .ex-anim { display: none; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person.amrap > .round-counter { grid-column: 1 / -1; }
+    /* a Surf check's test: "As many as you can" is a line to read, not a
+       name, and the block beside the clock says what's next */
+    html[data-land=c] #workoutView.checking .exercise-grid:not(.solo) .exercise-reps {
+      font-size: calc(clamp(1.2rem, 7cqi, 1.8rem) * min(var(--ex-scale), 1.25));
+    }
+    html[data-land=c] #workoutView.checking .exercise-grid:not(.solo) .lane-next { display: none; }
     html[data-land=c] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) { font-size: calc(min(3rem, 9.5cqi) * var(--ex-scale)); }
     html[data-land=c] #workoutView .exercise-grid:not(.solo) .exercise-cue { font-size: calc(1rem * var(--ex-scale)); }
     html[data-land=c] #workoutView .exercise-grid:not(.solo) .lane-next { font-size: calc(1.05rem * var(--ex-scale)); margin-top: 0.5rem; padding-top: 0.45rem; }
     html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter { margin-top: 0.5rem; }
-    /* the largest text: a little less in a lane this size, and no cue */
-    html[data-land=c] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) { font-size: calc(min(3rem, 9.5cqi) * min(var(--ex-scale), 1.25)); }
-    html[data-land=c][data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
+    /* the largest text: a little less in a lane this size, and no cue or
+       Next; Swap a little smaller */
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) { font-size: calc(min(3rem, 9.5cqi) * min(var(--ex-scale), 1.15)); }
+    html[data-land=c][data-scale='1.45'] #workoutView .person .exercise-cue,
+    html[data-land=c][data-scale='1.45'] #workoutView .exercise-grid:not(.solo) .lane-next { display: none; }
+    html[data-land=c] #workoutView .exercise-grid:not(.solo) .person-head > .swap-btn { min-height: 2.15rem; padding: 0.25rem 0.75rem; font-size: 0.88rem; }
     /* not as tall (the Duo): a count goes right across the foot of the
        card, on one line with its buttons, the figure beside the lap; the
        lap's head and Next make way (the count says the round, and a lap
@@ -2051,7 +2232,10 @@ body.show-alternatives .alternative.has-alt { display: block; }
       html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-now { flex: 1 1 auto; order: 0; }
       html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-less { flex: 0 0 3.2rem; }
       html[data-land=c] #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-more { flex: 0 1 auto; padding: 0 1rem; }
-      html[data-land=c] #workoutView .exercise-grid:not(.solo) .person.amrap :is(.lap-head, .lane-next) { display: none; }
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .person.amrap .lap-head { display: none; }
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .lane-next { -webkit-line-clamp: 1; }
+      /* an EMOM's reps take a line above the name, so its cue makes way */
+      html[data-land=c] #workoutView .exercise-grid:not(.solo) .person:has(> .exercise-reps:not(:empty)) .exercise-cue { display: none; }
     }
   }
 
@@ -2073,6 +2257,7 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html[data-land=c] #workoutView .ex-anim { min-height: 3.5rem; }
     html[data-land=c] #workoutView .exercise-cue:not(:empty) {
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+      flex-shrink: 0; min-height: min-content;
     }
     html[data-land=c] #workoutView .person.amrap .exercise-cue { display: none; }
   }

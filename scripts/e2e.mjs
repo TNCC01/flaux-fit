@@ -4188,20 +4188,38 @@ try {
       pick: getComputedStyle(document.getElementById('landPick')).display !== 'none' }));
 
     // the switch: off unless asked for; ?layout= or ?land= picks one, comes
-    // off the address and is kept; ?land=off forgets it
+    // off the address and is kept; ?land=off forgets it, and nothing else
+    // does (a capital is the same, one it doesn't know is ignored)
     await L.goto(URL);
     let s = await land();
-    assert(s.land === 'off' && s.kept === null, 'a new visitor has the layout as it was: ' + JSON.stringify(s));
+    assert(s.land === 'off' && s.kept === null && !s.pick, 'a new visitor has the layout as it was, and no Landscape row: ' + JSON.stringify(s));
     await L.goto(URL + '?layout=a');
     s = await land();
     assert(s.land === 'a' && s.kept === 'a' && s.search === '', '?layout=a picks A, keeps it and comes off the address: ' + JSON.stringify(s));
     await L.reload();
     assert((await land()).land === 'a', 'and A is still there after a reload');
+    await L.goto(URL + '?land=B');
+    s = await land();
+    assert(s.land === 'b' && s.kept === 'b' && s.search === '', '?land=B picks B: ' + JSON.stringify(s));
+    await L.goto(URL + '?land=bb&x=1');
+    s = await land();
+    assert(s.land === 'b' && s.kept === 'b' && s.search === '?x=1', 'one it does not know is ignored, B kept, and it comes off the address: ' + JSON.stringify(s));
     await L.goto(URL + '?land=off');
     s = await land();
-    assert(s.land === 'off' && s.kept === null && s.search === '', '?land=off forgets it: ' + JSON.stringify(s));
+    assert(s.land === 'off' && s.kept === null && s.search === '' && !s.pick, '?land=off forgets it, and the Landscape row goes: ' + JSON.stringify(s));
+    // an app on the Home Screen is never opened with ?land=: five taps on
+    // the word Text under a workout show the Landscape row instead
+    await ev(() => { state.people = 2; buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'short', minutes: 20 }, 4242); });
+    const tapText = () => L.click('#workoutView .text-size', { position: { x: 3, y: 6 } });
+    for (let i = 0; i < 4; i++) await tapText();
+    assert(!(await land()).pick, 'four taps on Text are not enough for the Landscape row');
+    await tapText();
+    s = await land();
+    assert(s.pick && s.land === 'off' && s.kept === 'off', 'five taps on Text show the Landscape row, the layout as it was until one is picked: ' + JSON.stringify(s));
 
-    // a workout for two, started, at a phase found by a test
+    // a workout for two, started, at a phase found by a test; each look at
+    // a layout goes back to the start of that phase first, so a slow
+    // machine never measures the one after it (landAt, -1 once it's moved on)
     const open = async (how, find) => {
       await ev((how) => {
         state.people = 2;
@@ -4210,12 +4228,19 @@ try {
       }, how);
       await L.click('#btnStart');
       await ev((find) => {
-        seekTo(state.sequence.findIndex(new Function('x', `return ${find}`)));
+        window.landAt = state.sequence.findIndex(new Function('x', `return ${find}`));
+        seekTo(window.landAt);
         render();
         els.scroller.scrollTop = 0;
       }, find);
     };
-    const use = async (v) => { await ev((v) => { setLand(v, true); render(); planKey = undefined; markPlan(); els.scroller.scrollTop = 0; }, v); await frame(); };
+    const use = async (v) => {
+      await ev((v) => {
+        if (window.landAt >= 0 && state.running) seekTo(window.landAt);
+        setLand(v, true); render(); planKey = undefined; markPlan(); els.scroller.scrollTop = 0;
+      }, v);
+      await frame();
+    };
     // what's off the screen, of these (a selector each)
     const offScreen = (sels) => ev((sels) => sels.filter(q => {
       const e = document.querySelector(q), b = e && e.getBoundingClientRect();
@@ -4247,6 +4272,85 @@ try {
         }
       }
     }
+    // in sight: on the screen and not cut off by the card it's in (or
+    // anything else that scrolls), for each element a selector finds that
+    // the layout shows (one it leaves out on purpose, like a lap's head on
+    // a short fold, is not counted)
+    const unseen = (sel) => ev((sel) => [...document.querySelectorAll(sel)].filter(e => {
+      if (!e.getClientRects().length) return false;
+      const r = e.getBoundingClientRect();
+      let box = { top: 0, bottom: innerHeight, left: 0, right: innerWidth };
+      for (let p = e.parentElement; p; p = p.parentElement) {
+        const cs = getComputedStyle(p);
+        if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+        const b = p.getBoundingClientRect();
+        box = { top: Math.max(box.top, b.top), bottom: Math.min(box.bottom, b.bottom), left: Math.max(box.left, b.left), right: Math.min(box.right, b.right) };
+      }
+      return !(r.width > 0 && r.height > 0 && r.top >= box.top - 1 && r.bottom <= box.bottom + 1 && r.left >= box.left - 1 && r.right <= box.right + 1);
+    }).map(e => e.textContent.trim().slice(0, 40)), sel);
+    // the text Swap sits on, and its figure, in each card it shows on
+    const underSwap = () => ev(() => {
+      const hits = [];
+      let shown = 0;
+      const over = (a, b, by) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > by && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > by;
+      for (const sw of document.querySelectorAll('#workoutView .swap-btn')) {
+        if (sw.hidden || !sw.offsetParent) continue;
+        shown++;
+        const at = sw.getBoundingClientRect(), card = sw.closest('.person');
+        const walk = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+        while (walk.nextNode()) {
+          const n = walk.currentNode;
+          if (!n.textContent.trim() || sw.contains(n) || !n.parentElement.offsetParent) continue;
+          const range = document.createRange();
+          range.selectNodeContents(n);
+          if ([...range.getClientRects()].some(r => over(r, at, 1))) hits.push(n.textContent.trim().slice(0, 30));
+        }
+        const fig = card.querySelector('.ex-anim');
+        if (fig && fig.offsetParent && fig.children.length && over(fig.getBoundingClientRect(), at, 2)) hits.push('the figure');
+      }
+      return { shown, hits };
+    });
+    // paused, Swap shows on each card: on no move's name, nor its figure
+    await open('short', "x.kind === 'work' && x.blockIdx === 1 && x.round === 3");
+    await ev(() => { pauseTimer(); render(); });
+    for (const [width, height] of [[1180, 820], [1366, 1024], [951, 669], [800, 830]]) {
+      await L.setViewportSize({ width, height });
+      for (const v of ['a', 'b', 'c']) {
+        await use(v);
+        const sw = await underSwap();
+        assert(sw.shown === 2 && !sw.hits.length, `${v.toUpperCase()} at ${width} x ${height}, paused: Swap on each card, over nothing: ${JSON.stringify(sw)}`);
+      }
+    }
+    // a lap is never cut short: the end of a line is the weight, the one
+    // thing that's different for each of you
+    for (const [how, find] of [['amrap', 'x.amrap && x.blockIdx === 0'], ['fortime', 'x.forTime']]) {
+      await open(how, find);
+      for (const [width, height] of [[1180, 820], [951, 669], [800, 830], [984, 1092]]) {
+        await L.setViewportSize({ width, height });
+        for (const v of ['a', 'b', 'c']) {
+          await use(v);
+          const cut = await ev(() => [...document.querySelectorAll('.circuit:not([hidden]) li')].filter(li => li.offsetParent && li.scrollWidth > li.clientWidth + 1).map(li => li.textContent.trim()));
+          const hidden = await unseen('.circuit:not([hidden]) li');
+          assert(!cut.length && !hidden.length, `${v.toUpperCase()} at ${width} x ${height}, ${how}: each lap whole and in sight: ${JSON.stringify({ cut, hidden })}`);
+        }
+      }
+    }
+    // a Surf check's end: each person's three results, the paddle hold too,
+    // on screen and none of them cut off inside the card
+    await open('check', 'x.hold');
+    await ev(() => { state.scores[0] = { a: 14, b: 11 }; state.scores[1] = { a: 9, b: 8 }; state.scores[2] = { a: 62, b: 48 }; finish(); });
+    for (const [width, height] of SIZES) {
+      await L.setViewportSize({ width, height });
+      for (const v of ['a', 'b', 'c']) {
+        await use(v);
+        const held = await ev(() => [...document.querySelectorAll('#finishA .check-time, #finishB .check-time')].filter(e => e.getClientRects().length).map(e => e.textContent.trim()));
+        const shown = await ev(() => [...document.querySelectorAll('#finishA .check-result, #finishB .check-result')].filter(e => e.getClientRects().length).length);
+        const hidden = await unseen('#finishA .check-result, #finishB .check-result, #finishA .check-time, #finishB .check-time');
+        assert(held.join() === '1:02 held,0:48 held' && shown === 6 && !hidden.length, `${v.toUpperCase()} at ${width} x ${height}, a Surf check's end: both holds and every result in sight: ${JSON.stringify({ held, shown, hidden })}`);
+      }
+    }
+    await ev(() => resetWorkout());
+
     // the clock fits its box at "0:19" and at "20:00", and still reads M:SS
     await open('short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2");
     for (const [width, height] of [[1180, 820], [1366, 1024], [1133, 650], [951, 585]]) {
@@ -4350,6 +4454,42 @@ try {
                  `${v.toUpperCase()} on a fold at 540 to 574: the clock and Pause left of it, the people right of it: ${JSON.stringify(at)}`);
         }
       }
+      // back after time away: the question's buttons on one side of the fold
+      for (const v of ['a', 'b', 'c']) {
+        const at = await F.evaluate((v) => {
+          setLand(v, true);
+          askAway({ at: Date.now() - 30000, elapsed: state.elapsedTotal });
+          const r = [...document.querySelectorAll('#awayBar button')].map(b => b.getBoundingClientRect()).map(b => [Math.round(b.left), Math.round(b.right)]);
+          hideAway();
+          return r;
+        }, v);
+        assert(at.length === 2 && at.every(([l, r]) => r <= 540 || l >= 574), `${v.toUpperCase()} on a fold: Go back and I kept going clear of it: ${JSON.stringify(at)}`);
+      }
+      // C: a lane's own Next is whole lines or none, never sliced through
+      // the middle, and the lane needs no scrolling (For Time, a Surf
+      // check's test)
+      for (const [how, find] of [['fortime', 'x.forTime'], ['check', "x.check && x.kind === 'work' && !x.hold"]]) {
+        await F.evaluate((how) => {
+          stopTimer();
+          state.people = 2;
+          if (how === 'check') { state.programRun = null; openWorkout(SURF_CHECK); }
+          else buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: how, minutes: 20 }, 4242);
+          setLand('c', true);
+        }, how);
+        await F.click('#btnStart');
+        const lanes = await F.evaluate((find) => {
+          seekTo(state.sequence.findIndex(new Function('x', `return ${find}`)));
+          render();
+          const sliced = [...document.querySelectorAll('.lane-next')].filter(e => {
+            if (!e.offsetParent || getComputedStyle(e).display === 'none') return false;
+            const cs = getComputedStyle(e), lh = parseFloat(cs.lineHeight), h = e.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+            return h < lh - 1 || Math.abs(h / lh - Math.round(h / lh)) > 0.1;
+          }).map(e => e.textContent);
+          const scrolls = [...document.querySelectorAll('#exerciseGrid .person')].filter(c => c.scrollHeight > c.clientHeight + 2).map(c => c.scrollHeight - c.clientHeight);
+          return { sliced, scrolls, fold: matchMedia('(horizontal-viewport-segments: 2)').matches };
+        }, find);
+        assert(lanes.fold && !lanes.sliced.length && !lanes.scrolls.length, `C on a fold, ${how}: each lane's Next whole or not there, no lane to scroll: ${JSON.stringify(lanes)}`);
+      }
       await F.close();
     }
 
@@ -4393,7 +4533,7 @@ try {
       }
     }
     await lx.close();
-    ok('landscape, a trial: ?layout= picks A, B or C and keeps it, ?land=off forgets it, and the buttons under a workout flip between them once one is picked; at 1180 x 820, 1180 x 740, 1133 x 650 and on opened folds (951 x 585 and 669, 884 x 700, 800 x 830, 984 x 1092) each has the clock, both people, their moves and Pause, Skip and Reset on one screen in work, a rest, an AMRAP and a Surf check count, with Up next (in C, each lane\'s Next) in work, the clock fitting at 0:19 and 20:00, and a fold\'s middle clear; C leads with the seconds and its rail narrows in a rest, half on a fold; B\'s plan lights the part you\'re on, waits after a touch and ticks it all off at the end; a fold that says where it folds has a column either side of it; an iPad upright, Split View, the Duo closed and every phone are as they were');
+    ok('landscape, a trial: ?layout= picks A, B or C and keeps it (?land=B too), ?land=off forgets it and one it does not know is ignored, five taps on Text show the Landscape row (for an app on the Home Screen), and the buttons under a workout flip between them once one is picked; at 1180 x 820, 1180 x 740, 1133 x 650 and on opened folds (951 x 585 and 669, 884 x 700, 800 x 830, 984 x 1092) each has the clock, both people, their moves and Pause, Skip and Reset on one screen in work, a rest, an AMRAP and a Surf check count, with Up next (in C, each lane\'s Next) in work, the clock fitting at 0:19 and 20:00, and a fold\'s middle clear; C leads with the seconds and its rail narrows in a rest, half on a fold; B\'s plan lights the part you\'re on, waits after a touch and ticks it all off at the end; paused, Swap is on no name or figure; a lap is never cut short; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it, the time away question clear of it, and C\'s Next whole there; an iPad upright, Split View, the Duo closed and every phone are as they were');
   }
 
   step = 'opens offline after the first visit';
