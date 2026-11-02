@@ -420,23 +420,16 @@ rather than hardcoded.
 - A phone on its side gets its own layout: the timer and its buttons on
   the left, the two people side by side on the right, all on one screen
 - An iPad on its side (in its keyboard case, say) and a folding phone
-  opened out have three layouts on trial, beside the one there's always
-  been. A: the clock and its buttons on the left, both people on the
-  right, Up next under them. B: the workout preview down the left as a
-  live plan (parts tick off, the one you're on fills as it goes and
-  scrolls itself into view), the clock beside it, the people under the
-  clock. C: a tall clock rail, the seconds filling it under a minute, and
-  a lane for each person with their own Next at the foot. Open FIT with
-  `?land=a` (or `b`, `c`; `?land=off` forgets it, and anything else is
-  ignored) and it's kept on that device, in that browser; once one is
-  picked, Landscape under a workout flips between them, mid-workout too.
-  An app on the Home Screen keeps its own storage and never opens with
-  `?land=`, so in one, tap the word Text under a workout five times and
-  the Landscape row appears. On a fold opened out each is two even
-  halves, the fold in the gap. They're for a screen on its side or near
-  square, which takes in an iPad's two-thirds Split View window when the
-  iPad is on its side (about 778 x 820, or 1014 x 1024 on the biggest).
-  Until one is picked, nothing changes for anyone
+  opened out get one of their own too: the big clock and its buttons on
+  the left, both people on the right with their figures the card's full
+  height, and Up next along the bottom, all on one screen. On a fold
+  opened out it's two even halves, the fold in the gap (a column either
+  side of it, where the screen says where its fold is), and an iPad's
+  two-thirds Split View window, with the iPad on its side, gets it too
+  (about 778 x 820, or 1014 x 1024 on the biggest). A name too long for
+  its card on a short screen has the line of coaching under it make way,
+  whole, rather than cut it off. An iPad upright, a narrower Split View
+  and every phone are as they were
 - The badge by the workout's name ("1 person · Add a mate", "Wayne & Dave
   · Just me?") is a button until Start: a tap changes one person for two
   and back, the same moves shared out again, for when a mate turns up (or
@@ -614,8 +607,8 @@ replaying a favourite, the interval preference surviving a replay, history,
 the timer recovering time after a suspension, exclusions, stretch, text
 size, a share link opened in a fresh browser context, corrupt preferences,
 picking a session back up after a reload and coming back after time away,
-a phone-width layout and a phone on its side, the three landscape
-layouts on trial (an iPad, opened folds and everything else as it was),
+a phone-width layout and a phone on its side, the layout for an iPad
+on its side and an opened fold (and everything else as it was),
 favourites and history
 keeping their moves through a library change, backing up, copying and
 restoring your data on a second device (and putting it back), the finish

@@ -555,8 +555,11 @@ try {
     // on screen: the move, its figure for each person, the count, and the next move by name
     assert(await p.$eval('#blockName', e => e.textContent) === bk.warm[0].name && await p.$eval('#phaseLabel', e => e.textContent) === 'Warm-up', 'the timer shows the first move like any phase');
     assert(await p.$eval('#roundDots', e => /Move 1 of \d/.test(e.textContent)), 'with a count of the moves');
+    // (an iPad upright: on its side, the preview has the cards' place until Start)
+    await p.setViewportSize({ width: 820, height: 1180 });
     await figureDrawn('#animA'); await figureDrawn('#animB');
     assert(await st(() => document.getElementById('animA').dataset.move === state.sequence[0].a.id && document.getElementById('animB').dataset.move === state.sequence[0].a.id), 'both cards play its figure');
+    await p.setViewportSize({ width: 1180, height: 820 });
     const up = await p.$eval('#upcoming strong', e => e.textContent);
     assert(up === bk.warm[1].name.replace(/^Warm-up \d+ of \d+: /, ''), 'Up next names the next warm-up move: ' + up);
     assert(await p.$eval('#btnSkip', e => e.textContent.replace(/\u2011/g, '-')) === 'Skip warm-up', 'Skip says it skips the warm-up');
@@ -1114,8 +1117,14 @@ try {
              `${size.width} x ${size.height}: with the question up, the buttons clear the timer card and its Total line: ` + JSON.stringify(clear));
       await r.click('#btnAwayKept');
     }
+    // an iPad keeps its own: on its side the clock and moves (see the
+    // landscape step), upright the one it always had
     await r.setViewportSize({ width: 1180, height: 820 });
-    assert(await ev(() => getComputedStyle(document.getElementById('workoutView')).display) === 'flex', 'an iPad keeps its own layout');
+    const ipad = await ev(() => ({ display: getComputedStyle(els.workoutView).display,
+      side: els.timerCard.getBoundingClientRect().right < document.getElementById('labelA').getBoundingClientRect().left }));
+    assert(ipad.display === 'grid' && ipad.side, 'an iPad on its side has its own layout, the clock on the left: ' + JSON.stringify(ipad));
+    await r.setViewportSize({ width: 820, height: 1180 });
+    assert(await ev(() => getComputedStyle(document.getElementById('workoutView')).display) === 'flex', 'and upright, the one it always had');
     await run.close();
     ok('on its side (844 x 390 and 667 x 375): the timer on the left, both people side by side on the right and Pause, Skip and Reset all on one screen; an AMRAP\'s +1 round buttons too; an EMOM\'s buttons clear the timer with the question after time away up');
   }
@@ -4171,55 +4180,33 @@ try {
   assert(await activeView() === 'welcomeView', 'Done goes home after a session that is not a program day');
   ok(`aria-live phase and block, labelled text sizes, Start ${startContrast.toFixed(1)}:1 and Pause ${pauseContrast.toFixed(1)}:1; Done goes home`);
 
-  step = 'landscape, a trial: layouts A, B and C on an iPad and an opened fold on their side, and everything else as it was';
+  step = 'landscape: an iPad on its side and an opened Duo get the clock-and-moves layout, everything else as it was';
   {
     const lx = await browser.newContext({ viewport: { width: 1180, height: 820 }, serviceWorkers: 'block' });
     await lx.addInitScript((schema) => {
       if (location.pathname !== '/' || localStorage.getItem('fit-prefs-2')) return;
       localStorage.setItem('fit-prefs-2', JSON.stringify({ schema, gearAsked: true, people: 2, nameA: 'Wayne', nameB: 'Dave', minutes: 20,
         equipment: { kettlebells: true }, weights: { kb: [12, 16], db: [], bar: 10 } }));
+      // the layout picked in the landscape trial before this release
+      localStorage.setItem('fit-land', 'b');
     }, HERE_SCHEMA);
     const L = await lx.newPage();
     L.on('pageerror', e => errors.push('landscape: ' + e));
     L.on('console', m => { if (m.type() === 'error') errors.push('landscape: ' + m.text()); });
     const ev = (fn, arg) => L.evaluate(fn, arg);
     const frame = () => ev(() => new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame)));
-    const land = () => ev(() => ({ land: document.documentElement.dataset.land, kept: localStorage.getItem('fit-land'), search: location.search,
-      pick: getComputedStyle(document.getElementById('landPick')).display !== 'none' }));
 
-    // the switch: off unless asked for; ?layout= or ?land= picks one, comes
-    // off the address and is kept; ?land=off forgets it, and nothing else
-    // does (a capital is the same, one it doesn't know is ignored)
-    await L.goto(URL);
-    let s = await land();
-    assert(s.land === 'off' && s.kept === null && !s.pick, 'a new visitor has the layout as it was, and no Landscape row: ' + JSON.stringify(s));
-    await L.goto(URL + '?layout=a');
-    s = await land();
-    assert(s.land === 'a' && s.kept === 'a' && s.search === '', '?layout=a picks A, keeps it and comes off the address: ' + JSON.stringify(s));
-    await L.reload();
-    assert((await land()).land === 'a', 'and A is still there after a reload');
-    await L.goto(URL + '?land=B');
-    s = await land();
-    assert(s.land === 'b' && s.kept === 'b' && s.search === '', '?land=B picks B: ' + JSON.stringify(s));
-    await L.goto(URL + '?land=bb&x=1');
-    s = await land();
-    assert(s.land === 'b' && s.kept === 'b' && s.search === '?x=1', 'one it does not know is ignored, B kept, and it comes off the address: ' + JSON.stringify(s));
-    await L.goto(URL + '?land=off');
-    s = await land();
-    assert(s.land === 'off' && s.kept === null && s.search === '' && !s.pick, '?land=off forgets it, and the Landscape row goes: ' + JSON.stringify(s));
-    // an app on the Home Screen is never opened with ?land=: five taps on
-    // the word Text under a workout show the Landscape row instead
-    await ev(() => { state.people = 2; buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'short', minutes: 20 }, 4242); });
-    const tapText = () => L.click('#workoutView .text-size', { position: { x: 3, y: 6 } });
-    for (let i = 0; i < 4; i++) await tapText();
-    assert(!(await land()).pick, 'four taps on Text are not enough for the Landscape row');
-    await tapText();
-    s = await land();
-    assert(s.pick && s.land === 'off' && s.kept === 'off', 'five taps on Text show the Landscape row, the layout as it was until one is picked: ' + JSON.stringify(s));
+    // what the trial left: a link with ?land=b on it opens FIT as ever (the
+    // address left as it is), there's no switch, and the layout it kept is gone
+    await L.goto(URL + '?land=b');
+    const left = await ev(() => ({ kept: localStorage.getItem('fit-land'), search: location.search, view: state.view,
+      land: document.documentElement.hasAttribute('data-land'), switch: !!document.querySelector('#landPick, .land-pick, .lane-next') }));
+    assert(left.kept === null && left.search === '?land=b' && left.view === 'welcome' && !left.land && !left.switch,
+           'an old ?land=b link opens FIT, with no switch, and the layout the trial kept is cleared: ' + JSON.stringify(left));
 
-    // a workout for two, started, at a phase found by a test; each look at
-    // a layout goes back to the start of that phase first, so a slow
-    // machine never measures the one after it (landAt, -1 once it's moved on)
+    // a workout for two, started, at a phase found by a test; each look goes
+    // back to the start of that phase first, so a slow machine never
+    // measures the one after it (landAt, -1 once it's moved on)
     const open = async (how, find) => {
       await ev((how) => {
         state.people = 2;
@@ -4234,11 +4221,11 @@ try {
         els.scroller.scrollTop = 0;
       }, find);
     };
-    const use = async (v) => {
-      await ev((v) => {
+    const settle = async () => {
+      await ev(() => {
         if (window.landAt >= 0 && state.running) seekTo(window.landAt);
-        setLand(v, true); render(); planKey = undefined; markPlan(); els.scroller.scrollTop = 0;
-      }, v);
+        render(); els.scroller.scrollTop = 0;
+      });
       await frame();
     };
     // what's off the screen, of these (a selector each)
@@ -4247,31 +4234,100 @@ try {
       return !(b && b.width > 0 && b.height > 0 && b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth);
     }), sels);
     const wide = () => ev(() => els.scroller.scrollWidth > els.scroller.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth);
+    // the clock's right edge, each person's left, and the screen's middle
+    const sides = () => ev(() => ({ clock: els.timerCard.getBoundingClientRect().right, a: document.querySelector('.person.a').getBoundingClientRect().left,
+      b: document.querySelector('.person.b').getBoundingClientRect().left, mid: innerWidth / 2 }));
     const SCENES = [
-      ['work', 'short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2", ['#exerciseA', '#exerciseB']],
+      ['work', 'short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2", ['#exerciseA', '#exerciseB', '#upcoming']],
       ['rest', 'short', "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2", ['#exerciseA', '#exerciseB', '.person.a .next-eyebrow', '.person.b .next-eyebrow', '#btnNextBlock']],
       ['AMRAP', 'amrap', 'x.amrap && x.blockIdx === 0', ['#counterA .count-more', '#counterB .count-more']],
       ['Surf check count', 'check', 'x.tally !== undefined', ['#exerciseA', '#exerciseB', '#counterA .count-more', '#counterB .count-more']]
     ];
-    const SIZES = [[1180, 820], [1180, 740], [1133, 650], [951, 585], [951, 669], [884, 700], [800, 830], [984, 1092]];
+    // iPads on their side (11-inch, in Safari, 13-inch, mini, mini in
+    // Safari), a Duo opened flat (in Safari and as an app), other folds, and
+    // an iPad's two-thirds Split View on its side
+    const SIZES = [[1180, 820], [1180, 740], [1366, 1024], [1133, 744], [1133, 650], [951, 585], [951, 620], [951, 669],
+                   [884, 700], [800, 830], [778, 820], [984, 1092]];
     const always = ['#timeDisplay', '#labelA', '#labelB', '#btnStart', '#btnSkip', '#btnReset'];
     for (const [scene, how, find, more] of SCENES) {
       await open(how, find);
       for (const [width, height] of SIZES) {
         await L.setViewportSize({ width, height });
-        for (const v of ['a', 'b', 'c']) {
-          await use(v);
-          const lanes = v === 'c' ? ['#laneNextA', '#laneNextB'] : ['#upcoming'];
-          const off = await offScreen([...always, ...more, ...(scene === 'work' ? lanes : [])]);
-          assert(!off.length, `${v.toUpperCase()} at ${width} x ${height}, ${scene}: off the screen: ${off}`);
-          assert(!(await wide()), `${v.toUpperCase()} at ${width} x ${height}, ${scene}: no sideways scroll`);
-          if (scene === 'work' && width <= 1050) {
-            const half = await ev(() => ({ clock: els.timerCard.getBoundingClientRect().right, a: document.querySelector('.person.a').getBoundingClientRect().left, mid: innerWidth / 2 }));
-            assert(half.clock < half.mid - 6 && half.a > half.mid + 6, `${v.toUpperCase()} at ${width} x ${height}: the clock in one half, the people in the other, the middle clear: ${JSON.stringify(half)}`);
-          }
+        await settle();
+        const off = await offScreen([...always, ...more]);
+        assert(!off.length, `${width} x ${height}, ${scene}: off the screen: ${off}`);
+        assert(!(await wide()), `${width} x ${height}, ${scene}: no sideways scroll`);
+        const at = await sides();
+        assert(at.clock < at.a && at.clock < at.b, `${width} x ${height}, ${scene}: the clock on the left, both people on the right: ${JSON.stringify(at)}`);
+        if (width <= 1050) {
+          assert(at.clock < at.mid - 6 && at.a > at.mid + 6, `${width} x ${height}, ${scene}: the clock in one half, the people in the other, the middle clear: ${JSON.stringify(at)}`);
         }
       }
     }
+    // Up next is never cut short, at any step of the session (two long names
+    // and their weights take a third line where there's the height)
+    await open('short', "x.kind === 'work'");
+    for (const [width, height] of [[778, 820], [800, 830], [884, 700], [951, 585], [951, 669], [1180, 740]]) {
+      await L.setViewportSize({ width, height });
+      const cut = await ev(() => {
+        const out = [];
+        for (let i = 0; i < state.sequence.length; i++) {
+          seekTo(i); render();
+          const s = document.querySelector('#upcoming strong');
+          if (s && s.offsetParent && s.scrollHeight > s.clientHeight + 1) out.push(s.textContent);
+        }
+        return out;
+      });
+      assert(!cut.length, `${width} x ${height}: Up next whole at every step, but cut short: ${cut}`);
+    }
+    // the largest text: the same, and no name runs off its card (a word too
+    // long for it breaks)
+    await ev(() => { state.textScale = 1.45; applyTextScale(); });
+    for (const [scene, how, find, more] of SCENES.slice(0, 3)) {
+      await open(how, find);
+      for (const [width, height] of [[1180, 820], [1180, 740], [1133, 650], [951, 585], [951, 669], [800, 830], [778, 820]]) {
+        await L.setViewportSize({ width, height });
+        await settle();
+        const off = await offScreen([...always, ...more]);
+        const cut = await ev(() => ['exerciseA', 'exerciseB'].filter(id => { const e = document.getElementById(id); return e.scrollWidth > e.clientWidth + 1; }));
+        assert(!off.length && !cut.length && !(await wide()), `the largest text at ${width} x ${height}, ${scene}: off the screen ${off}, cut ${cut}`);
+      }
+    }
+    // every move's name (and a weight, if it takes one) on both cards in a
+    // rest, on a Duo in Safari and as an app: no card ever scrolls; a name
+    // that fills its card has the cue under it make way, whole, then Up
+    // next, then (at the largest text) comes down a size; a short one keeps
+    // all of it (bar the cue a fold always leaves out at the largest)
+    await open('short', "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2");
+    await ev(() => stopTimer());
+    for (const scale of [1, 1.2, 1.45]) {
+      for (const [width, height] of [[951, 585], [951, 620], [951, 669]]) {
+        await L.setViewportSize({ width, height });
+        const room = await ev((scale) => {
+          state.textScale = scale; applyTextScale(); render();
+          const full = [], gave = new Set();
+          for (const e of Object.values(EXERCISES)) {
+            const kg = e.equipment.some(q => /kettlebell|dumbbell|barbell/.test(q));
+            for (const w of ['A', 'B']) {
+              showName(els['exercise' + w], kg ? { name: e.name, display: `${e.name} · 24kg`, load: '24kg' } : { name: e.name });
+              els['cue' + w].textContent = e.cue;
+            }
+            makeRoom();
+            for (const card of els.exerciseGrid.querySelectorAll('.person')) {
+              if (card.scrollHeight > card.clientHeight + 1) full.push(e.name);
+              if (card.querySelector('.makes-way') || card.classList.contains('snug')) gave.add(e.name);
+            }
+          }
+          showName(els.exerciseA, { name: 'Wall balls' });
+          els.cueA.textContent = 'Squat deep, throw to the target';
+          makeRoom();
+          return { full, gave: gave.size, short: !els.cueA.classList.contains('makes-way') && !els.exerciseA.closest('.person').classList.contains('snug') };
+        }, scale);
+        assert(!room.full.length && room.short, `text at ${scale}, ${width} x ${height}, every move in a rest: no card scrolls (${room.full}), a short name keeps its cue: ${JSON.stringify(room)}`);
+        if (width === 951 && height === 585) note(`text at ${scale} on a Duo in Safari, moves whose card makes room: ${room.gave}`);
+      }
+    }
+    await ev(() => { state.textScale = 1; applyTextScale(); });
     // in sight: on the screen and not cut off by the card it's in (or
     // anything else that scrolls), for each element a selector finds that
     // the layout shows (one it leaves out on purpose, like a lap's head on
@@ -4313,26 +4369,22 @@ try {
     // paused, Swap shows on each card: on no move's name, nor its figure
     await open('short', "x.kind === 'work' && x.blockIdx === 1 && x.round === 3");
     await ev(() => { pauseTimer(); render(); });
-    for (const [width, height] of [[1180, 820], [1366, 1024], [951, 669], [800, 830]]) {
+    for (const [width, height] of [[1180, 820], [1366, 1024], [1133, 744], [951, 585], [951, 669], [800, 830], [778, 820]]) {
       await L.setViewportSize({ width, height });
-      for (const v of ['a', 'b', 'c']) {
-        await use(v);
-        const sw = await underSwap();
-        assert(sw.shown === 2 && !sw.hits.length, `${v.toUpperCase()} at ${width} x ${height}, paused: Swap on each card, over nothing: ${JSON.stringify(sw)}`);
-      }
+      await settle();
+      const sw = await underSwap();
+      assert(sw.shown === 2 && !sw.hits.length, `${width} x ${height}, paused: Swap on each card, over nothing: ${JSON.stringify(sw)}`);
     }
     // a lap is never cut short: the end of a line is the weight, the one
     // thing that's different for each of you
     for (const [how, find] of [['amrap', 'x.amrap && x.blockIdx === 0'], ['fortime', 'x.forTime']]) {
       await open(how, find);
-      for (const [width, height] of [[1180, 820], [951, 669], [800, 830], [984, 1092]]) {
+      for (const [width, height] of [[1180, 820], [951, 585], [951, 669], [800, 830], [984, 1092]]) {
         await L.setViewportSize({ width, height });
-        for (const v of ['a', 'b', 'c']) {
-          await use(v);
-          const cut = await ev(() => [...document.querySelectorAll('.circuit:not([hidden]) li')].filter(li => li.offsetParent && li.scrollWidth > li.clientWidth + 1).map(li => li.textContent.trim()));
-          const hidden = await unseen('.circuit:not([hidden]) li');
-          assert(!cut.length && !hidden.length, `${v.toUpperCase()} at ${width} x ${height}, ${how}: each lap whole and in sight: ${JSON.stringify({ cut, hidden })}`);
-        }
+        await settle();
+        const cut = await ev(() => [...document.querySelectorAll('.circuit:not([hidden]) li')].filter(li => li.offsetParent && li.scrollWidth > li.clientWidth + 1).map(li => li.textContent.trim()));
+        const hidden = await unseen('.circuit:not([hidden]) li');
+        assert(!cut.length && !hidden.length, `${width} x ${height}, ${how}: each lap whole and in sight: ${JSON.stringify({ cut, hidden })}`);
       }
     }
     // a Surf check's end: each person's three results, the paddle hold too,
@@ -4341,89 +4393,31 @@ try {
     await ev(() => { state.scores[0] = { a: 14, b: 11 }; state.scores[1] = { a: 9, b: 8 }; state.scores[2] = { a: 62, b: 48 }; finish(); });
     for (const [width, height] of SIZES) {
       await L.setViewportSize({ width, height });
-      for (const v of ['a', 'b', 'c']) {
-        await use(v);
-        const held = await ev(() => [...document.querySelectorAll('#finishA .check-time, #finishB .check-time')].filter(e => e.getClientRects().length).map(e => e.textContent.trim()));
-        const shown = await ev(() => [...document.querySelectorAll('#finishA .check-result, #finishB .check-result')].filter(e => e.getClientRects().length).length);
-        const hidden = await unseen('#finishA .check-result, #finishB .check-result, #finishA .check-time, #finishB .check-time');
-        assert(held.join() === '1:02 held,0:48 held' && shown === 6 && !hidden.length, `${v.toUpperCase()} at ${width} x ${height}, a Surf check's end: both holds and every result in sight: ${JSON.stringify({ held, shown, hidden })}`);
-      }
+      await settle();
+      const held = await ev(() => [...document.querySelectorAll('#finishA .check-time, #finishB .check-time')].filter(e => e.getClientRects().length).map(e => e.textContent.trim()));
+      const shown = await ev(() => [...document.querySelectorAll('#finishA .check-result, #finishB .check-result')].filter(e => e.getClientRects().length).length);
+      const hidden = await unseen('#finishA .check-result, #finishB .check-result, #finishA .check-time, #finishB .check-time');
+      assert(held.join() === '1:02 held,0:48 held' && shown === 6 && !hidden.length, `${width} x ${height}, a Surf check's end: both holds and every result in sight: ${JSON.stringify({ held, shown, hidden })}`);
     }
     await ev(() => resetWorkout());
 
-    // the clock fits its box at "0:19" and at "20:00", and still reads M:SS
+    // the clock fits its card at "0:19" and at "20:00", and still reads M:SS
     await open('short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2");
-    for (const [width, height] of [[1180, 820], [1366, 1024], [1133, 650], [951, 585]]) {
+    for (const [width, height] of [[1180, 820], [1366, 1024], [1133, 650], [951, 585], [778, 820]]) {
       await L.setViewportSize({ width, height });
-      for (const v of ['a', 'b', 'c']) {
-        await use(v);
-        for (const sec of [19, 1200]) {
-          const fit = await ev((sec) => {
-            showClock(sec, sec <= 60);
-            return { text: els.timeDisplay.textContent, len: els.timeDisplay.dataset.len, w: els.timeDisplay.scrollWidth, card: els.timerCard.clientWidth,
-                     px: parseFloat(getComputedStyle(els.timeDisplay).fontSize) };
-          }, sec);
-          assert(/^\d+:\d\d$/.test(fit.text) && fit.len === String(fit.text.length) && fit.w <= fit.card,
-                 `${v.toUpperCase()} at ${width} x ${height}: "${fit.text}" fits its card: ${JSON.stringify(fit)}`);
-          if (sec === 19 && width === 1180) note(`${v.toUpperCase()} at 1180 x 820: "0:19" at ${Math.round(fit.px)}px`);
-        }
-        await ev(() => render());
+      await settle();
+      for (const sec of [19, 1200]) {
+        const fit = await ev((sec) => {
+          showClock(sec);
+          return { text: els.timeDisplay.textContent, len: els.timeDisplay.dataset.len, w: els.timeDisplay.scrollWidth, card: els.timerCard.clientWidth,
+                   px: parseFloat(getComputedStyle(els.timeDisplay).fontSize) };
+        }, sec);
+        assert(/^\d+:\d\d$/.test(fit.text) && fit.len === String(fit.text.length) && fit.w <= fit.card,
+               `${width} x ${height}: "${fit.text}" fits its card: ${JSON.stringify(fit)}`);
+        if (sec === 19 && width === 1180) note(`at 1180 x 820, "0:19" at ${Math.round(fit.px)}px`);
       }
+      await ev(() => render());
     }
-    // C: seconds-led in a 20s work phase, not in an AMRAP; on an iPad the
-    // rail is wider in work than in a rest, on a fold it's half in both
-    await L.setViewportSize({ width: 1180, height: 820 });
-    await use('c');
-    const rail = () => ev(() => ({ rail: els.timerCard.getBoundingClientRect().width, stage: els.exerciseGrid.getBoundingClientRect().width, secs: els.timeDisplay.classList.contains('secs') }));
-    const work = await rail();
-    await ev(() => { seekTo(state.currentIdx + 1); render(); });
-    await frame();
-    const rest = await rail();
-    assert(work.secs && rest.secs && work.rail > rest.rail + 40, 'C on an iPad: seconds-led, and the rail wider in work than in a rest: ' + JSON.stringify([work, rest]));
-    await L.setViewportSize({ width: 951, height: 585 });
-    await frame();
-    const restHalf = await rail();
-    await ev(() => { seekTo(state.currentIdx - 1); render(); });
-    await frame();
-    const workHalf = await rail();
-    assert([restHalf, workHalf].every(r => Math.abs(r.rail - r.stage) <= 1), 'C on a fold: the rail is half, in work and in a rest: ' + JSON.stringify([workHalf, restHalf]));
-    await open('amrap', 'x.amrap && x.blockIdx === 0');
-    assert(!(await ev(() => els.timeDisplay.classList.contains('secs'))), "C: an AMRAP's clock is M:SS, not seconds-led");
-
-    // B: the plan, in step with the clock
-    await L.setViewportSize({ width: 1180, height: 820 });
-    await open('short', "x.kind === 'work' && x.blockIdx === 1 && x.round === 1");
-    await use('b');
-    const plan = () => ev(() => {
-      const now = [...document.querySelectorAll('#previewList li.now')];
-      const b = els.previewCard.getBoundingClientRect();
-      return { shown: b.width > 0 && b.height > 0 && b.bottom <= innerHeight, now: now.map(li => li.dataset.key), want: keyOf(state.sequence[state.currentIdx]),
-               tag: now[0] && now[0].querySelector('.tag').textContent, done: document.querySelectorAll('#previewList li.done').length,
-               keyed: document.querySelectorAll('#previewList li[data-key]').length, top: els.previewCard.scrollTop };
-    });
-    let pl = await plan();
-    assert(pl.shown && pl.now.length === 1 && pl.now[0] === pl.want && pl.want === 'b1' && pl.tag === 'Now' && pl.done === 2,
-           'B: the plan is on screen with block 2 lit NOW, the warm-up and block 1 ticked off: ' + JSON.stringify(pl));
-    // its moves are to read now, not to tap: a tap on one opens nothing,
-    // paused too (Swap is on the cards then)
-    await ev(() => pauseTimer());
-    assert(await ev(() => getComputedStyle(document.querySelector('#previewList li.now .preview-move')).pointerEvents) === 'none', 'B: the pills ignore taps once underway');
-    await L.click('#previewList li.now .preview-move', { force: true });
-    assert(await ev(() => document.getElementById('swapSheet').hidden), 'B: and a tap on one opens no swap');
-    // a touch on the plan holds the scrolling for five seconds, then it
-    // catches up with the part you're on
-    await L.click('#btnStart');
-    await ev(() => { els.previewCard.scrollTop = 0; els.previewCard.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); });
-    await ev(() => { seekTo(state.sequence.findIndex(x => x.kind === 'cooldown')); render(); });
-    await L.waitForTimeout(800);
-    pl = await plan();
-    const held = await ev(() => planKey);
-    assert(pl.want === 'cool' && pl.now[0] === 'cool' && pl.top === 0 && held === 'b1', 'B: touched, the plan stays where it was: ' + JSON.stringify({ ...pl, held }));
-    await ev(() => { planTouched = Date.now() - 5100; render(); });
-    assert(await ev(() => planKey) === 'cool', 'B: five seconds on, it goes to the part you are on');
-    await ev(() => finish());
-    pl = await plan();
-    assert(pl.done === pl.keyed && pl.now.length === 0, 'B: at the end, every part of the plan is ticked off: ' + JSON.stringify(pl));
 
     // a fold that says where its fold is (Chromium on Android): a column
     // either side of it, the hinge in the gap
@@ -4441,99 +4435,100 @@ try {
       });
       await F.click('#btnStart');
       for (const find of ["x.kind === 'work' && x.blockIdx === 0 && x.round === 2", "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2"]) {
-        for (const v of ['a', 'b', 'c']) {
-          const at = await F.evaluate(({ v, find }) => {
-            setLand(v, true);
-            seekTo(state.sequence.findIndex(new Function('x', `return ${find}`)));
-            render();
-            const r = (e) => e.getBoundingClientRect();
-            return { clock: r(els.timerCard).right, a: r(document.querySelector('.person.a')).left, b: r(document.querySelector('.person.b')).left,
-                     pause: r(els.btnStart).right, bottom: Math.max(r(els.btnStart).bottom, r(document.querySelector('.person.b')).bottom), h: innerHeight };
-          }, { v, find });
-          assert(at.clock <= 540 && at.pause <= 540 && at.a >= 574 && at.b >= 574 && at.bottom <= at.h,
-                 `${v.toUpperCase()} on a fold at 540 to 574: the clock and Pause left of it, the people right of it: ${JSON.stringify(at)}`);
-        }
-      }
-      // back after time away: the question's buttons on one side of the fold
-      for (const v of ['a', 'b', 'c']) {
-        const at = await F.evaluate((v) => {
-          setLand(v, true);
-          askAway({ at: Date.now() - 30000, elapsed: state.elapsedTotal });
-          const r = [...document.querySelectorAll('#awayBar button')].map(b => b.getBoundingClientRect()).map(b => [Math.round(b.left), Math.round(b.right)]);
-          hideAway();
-          return r;
-        }, v);
-        assert(at.length === 2 && at.every(([l, r]) => r <= 540 || l >= 574), `${v.toUpperCase()} on a fold: Go back and I kept going clear of it: ${JSON.stringify(at)}`);
-      }
-      // C: a lane's own Next is whole lines or none, never sliced through
-      // the middle, and the lane needs no scrolling (For Time, a Surf
-      // check's test)
-      for (const [how, find] of [['fortime', 'x.forTime'], ['check', "x.check && x.kind === 'work' && !x.hold"]]) {
-        await F.evaluate((how) => {
-          stopTimer();
-          state.people = 2;
-          if (how === 'check') { state.programRun = null; openWorkout(SURF_CHECK); }
-          else buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: how, minutes: 20 }, 4242);
-          setLand('c', true);
-        }, how);
-        await F.click('#btnStart');
-        const lanes = await F.evaluate((find) => {
+        const at = await F.evaluate((find) => {
           seekTo(state.sequence.findIndex(new Function('x', `return ${find}`)));
           render();
-          const sliced = [...document.querySelectorAll('.lane-next')].filter(e => {
-            if (!e.offsetParent || getComputedStyle(e).display === 'none') return false;
-            const cs = getComputedStyle(e), lh = parseFloat(cs.lineHeight), h = e.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-            return h < lh - 1 || Math.abs(h / lh - Math.round(h / lh)) > 0.1;
-          }).map(e => e.textContent);
-          const scrolls = [...document.querySelectorAll('#exerciseGrid .person')].filter(c => c.scrollHeight > c.clientHeight + 2).map(c => c.scrollHeight - c.clientHeight);
-          return { sliced, scrolls, fold: matchMedia('(horizontal-viewport-segments: 2)').matches };
+          const r = (e) => e.getBoundingClientRect();
+          return { clock: r(els.timerCard).right, a: r(document.querySelector('.person.a')).left, b: r(document.querySelector('.person.b')).left,
+                   pause: r(els.btnStart).right, bottom: Math.max(r(els.btnStart).bottom, r(document.querySelector('.person.b')).bottom), h: innerHeight };
         }, find);
-        assert(lanes.fold && !lanes.sliced.length && !lanes.scrolls.length, `C on a fold, ${how}: each lane's Next whole or not there, no lane to scroll: ${JSON.stringify(lanes)}`);
+        assert(at.clock <= 540 && at.pause <= 540 && at.a >= 574 && at.b >= 574 && at.bottom <= at.h,
+               `on a fold at 540 to 574: the clock and Pause left of it, the people right of it: ${JSON.stringify(at)}`);
       }
+      // back after time away: the question's buttons on one side of the fold
+      const away = await F.evaluate(() => {
+        askAway({ at: Date.now() - 30000, elapsed: state.elapsedTotal });
+        const r = [...document.querySelectorAll('#awayBar button')].map(b => b.getBoundingClientRect()).map(b => [Math.round(b.left), Math.round(b.right)]);
+        hideAway();
+        return r;
+      });
+      assert(away.length === 2 && away.every(([l, r]) => r <= 540 || l >= 574), `on a fold: Go back and I kept going clear of it: ${JSON.stringify(away)}`);
       await F.close();
     }
 
-    // the buttons under a workout flip between them, once one has been picked
-    await ev(() => resetWorkout());
-    await ev(() => { els.scroller.scrollTop = els.scroller.scrollHeight; });
-    assert((await land()).pick, 'once one has been picked, the Landscape buttons show under the workout');
-    await L.click('#landPick .mini-btn[data-land="c"]');
-    s = await land();
-    assert(s.land === 'c' && s.kept === 'c' && await ev(() => document.querySelector('#landPick [data-land="c"]').getAttribute('aria-pressed')) === 'true',
-           'a tap on C picks C: ' + JSON.stringify(s));
-    await L.click('#landPick .mini-btn[data-land="off"]');
-    s = await land();
-    assert(s.land === 'off' && s.kept === 'off' && s.pick, 'Today puts the layout back, and leaves the buttons there to come back: ' + JSON.stringify(s));
-
-    // everywhere else, each one is the layout as it was: an iPad upright,
-    // Split View, a Duo closed or upright, every phone either way up
-    await open('short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2");
-    const look = () => ev(() => {
-      const css = (e, ...k) => k.map(p => getComputedStyle(e)[p]).join('/');
-      return [css(els.workoutView, 'display', 'gridTemplateAreas', 'gridTemplateColumns'), css(els.timeDisplay, 'fontSize'), css(els.timerCard, 'padding', 'width'),
-              css(document.querySelector('.person.a'), 'padding', 'width', 'display'), css(els.exerciseA, 'fontSize'), css(document.querySelector('#workoutView .controls'), 'gridTemplateColumns'),
-              css(els.upcoming, 'display'), css(document.getElementById('landPick'), 'display'), css(els.scroller, 'padding')].join(' | ');
-    });
-    const STILL = [[820, 1180], [1024, 1270], [669, 902], [382, 580], [385, 571], [390, 844], [594, 368], [678, 466], [844, 390], [874, 402], [956, 440], [667, 375]];
-    for (const [width, height] of STILL) {
-      await L.setViewportSize({ width, height });
-      await use('off');
-      const before = await look();
-      for (const v of ['a', 'b', 'c']) {
-        await use(v);
-        assert(await look() === before, `${v.toUpperCase()} at ${width} x ${height} is the layout as it was:\n${await look()}\n${before}`);
+    // Everywhere else it's the layout as it was. The test: the same page
+    // with this layout's rules taken out (its @media in css/app.css, the
+    // one with min-aspect-ratio) has every box where it was and the same
+    // size of text. An iPad upright, Split View, a Duo closed or upright,
+    // every phone either way up, in work and in a rest; and the home screen
+    // and setup on an iPad and a Duo on their side.
+    const rules = (on) => ev((on) => {
+      const sheet = [...document.styleSheets].find(s => s.href && s.href.endsWith('/css/app.css'));
+      if (!on) {
+        window.landRules = [];
+        for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
+          const r = sheet.cssRules[i];
+          if (r instanceof CSSMediaRule && /min-aspect-ratio/.test(r.conditionText)) { window.landRules.unshift([i, r.cssText]); sheet.deleteRule(i); }
+        }
+        return window.landRules.length;
       }
-      if (height <= 500) {
-        // the phone on its side, as the step above has it, with each one picked
-        for (const v of ['a', 'b', 'c']) {
-          await use(v);
+      for (const [i, text] of window.landRules) sheet.insertRule(text, i);
+      return window.landRules.length;
+    }, on);
+    const look = () => ev(() => {
+      const v = document.querySelector('.view.active');
+      return [v, ...v.querySelectorAll('*')].filter(e => e.getClientRects().length).map(e => {
+        const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
+        return `${e.id || e.className || e.tagName} ${[r.left, r.top, r.width, r.height].map(Math.round).join(',')} ${cs.fontSize} ${cs.display}`;
+      });
+    });
+    const asWas = async () => {
+      const now = await look();
+      assert(await rules(false) === 1, 'the landscape layout is one @media in css/app.css');
+      const was = await look();
+      await rules(true);
+      const i = now.findIndex((x, i) => x !== was[i]);
+      return now.length === was.length && i < 0 ? '' : `${now[i]}\n  was ${was[i]}`;
+    };
+    // (the clock held still and nothing sliding, so both looks are of one moment)
+    await ev(() => {
+      const now = Date.now();
+      Date.now = () => now;
+      document.head.insertAdjacentHTML('beforeend', '<style>*, *::before, *::after { transition: none !important; animation: none !important; }</style>');
+    });
+    // (on an iPad on its side it isn't, so the test can tell)
+    await open('short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2");
+    await L.setViewportSize({ width: 1180, height: 820 });
+    await settle();
+    assert(await asWas() !== '', 'on an iPad on its side the workout is not the layout as it was');
+    const STILL = [[820, 1180], [1024, 1366], [1024, 1270], [669, 902], [507, 820], [382, 580], [385, 571], [390, 844],
+                   [594, 368], [678, 466], [844, 390], [874, 402], [956, 440], [667, 375]];
+    for (const [scene, find] of [['work', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2"], ['rest', "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2"]]) {
+      await open('short', find);
+      for (const [width, height] of STILL) {
+        await L.setViewportSize({ width, height });
+        await settle();
+        const diff = await asWas();
+        assert(!diff, `${width} x ${height}, ${scene}: the layout as it was, but\n  ${diff}`);
+        if (height <= 500) {
+          // the phone on its side, as the step above has it
           const off = await offScreen(['#timeDisplay', '#labelA', '#exerciseA', '#labelB', '#exerciseB', '#btnStart', '#btnSkip', '#btnReset']);
-          assert(!off.length && !(await wide()), `${v.toUpperCase()} on a phone on its side, ${width} x ${height}: off screen: ${off}`);
+          assert(!off.length && !(await wide()), `a phone on its side, ${width} x ${height}, ${scene}: off screen: ${off}`);
         }
       }
     }
+    await ev(() => resetWorkout());
+    for (const [width, height] of [[1180, 820], [1366, 1024], [951, 669], [778, 820]]) {
+      await L.setViewportSize({ width, height });
+      for (const [screen, go] of [['home', 'setView("welcome")'], ['setup', 'openSetup()']]) {
+        await ev((go) => eval(go), go);
+        await frame();
+        const diff = await asWas();
+        assert(!diff, `${width} x ${height}, the ${screen} screen as it was, but\n  ${diff}`);
+      }
+    }
     await lx.close();
-    ok('landscape, a trial: ?layout= picks A, B or C and keeps it (?land=B too), ?land=off forgets it and one it does not know is ignored, five taps on Text show the Landscape row (for an app on the Home Screen), and the buttons under a workout flip between them once one is picked; at 1180 x 820, 1180 x 740, 1133 x 650 and on opened folds (951 x 585 and 669, 884 x 700, 800 x 830, 984 x 1092) each has the clock, both people, their moves and Pause, Skip and Reset on one screen in work, a rest, an AMRAP and a Surf check count, with Up next (in C, each lane\'s Next) in work, the clock fitting at 0:19 and 20:00, and a fold\'s middle clear; C leads with the seconds and its rail narrows in a rest, half on a fold; B\'s plan lights the part you\'re on, waits after a touch and ticks it all off at the end; paused, Swap is on no name or figure; a lap is never cut short; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it, the time away question clear of it, and C\'s Next whole there; an iPad upright, Split View, the Duo closed and every phone are as they were');
+    ok('landscape: a link with ?land=b opens FIT, with no switch, and the layout the trial kept is cleared; on an iPad on its side (11-inch, 13-inch and mini, as an app and in Safari), a Duo opened flat (951 x 585, 620 and 669), other folds (884 x 700, 800 x 830, 984 x 1092) and two-thirds Split View (778 x 820) the clock is on the left and both people on the right, a fold\'s middle clear, with the clock, both names, their moves and Pause, Skip and Reset on one screen in work (Up next too), a rest, an AMRAP and a Surf check count, and at the largest text; Up next is never cut short; no card ever scrolls on a Duo, a long name\'s cue making way whole, at every text size; the clock fits at 0:19 and 20:00; paused, Swap is on no name or figure; a lap is never cut short; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it and the time away question clear of it; an iPad upright, Split View, the Duo closed and every phone, and the home screen and setup at every size, are as they were');
   }
 
   step = 'opens offline after the first visit';
