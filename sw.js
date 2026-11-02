@@ -28,8 +28,8 @@
   When a file is added, list it below (the self-check fails on a file
   the pages load, or a 3D file, that isn't listed).
 */
-const VERSION = 'fit-v24';
-const FILES_HASH = 'fab412b7e1af';
+const VERSION = 'fit-v25';
+const FILES_HASH = '29458a3600f8';
 const CACHE = `${VERSION}-${FILES_HASH}`;
 
 const SHELL = [

@@ -3255,12 +3255,18 @@ try {
   await p.click('#btnAgain');
   assert(await p.$eval('#workoutNote', e => e.textContent) === '', 'Start over clears the note');
   await p.click('#btnReset'); await p.click('#btnReset');
-  // an iPad in landscape, two people, demos on: a work phase runs past the
-  // bottom of the screen, and Pause, Skip and Reset stay on it
-  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); });
-  const ipadBar = await st(() => ({ long: els.scroller.scrollHeight > els.scroller.clientHeight + 100,
-    on: ['btnStart', 'btnSkip', 'btnReset'].every(id => { const b = document.getElementById(id).getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; }) }));
-  assert(ipadBar.long && ipadBar.on, 'iPad landscape: the controls stay on screen through a long work phase: ' + JSON.stringify(ipadBar));
+  // an iPad upright, two people, demos on: a work phase runs past the
+  // bottom of the screen, and Pause, Skip and Reset stay on it (on its side
+  // they're on the first screen with the clock: see the landscape step)
+  const barOn = () => st(() => new Promise(requestAnimationFrame).then(() => ({ long: els.scroller.scrollHeight > els.scroller.clientHeight + 100,
+    on: ['btnStart', 'btnSkip', 'btnReset'].every(id => { const b = document.getElementById(id).getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; }) })));
+  await st(() => { seekTo(state.sequence.findIndex(x => x.kind === 'work')); render(); els.scroller.scrollTop = 0; });
+  await p.setViewportSize({ width: 768, height: 1024 });
+  const ipadBar = await barOn();
+  assert(ipadBar.long && ipadBar.on, 'iPad upright: the controls stay on screen through a long work phase: ' + JSON.stringify(ipadBar));
+  await p.setViewportSize({ width: 1180, height: 820 });
+  const sideBar = await barOn();
+  assert(sideBar.on, 'and on its side: ' + JSON.stringify(sideBar));
   await st(() => resetWorkout());
   const clip = await st(() => navigator.clipboard.readText().catch(() => null));
   if (clip === null) note('clipboard not readable here, skipping that check');
@@ -4207,12 +4213,12 @@ try {
     // a workout for two, started, at a phase found by a test; each look goes
     // back to the start of that phase first, so a slow machine never
     // measures the one after it (landAt, -1 once it's moved on)
-    const open = async (how, find) => {
-      await ev((how) => {
-        state.people = 2;
+    const open = async (how, find, people = 2) => {
+      await ev(([how, people]) => {
+        state.people = people;
         if (how === 'check') { state.programRun = null; openWorkout(SURF_CHECK); }
-        else buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: how, minutes: 20 }, 4242);
-      }, how);
+        else buildAndOpen({ ...requestFromState(), people, goal: undefined, intervalId: how, minutes: 20 }, 4242);
+      }, [how, people]);
       await L.click('#btnStart');
       await ev((find) => {
         window.landAt = state.sequence.findIndex(new Function('x', `return ${find}`));
@@ -4244,10 +4250,10 @@ try {
       ['Surf check count', 'check', 'x.tally !== undefined', ['#exerciseA', '#exerciseB', '#counterA .count-more', '#counterB .count-more']]
     ];
     // iPads on their side (11-inch, in Safari, 13-inch, mini, mini in
-    // Safari), a Duo opened flat (in Safari and as an app), other folds, and
-    // an iPad's two-thirds Split View on its side
+    // Safari), a Duo opened flat (in Safari and as an app), other folds, an
+    // iPad's two-thirds Split View on its side, and a computer's window
     const SIZES = [[1180, 820], [1180, 740], [1366, 1024], [1133, 744], [1133, 650], [951, 585], [951, 620], [951, 669],
-                   [884, 700], [800, 830], [778, 820], [984, 1092]];
+                   [884, 700], [800, 830], [778, 820], [984, 1092], [1440, 900]];
     const always = ['#timeDisplay', '#labelA', '#labelB', '#btnStart', '#btnSkip', '#btnReset'];
     for (const [scene, how, find, more] of SCENES) {
       await open(how, find);
@@ -4280,8 +4286,7 @@ try {
       });
       assert(!cut.length, `${width} x ${height}: Up next whole at every step, but cut short: ${cut}`);
     }
-    // the largest text: the same, and no name runs off its card (a word too
-    // long for it breaks)
+    // the largest text: the same, and no name runs off its card
     await ev(() => { state.textScale = 1.45; applyTextScale(); });
     for (const [scene, how, find, more] of SCENES.slice(0, 3)) {
       await open(how, find);
@@ -4293,41 +4298,208 @@ try {
         assert(!off.length && !cut.length && !(await wide()), `the largest text at ${width} x ${height}, ${scene}: off the screen ${off}, cut ${cut}`);
       }
     }
-    // every move's name (and a weight, if it takes one) on both cards in a
-    // rest, on a Duo in Safari and as an app: no card ever scrolls; a name
+    // every move's name (and a weight, if it takes one) on the cards, for
+    // two and for one, in work and in a rest, on an iPad (and a mini in
+    // Safari), a Duo in Safari and as an app and in Split View, at every
+    // text size: no card ever scrolls and the name and its weight are in
+    // sight; no word is broken over two lines (a word too wide for the card
+    // brings the name down until it fits, the same on both cards); a name
     // that fills its card has the cue under it make way, whole, then Up
-    // next, then (at the largest text) comes down a size; a short one keeps
-    // all of it (bar the cue a fold always leaves out at the largest)
-    await open('short', "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2");
-    await ev(() => stopTimer());
-    for (const scale of [1, 1.2, 1.45]) {
-      for (const [width, height] of [[951, 585], [951, 620], [951, 669]]) {
-        await L.setViewportSize({ width, height });
-        const room = await ev((scale) => {
-          state.textScale = scale; applyTextScale(); render();
-          const full = [], gave = new Set();
-          for (const e of Object.values(EXERCISES)) {
-            const kg = e.equipment.some(q => /kettlebell|dumbbell|barbell/.test(q));
-            for (const w of ['A', 'B']) {
-              showName(els['exercise' + w], kg ? { name: e.name, display: `${e.name} · 24kg`, load: '24kg' } : { name: e.name });
-              els['cue' + w].textContent = e.cue;
-            }
-            makeRoom();
-            for (const card of els.exerciseGrid.querySelectorAll('.person')) {
-              if (card.scrollHeight > card.clientHeight + 1) full.push(e.name);
-              if (card.querySelector('.makes-way') || card.classList.contains('snug')) gave.add(e.name);
-            }
+    // next, then comes down a size, and a short one keeps all of it (bar
+    // the cue a fold always leaves out at the largest)
+    for (const people of [2, 1]) {
+      for (const scene of ['work', 'rest']) {
+        await open('short', `x.kind === '${scene}' && x.blockIdx === 0 && x.round === 2`, people);
+        await ev(() => stopTimer());
+        for (const [width, height] of [[1180, 820], [1133, 650], [951, 585], [951, 620], [951, 669], [778, 820]]) {
+          await L.setViewportSize({ width, height });
+          for (const scale of [1, 1.2, 1.45]) {
+            const room = await ev((scale) => {
+              state.textScale = scale; applyTextScale(); render();
+              const who = state.people === 2 ? ['A', 'B'] : ['A'];
+              const full = new Set(), hidden = new Set(), broken = new Set(), gave = new Set();
+              let apart = false;
+              for (const e of Object.values(EXERCISES)) {
+                const kg = e.equipment.some(q => /kettlebell|dumbbell|barbell/.test(q));
+                for (const w of who) {
+                  showName(els['exercise' + w], kg ? { name: e.name, display: `${e.name} · 24kg`, load: '24kg' } : { name: e.name });
+                  els['cue' + w].textContent = e.cue;
+                }
+                makeRoom();
+                for (const w of who) {
+                  const name = els['exercise' + w], card = name.closest('.person');
+                  if (card.scrollHeight > card.clientHeight + 1) full.add(e.name);
+                  const box = card.getBoundingClientRect();
+                  if (name.getBoundingClientRect().bottom > box.top + card.clientTop + card.clientHeight + 0.5) hidden.add(e.name);
+                  if (card.querySelector('.makes-way') || card.classList.contains('snug')) gave.add(e.name);
+                  // each word (a hyphen ends one) on a line of its own
+                  const walk = document.createTreeWalker(name, NodeFilter.SHOW_TEXT);
+                  while (walk.nextNode()) {
+                    const t = walk.currentNode, re = /[^\s-]+-?/g;
+                    for (let m; (m = re.exec(t.textContent));) {
+                      const r = document.createRange();
+                      r.setStart(t, m.index); r.setEnd(t, m.index + m[0].length);
+                      if (r.getClientRects().length > 1) broken.add(m[0]);
+                    }
+                  }
+                }
+                const [a, b] = who.map(w => els['exercise' + w].closest('.person'));
+                if (b && a.style.getPropertyValue('--fit') !== b.style.getPropertyValue('--fit')) apart = true;
+              }
+              showName(els.exerciseA, { name: 'Wall balls' });
+              els.cueA.textContent = 'Squat deep, throw to the target';
+              makeRoom();
+              return { full: [...full], hidden: [...hidden], broken: [...broken], gave: gave.size, apart,
+                       short: !els.cueA.classList.contains('makes-way') && !els.exerciseA.closest('.person').classList.contains('snug') };
+            }, scale);
+            assert(!room.full.length && !room.hidden.length && !room.broken.length && !room.apart && room.short,
+                   `${people === 2 ? 'two' : 'one'}, text at ${scale}, ${width} x ${height}, every move in ${scene === 'work' ? 'work' : 'a rest'}: no card scrolls (${room.full}), ` +
+                   `the name in sight (${room.hidden}), no word broken (${room.broken}), both cards alike, a short name keeps its cue: ${JSON.stringify(room)}`);
+            if (people === 2 && scene === 'rest' && width === 951 && height === 585) note(`text at ${scale} on a Duo in Safari, moves whose card makes room in a rest: ${room.gave}`);
           }
-          showName(els.exerciseA, { name: 'Wall balls' });
-          els.cueA.textContent = 'Squat deep, throw to the target';
-          makeRoom();
-          return { full, gave: gave.size, short: !els.cueA.classList.contains('makes-way') && !els.exerciseA.closest('.person').classList.contains('snug') };
-        }, scale);
-        assert(!room.full.length && room.short, `text at ${scale}, ${width} x ${height}, every move in a rest: no card scrolls (${room.full}), a short name keeps its cue: ${JSON.stringify(room)}`);
-        if (width === 951 && height === 585) note(`text at ${scale} on a Duo in Safari, moves whose card makes room: ${room.gave}`);
+        }
       }
     }
     await ev(() => { state.textScale = 1; applyTextScale(); });
+    // paused, there's no tick to fit the cards again: the text size and
+    // Exercise demos (tapped as anyone would) fit them all the same, on a
+    // Duo in Safari in a rest with a long name and its weight on a card
+    await open('short', "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2");
+    await L.setViewportSize({ width: 951, height: 585 });
+    await ev(() => {
+      pauseTimer(); render();
+      const e = Object.values(EXERCISES).find(x => x.name === 'Romanian deadlifts');
+      showName(els.exerciseA, { name: e.name, display: `${e.name} · 24kg`, load: '24kg' });
+      els.cueA.textContent = e.cue;
+      makeRoom();
+    });
+    const fitted = () => ev(() => {
+      const look = () => [...els.exerciseGrid.querySelectorAll('.person')]
+        .map(c => [c.className, c.style.getPropertyValue('--fit'), ...[...c.querySelectorAll('.makes-way')].map(e => e.className)].join(' ')).join(' | ');
+      const now = look(), fits = [...els.exerciseGrid.querySelectorAll('.person')].every(c => c.scrollHeight <= c.clientHeight + 1);
+      roomKey = ''; makeRoom();
+      return { fits, now, fresh: look() };
+    });
+    for (const [what, tap] of [['the large text', '.text-size .mini-btn[data-scale="1.2"]'], ['Exercise demos off', '#showPhotos'],
+                               ['Exercise demos on', '#showPhotos'], ['the usual text', '.text-size .mini-btn[data-scale="1"]']]) {
+      await L.click(tap);
+      const room = await fitted();
+      assert(room.fits && room.now === room.fresh, `paused, ${what}: every card fitted at once, as it would be from scratch: ${JSON.stringify(room)}`);
+    }
+    await ev(() => { els.scroller.scrollTop = 0; resetWorkout(); });
+
+    // from the home screen or as the app (the page under the status bar and
+    // the home bar): Pause and Up next (or what's coming, in a rest) line up
+    // above the home bar, and nothing of what's below peeks in under them
+    {
+      const cdp = await lx.newCDPSession(L);
+      const inset = (insets) => cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 0, right: 0, ...insets } }).then(() => true, () => false);
+      if (!(await inset({ top: 0, bottom: 0 }))) note('this Chromium has no safe-area override: the home bar check is skipped');
+      else {
+        for (const [width, height, top, bottom] of [[1180, 820, 24, 20], [951, 669, 0, 20], [1180, 820, 0, 0]]) {
+          await inset({ top, bottom });
+          await L.setViewportSize({ width, height });
+          for (const find of ["x.kind === 'work' && x.blockIdx === 0 && x.round === 2", "x.kind === 'rest' && x.blockIdx === 0 && x.round === 2"]) {
+            await open('short', find);
+            await settle();
+            const at = await ev(() => {
+              const shown = (e) => e && e.getClientRects().length > 0;
+              const next = [document.getElementById('upcoming'), document.getElementById('btnNextBlock')].find(shown);
+              const below = [els.workoutNote, els.preStart, document.querySelector('#workoutView .toggle-row')].filter(shown).map(e => e.getBoundingClientRect().top);
+              return { pause: els.btnStart.getBoundingClientRect().bottom, next: next.getBoundingClientRect().bottom, below: Math.min(...below), h: innerHeight };
+            });
+            assert(Math.abs(at.pause - at.next) <= 1 && at.next <= at.h - bottom && at.below >= at.h,
+                   `${width} x ${height}, a home bar of ${bottom}: Pause and Up next line up above it, nothing below in sight: ${JSON.stringify(at)}`);
+          }
+        }
+        await inset({ top: 0, bottom: 0 });
+      }
+      await cdp.detach();
+    }
+
+    // nothing moves from one part of a session to the next: from the
+    // warm-up's end to the last move Up next (or what's coming, in a rest)
+    // keeps its place, and wherever the block's line over the clock stays
+    // the same (a new block can say how its style works), the clock keeps
+    // its size and place and the cards their foot, work to rest and back,
+    // each count and each stretch; on a fold too, through an AMRAP, For Time
+    // and a Surf check
+    for (const [how, sizes] of [['short', [[1180, 820], [951, 600], [778, 820]]], ['amrap', [[1180, 820], [951, 600]]],
+                                ['fortime', [[951, 669]]], ['check', [[951, 600], [778, 820]]]]) {
+      await open(how, "x.kind === 'warmup'");
+      for (const [width, height] of sizes) {
+        await L.setViewportSize({ width, height });
+        const moved = await ev(async () => {
+          stopTimer();
+          const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+          const shown = (e) => e && e.getClientRects().length > 0;
+          const seen = [];
+          for (let i = 0; i < state.sequence.length; i++) {
+            const ph = state.sequence[i];
+            seekTo(i); render(); await frame();
+            if (ph.kind === 'warmup') continue;
+            const next = [document.getElementById('upcoming'), document.getElementById('btnNextBlock')].find(shown);
+            seen.push({ i, kind: ph.kind, over: Math.round(document.querySelector('#workoutView .block-info').getBoundingClientRect().height),
+                        px: getComputedStyle(els.timeDisplay).fontSize,
+                        top: els.timeDisplay.getBoundingClientRect().top, foot: els.exerciseGrid.getBoundingClientRect().bottom,
+                        next: next ? Math.round(next.getBoundingClientRect().left) : null });
+          }
+          const out = [], places = new Set(seen.filter(x => x.next !== null).map(x => x.next));
+          if (places.size > 1) out.push('Up next at x ' + [...places].join(', '));
+          for (let k = 1; k < seen.length; k++) {
+            const a = seen[k - 1], b = seen[k];
+            if (a.over !== b.over || (a.kind === 'cooldown') !== (b.kind === 'cooldown')) continue;
+            if (a.px !== b.px || Math.abs(a.top - b.top) > 1 || Math.abs(a.foot - b.foot) > 1) {
+              out.push(`${a.kind} ${a.i} to ${b.kind} ${b.i}: the clock ${a.px} to ${b.px}, ${Math.round(b.top - a.top)}px down, the cards' foot ${Math.round(b.foot - a.foot)}px`);
+            }
+          }
+          return out;
+        });
+        assert(!moved.length, `${how}, ${width} x ${height}: nothing moves through the session, but ${moved.slice(0, 4).join('; ')}`);
+      }
+    }
+
+    // back after time away on a Duo in Safari, which doesn't say where its
+    // fold is: the question over the clock's half, Go back and I kept going
+    // over the people's, the middle clear
+    await open('short', "x.kind === 'work' && x.blockIdx === 0 && x.round === 2");
+    for (const [width, height] of [[951, 585], [951, 669], [778, 820]]) {
+      await L.setViewportSize({ width, height });
+      const away = await ev(() => {
+        askAway({ at: Date.now() - 30000, elapsed: state.elapsedTotal });
+        const at = (e) => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; };
+        const out = { mid: innerWidth / 2, words: at(els.awayText), buttons: [...document.querySelectorAll('#awayBar button')].map(at) };
+        hideAway();
+        return out;
+      });
+      assert(away.buttons.length === 2 && away.words[1] <= away.mid - 6 && away.buttons.every(([l]) => l >= away.mid + 6),
+             `${width} x ${height}: the time away question clear of the middle: ${JSON.stringify(away)}`);
+    }
+
+    // a part of ten minutes or more (an AMRAP or For Time in a long mix)
+    // keeps the clock's size all the way: no growing at 9:59, or shrinking
+    // at 10:00 counting up
+    await ev(() => {
+      state.people = 2;
+      buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: 'mix', mix: ['amrap', 'fortime'], minutes: 30 }, 4242);
+    });
+    await L.click('#btnStart');
+    await L.setViewportSize({ width: 1180, height: 820 });
+    const long = await ev(() => {
+      stopTimer();
+      const out = [];
+      for (const ph of state.sequence.filter(x => x.duration >= 600 && (x.amrap || x.forTime))) {
+        seekTo(state.sequence.indexOf(ph));
+        const at = [];
+        for (const left of [ph.duration, 601, 599, 1]) { state.remainingInPhase = left; render(); at.push(`${els.timeDisplay.textContent} ${getComputedStyle(els.timeDisplay).fontSize}`); }
+        out.push({ part: ph.amrap ? 'AMRAP' : 'For Time', at });
+      }
+      return out;
+    });
+    assert(long.length && long.every(x => new Set(x.at.map(t => t.split(' ')[1])).size === 1),
+           'a part of ten minutes or more keeps the clock its size: ' + JSON.stringify(long));
+    await ev(() => resetWorkout());
+
     // in sight: on the screen and not cut off by the card it's in (or
     // anything else that scrolls), for each element a selector finds that
     // the layout shows (one it leaves out on purpose, like a lap's head on
@@ -4528,7 +4700,7 @@ try {
       }
     }
     await lx.close();
-    ok('landscape: a link with ?land=b opens FIT, with no switch, and the layout the trial kept is cleared; on an iPad on its side (11-inch, 13-inch and mini, as an app and in Safari), a Duo opened flat (951 x 585, 620 and 669), other folds (884 x 700, 800 x 830, 984 x 1092) and two-thirds Split View (778 x 820) the clock is on the left and both people on the right, a fold\'s middle clear, with the clock, both names, their moves and Pause, Skip and Reset on one screen in work (Up next too), a rest, an AMRAP and a Surf check count, and at the largest text; Up next is never cut short; no card ever scrolls on a Duo, a long name\'s cue making way whole, at every text size; the clock fits at 0:19 and 20:00; paused, Swap is on no name or figure; a lap is never cut short; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it and the time away question clear of it; an iPad upright, Split View, the Duo closed and every phone, and the home screen and setup at every size, are as they were');
+    ok('landscape: a link with ?land=b opens FIT, with no switch, and the layout the trial kept is cleared; on an iPad on its side (11-inch, 13-inch and mini, as an app and in Safari), a Duo opened flat (951 x 585, 620 and 669), other folds (884 x 700, 800 x 830, 984 x 1092), two-thirds Split View (778 x 820) and a computer\'s window (1440 x 900) the clock is on the left and both people on the right, a fold\'s middle clear, with the clock, both names, their moves and Pause, Skip and Reset on one screen in work (Up next too), a rest, an AMRAP and a Surf check count, and at the largest text; Up next is never cut short; every move, for two and for one, in work and a rest, at every text size, on an iPad, a Duo and Split View: no card scrolls, the name in sight and no word broken over two lines (a long word brings the name down, both cards alike), a long name\'s cue making way whole; paused, the text size and demos fit the cards at once; as an app, Pause and Up next line up above the home bar with nothing below peeking in; through a session (an AMRAP, For Time and a Surf check on a fold too) Up next keeps its place, and the clock its size and place, and the cards their foot, from work to rest, count to count and stretch to stretch; the time away question clear of a Duo\'s middle; a part of ten minutes or more keeps the clock its size; the clock fits at 0:19 and 20:00; paused, Swap is on no name or figure; a lap is never cut short; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it and the time away question clear of it; an iPad upright, Split View, the Duo closed and every phone, and the home screen and setup at every size, are as they were');
   }
 
   step = 'opens offline after the first visit';

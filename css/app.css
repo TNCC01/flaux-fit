@@ -979,8 +979,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
 }
 
 /* Start, Skip and Reset stay on screen however long the cards get, the
-   same way the Build button does: on a phone, and on an iPad in landscape
-   with two people and the demos on */
+   same way the Build button does: on a phone, and on an iPad upright with
+   two people and the demos on (on its side, see Landscape below) */
 .controls {
   display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.6rem;
   position: sticky; bottom: 0; z-index: 5;
@@ -1194,7 +1194,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
             10 tall or wider) and 600 up, a book-style fold opened flat,
             which takes in an iPad's two-thirds Split View window with the
             iPad on its side too (about 778 x 820, 1014 x 1024 on a 12.9").
-            Never an iPad upright, a narrower Split View or a phone.
+            Never an iPad upright, a narrower Split View or a phone. A
+            browser window on a computer that size gets it too.
     iPad    L and over 1050 wide: the clock a little narrower than the people
     halves  L and 1050 wide or less (a Duo or a fold opened out, a narrow
             window): two even halves, the gap on the screen's middle, so
@@ -1213,13 +1214,18 @@ body.show-alternatives .alternative.has-alt { display: block; }
   html:root #workoutView .person-head {
     display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-width: 0; margin-bottom: 0.4rem;
   }
+  /* whose card it is, big enough to read from across the room */
   html:root #workoutView .person-head > .person-label {
-    margin-bottom: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-bottom: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.25rem;
   }
   html:root #workoutView .person-head > .swap-btn { position: static; flex: none; }
-  /* a word too long for the card at the size it's set ("Kettlebell" at
-     the largest text) breaks, rather than run off the card's edge (only
-     then: a name that fits is never broken) */
+  /* Every name's size here is times --fit, which makeRoom (js/app.js) puts
+     on the cards: under 1 where a word is too wide for its card at that
+     size ("Woodchops" at the largest text), so the name comes down until
+     the word fits whole, the same on both cards; and a size down on both
+     (snug) if a card is still too full once its cue and Up next have made
+     way. Only until that's measured, a word too wide breaks rather than
+     run off the card's edge. */
   html:root #workoutView :is(.exercise-name, .exercise-reps) { overflow-wrap: break-word; }
 
   /* A Surf check's end: each test on a line, its name, the number to beat
@@ -1266,7 +1272,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
     grid-template-areas:
       "top top" "prog prog"
       "block people" "timer people" "timer nextb" "ctrl up"
-      "note note" "pre pre" "tog tog";
+      "foot foot" "note note" "pre pre" "tog tog";
+    --two-lines: 6.4rem;
   }
   /* the first screen is the screen: an empty item over the first six rows
      (a row added above means a new span here), the height of the screen,
@@ -1275,6 +1282,13 @@ body.show-alternatives .alternative.has-alt { display: block; }
   html:root #workoutView.active::before {
     content: ''; grid-row: 1 / 7; grid-column: 1; visibility: hidden; pointer-events: none;
     height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1rem);
+  }
+  /* and nothing of what's below peeks in under it: a row the height of the
+     strip the home bar keeps clear (from the home screen or as the app),
+     so the note and Share start past the screen's foot */
+  html:root #workoutView.active::after {
+    content: ''; grid-area: foot; visibility: hidden; pointer-events: none;
+    height: calc(env(safe-area-inset-bottom, 0px) + 0.25rem);
   }
   html:root #workoutView > .top-bar { grid-area: top; padding: 0.35rem 0.25rem 0; }
   /* the question after time away covers the top bar until it's answered */
@@ -1289,10 +1303,18 @@ body.show-alternatives .alternative.has-alt { display: block; }
   /* in a rest the cards are what's next, so the button takes Up next's place */
   html:root #workoutView.resting > .next-block-btn { grid-area: up; }
   html:root #workoutView > .upcoming { grid-area: up; align-self: stretch; }
-  html:root #workoutView > .controls {
-    grid-area: ctrl; align-self: end;
-    padding-top: 0; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.25rem);
-  }
+  /* Up next keeps its place once it's going, there but not seen when it
+     has nothing to say (a rest, when the cards and the button say it, and
+     the last move), and is never less than two lines of it (three where it
+     can have three), so the clock and the people stay where they are from
+     the first phase to the last. (A little taller than two lines: a box
+     taller than its minimum here would push the first screen past the
+     screen's foot.) The screen's foot is kept clear above, so the buttons'
+     foot lines up with Up next's. */
+  html:root #workoutView.active:not(.finished) > .upcoming { display: flex; min-height: var(--two-lines); }
+  html:root #workoutView.active.resting > .upcoming,
+  html:root #workoutView.active > .upcoming:empty { visibility: hidden; }
+  html:root #workoutView > .controls { grid-area: ctrl; align-self: end; padding-top: 0; padding-bottom: 0; }
   html:root #workoutView > #workoutNote { grid-area: note; }
   html:root #workoutView > .pre-start { grid-area: pre; }
   html:root #workoutView > .toggle-row { grid-area: tog; }
@@ -1314,7 +1336,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
   html:root #workoutView .block-name { font-size: 1.25rem; }
   html:root #workoutView .controls button { padding: 1.1rem 0.4rem; font-size: 1.2rem; }
   html:root #workoutView .upcoming { padding: 0.7rem 1rem; }
-  html:root #workoutView .upcoming .txt { font-size: 1.12rem; line-height: 1.3; }
+  html:root #workoutView .upcoming .eyebrow { font-size: 0.8rem; }
+  html:root #workoutView .upcoming .txt { font-size: 1.3rem; line-height: 1.3; }
   html:root #workoutView .upcoming .txt strong {
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   }
@@ -1381,22 +1404,29 @@ body.show-alternatives .alternative.has-alt { display: block; }
   @media (min-width: 1051px) {
     html:root body.view-workout .app { max-width: 1500px; }
     html:root #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
-      font-size: calc(clamp(1.9rem, 3.4vw, 3rem) * var(--ex-scale));
+      font-size: calc(clamp(1.9rem, 3.4vw, 3rem) * var(--ex-scale) * var(--fit, 1));
     }
     html:root #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
-      font-size: calc(clamp(2.6rem, 5vw, 4.4rem) * var(--ex-scale));
+      font-size: calc(clamp(2.6rem, 5vw, 4.4rem) * var(--ex-scale) * var(--fit, 1));
     }
     /* in a rest the cards are what's next, so bigger, as they are
-       everywhere else, as big as the card takes a long word ("Rotational") */
+       everywhere else, as big as the card takes a long word ("Rotational"),
+       and (for one person too) not as much bigger at the larger text */
     html:root #workoutView.resting .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
-      font-size: calc(min(clamp(2.3rem, 4.4vw, 3.6rem), 16.5cqi) * min(var(--ex-scale), 1.3));
+      font-size: calc(min(clamp(2.3rem, 4.4vw, 3.6rem), 16.5cqi) * min(var(--ex-scale), 1.3) * var(--fit, 1));
     }
     /* (Safari on an iPad, at the largest text: the cue makes way) */
     @media (max-height: 760px) {
       html:root[data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
     }
     html:root #workoutView.resting .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
-      font-size: calc(min(clamp(3rem, 6.5vw, 5.2rem), 16.5cqi) * var(--ex-scale));
+      font-size: calc(min(clamp(3rem, 6.5vw, 5.2rem), 16.5cqi) * min(var(--ex-scale), 1.3) * var(--fit, 1));
+    }
+    /* the "Up next" over each card in a rest, to read from across the room */
+    html:root #workoutView .next-eyebrow { font-size: 0.9rem; }
+    /* a stretch's name, as big as one person's */
+    html:root #workoutView:has(> .timer-card:is(.cooldown, .stretch)) .person:has(> .ex-anim:empty) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(2.6rem, 5vw, 4.4rem) * var(--ex-scale) * var(--fit, 1));
     }
   }
 
@@ -1409,29 +1439,45 @@ body.show-alternatives .alternative.has-alt { display: block; }
       padding-left: max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
       padding-right: max(0.75rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
     }
-    html:root #workoutView.active { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 1.5rem; }
-    /* a count to tap (a lap, a Surf check): the people have their half to
-       the foot, and Up next goes over under the clock */
-    html:root #workoutView.active:has(.round-counter:not([hidden])) {
+    html:root #workoutView.active { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 1.5rem; --two-lines: 5rem; }
+    /* a session with laps (an AMRAP, For Time): the people have their half
+       to the foot for the lap and its count, and Up next (or what's
+       coming, in a rest) goes over under the clock, from the warm-up's end
+       to the cool-down's, so nothing moves from one part to the next
+       (laps, from openWorkout in js/app.js). A Surf check's counts fit
+       as they are; its results at the end have the half to the foot too. */
+    html:root #workoutView.active.laps:has(> .pre-start.underway):not(.finished):not(:has(> .timer-card.warmup)),
+    html:root #workoutView.active.finished:has(.round-counter:not([hidden])) {
       grid-template-areas:
         "top top" "prog prog"
         "block people" "timer people" "up people" "ctrl people"
-        "note note" "pre pre" "tog tog";
+        "foot foot" "note note" "pre pre" "tog tog";
     }
     html:root #workoutView .upcoming { padding: 0.5rem 0.8rem; }
     html:root #workoutView .upcoming .txt { font-size: 1rem; line-height: 1.25; }
+    html:root #workoutView .person-head > .person-label { font-size: 1rem; }
+    /* the block's name on one line, so the clock doesn't move from one
+       cool-down stretch to the next (the cards say the move in full) */
+    html:root #workoutView:not(.finished) .block-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* the question after time away: its words over the clock's half and Go
+       back and I kept going over the people's, the middle clear (Safari on
+       a Duo doesn't say where its fold is) */
+    html:root #workoutView > .away-bar:not([hidden]) {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 1.5rem;
+    }
     /* (with the height for it, a two-thirds Split View, three lines of it,
        so two long names and their weights are never cut short) */
     @media (min-height: 700px) {
       html:root #workoutView .upcoming .txt strong { -webkit-line-clamp: 3; }
+      html:root #workoutView.active { --two-lines: 6.25rem; }
     }
     /* (a fold opened out can be as wide as an iPad: its names in a rest
        are put back to a half's) */
     html:root #workoutView.resting .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
-      font-size: calc(clamp(1.5rem, 3vw, 2.1rem) * min(var(--ex-scale), 1.25));
+      font-size: calc(clamp(1.5rem, 3vw, 2.1rem) * min(var(--ex-scale), 1.25) * var(--fit, 1));
     }
     html:root #workoutView.resting .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
-      font-size: calc(clamp(2rem, 4.2vw, 2.8rem) * var(--ex-scale));
+      font-size: calc(clamp(2rem, 4.2vw, 2.8rem) * var(--ex-scale) * var(--fit, 1));
     }
     /* Skip block on one line in a half (a two-thirds Split View window) */
     html:root #workoutView .controls { grid-template-columns: 1.4fr 1fr 1fr; }
@@ -1456,23 +1502,22 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html:root #workoutView .exercise-grid:not(.solo) .person.a { border-top: 2px solid var(--border); border-left: 6px solid var(--accent); }
     html:root #workoutView .exercise-grid:not(.solo) .person.b { border-top: 2px solid var(--border); border-left: 6px solid var(--accent-b); }
     html:root #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
-      font-size: calc(clamp(1.5rem, 3vw, 2.1rem) * min(var(--ex-scale), 1.25));
+      font-size: calc(clamp(1.5rem, 3vw, 2.1rem) * min(var(--ex-scale), 1.25) * var(--fit, 1));
     }
     html:root #workoutView .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
-      font-size: calc(clamp(2rem, 4.2vw, 2.8rem) * var(--ex-scale));
+      font-size: calc(clamp(2rem, 4.2vw, 2.8rem) * var(--ex-scale) * var(--fit, 1));
     }
     /* (where the halves are tall, a two-thirds Split View, the names a size
        up, to read from across the room: the cards have the height) */
     @media (min-height: 760px) {
       html:root #workoutView .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps),
       html:root #workoutView.resting .exercise-grid:not(.solo) :is(.exercise-name, .exercise-reps) {
-        font-size: calc(clamp(1.75rem, 3.6vw, 2.4rem) * min(var(--ex-scale), 1.25));
+        font-size: calc(clamp(1.75rem, 3.6vw, 2.4rem) * min(var(--ex-scale), 1.25) * var(--fit, 1));
       }
     }
-    /* (a card still too full once its cue and Up next have made way: its
-       name a size down, makeRoom in js/app.js) */
-    html:root #workoutView .exercise-grid:not(.solo) .person.snug :is(.exercise-name, .exercise-reps) {
-      font-size: calc(clamp(1.5rem, 3vw, 2.1rem) * min(var(--ex-scale), 1.25) * 0.86);
+    /* (a stretch's name, as big as one person's) */
+    html:root #workoutView:has(> .timer-card:is(.cooldown, .stretch)) .person:has(> .ex-anim:empty) :is(.exercise-name, .exercise-reps) {
+      font-size: calc(clamp(2rem, 4.2vw, 2.8rem) * var(--ex-scale) * var(--fit, 1));
     }
     html:root #workoutView .exercise-grid:not(.solo) .load { display: inline; }
     html:root #workoutView .exercise-grid:not(.solo) .load::before { content: ' '; }
@@ -1495,7 +1540,6 @@ body.show-alternatives .alternative.has-alt { display: block; }
        for its figure in 3D, as ever) */
     @media (max-height: 680px) {
       html:root #workoutView .exercise-grid:not(.solo) .person.amrap { grid-template-columns: minmax(0, 1fr); }
-      html:root #workoutView .exercise-grid:not(.solo) .person.amrap > .ex-anim { display: none; }
       html:root #workoutView .exercise-grid:not(.solo) .person:has(> .round-counter:not([hidden])) .exercise-cue { display: none; }
       /* (in a Surf check's test too: the test's standard is by the clock) */
       html:root #workoutView.checking .exercise-grid:not(.solo) .exercise-cue { display: none; }
@@ -1523,10 +1567,13 @@ body.show-alternatives .alternative.has-alt { display: block; }
     }
     html:root #workoutView .person.amrap .exercise-cue,
     html:root[data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
+    /* a lap for each of two: the lap and its count have the card (tap one
+       for its figure in 3D, as ever) */
+    html:root #workoutView .exercise-grid:not(.solo) .person.amrap > .ex-anim { display: none; }
     html:root #workoutView .circuit li { font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.05)); }
     /* the question after time away, as small as it goes over the top bar,
        and the line on how a style works makes way for it */
-    html:root #workoutView > .away-bar { padding: 0.4rem 0.6rem 0.4rem 0.9rem; }
+    html:root #workoutView > .away-bar { padding: 0.4rem 0.75rem; }
     html:root #workoutView .away-text { font-size: 1.05rem; }
     html:root #workoutView .away-actions button { padding: 0.6rem 0.5rem; }
     html:root #workoutView:is(.asking-away, .going-noted) :is(.round-hint, .round-how) { display: none; }
@@ -1540,7 +1587,16 @@ body.show-alternatives .alternative.has-alt { display: block; }
       column-gap: calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-right 0 0, 50vw) + 1.5rem);
     }
     html:root #workoutView > .away-bar { grid-area: 1 / 1; }
+    html:root #workoutView > .away-bar:not([hidden]) { display: flex; }
   }
+
+  /* a stretch (the cool-down's too): no figure, so the words have the card,
+     in the middle of it, and the name a size up (with each size's names,
+     above) */
+  html:root #workoutView:has(> .timer-card:is(.cooldown, .stretch)) .person:has(> .ex-anim:empty) {
+    justify-content: center; align-content: center; grid-template-rows: none;
+  }
+  html:root #workoutView:has(> .timer-card:is(.cooldown, .stretch)) .person > .ex-anim:empty { display: none; }
 
   /* a card a long name has filled: the cue makes way, whole, then Up next
      (makeRoom in js/app.js) */

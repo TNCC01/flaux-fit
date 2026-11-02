@@ -426,10 +426,15 @@ rather than hardcoded.
   opened out it's two even halves, the fold in the gap (a column either
   side of it, where the screen says where its fold is), and an iPad's
   two-thirds Split View window, with the iPad on its side, gets it too
-  (about 778 x 820, or 1014 x 1024 on the biggest). A name too long for
-  its card on a short screen has the line of coaching under it make way,
-  whole, rather than cut it off. An iPad upright, a narrower Split View
-  and every phone are as they were
+  (about 778 x 820, or 1014 x 1024 on the biggest). So does a browser
+  window on a computer that size. Nothing moves from one part of a session
+  to the next: the clock, the people and Up next stay where they are from
+  work to rest, and on a fold a session with laps or a Surf check keeps
+  the one arrangement throughout. A name with a word too wide for its card
+  (at the larger text) comes down until the word fits whole, the same on
+  both cards; a name too long for its card on a short screen has the line
+  of coaching under it make way, whole, rather than cut it off. An iPad
+  upright, a narrower Split View and every phone are as they were
 - The badge by the workout's name ("1 person · Add a mate", "Wayne & Dave
   · Just me?") is a button until Start: a tap changes one person for two
   and back, the same moves shared out again, for when a mate turns up (or

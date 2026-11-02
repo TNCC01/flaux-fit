@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v24';
+const RELEASE = 'fit-v25';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -2455,6 +2455,9 @@ function openWorkout(workout) {
   els.workoutTitle.textContent = run ? run.day : workout.name;
   els.peopleBadge.textContent = peopleText();
   els.exerciseGrid.classList.toggle('solo', state.people === 1);
+  // laps in it (an AMRAP, For Time): in landscape on a Duo, the one
+  // arrangement for all of it, warm-up aside (css/app.css)
+  els.workoutView.classList.toggle('laps', state.sequence.some(x => x.amrap || x.forTime));
   els.personB.style.display = state.people === 1 ? 'none' : '';
   els.labelA.textContent = state.people === 1 ? 'You' : personName('a');
   els.labelB.textContent = personName('b');
@@ -3310,7 +3313,7 @@ function render() {
     label = done ? 'Done' : 'Hold';
     clockSec = done ? Math.max(s.a || 0, s.b || 0) : Math.floor(phaseElapsed(phase));
   }
-  showClock(clockSec);
+  showClock(clockSec, phase.duration);
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
   // the phase and block are read out as they change (aria-live), so only
   // write them when they do, not five times a second
@@ -3380,12 +3383,14 @@ function render() {
 
 // The clock, as "0:19", with its length on it (data-len, 4 for "0:19" and
 // 5 for "20:00"), so the landscape layout (css/app.css) can size each to
-// fit. Written only when it changes, not five times a second.
-function showClock(sec) {
+// fit. The length is the longest the phase reads (most, its seconds), so an
+// 11-minute AMRAP keeps the one size all the way down, rather than growing
+// at 9:59. Written only when it changes, not five times a second.
+function showClock(sec, most = sec) {
   const t = fmt(sec), el = els.timeDisplay;
-  if (el.textContent === t) return;
-  el.textContent = t;
-  el.dataset.len = String(t.length);
+  const len = String(Math.max(t.length, fmt(most).length));
+  if (el.dataset.len !== len) el.dataset.len = len;
+  if (el.textContent !== t) el.textContent = t;
 }
 // A person's move on their card: "Goblet squats · 15kg", with the weight
 // in a span of its own when it has one, so the landscape layout can put
@@ -3397,14 +3402,21 @@ function showName(el, d) {
   const part = (cls, t) => { const s = document.createElement('span'); s.className = cls; s.textContent = t; return s; };
   el.replaceChildren(part('ex-base', d.name), part('load-sep', ' · '), part('load', d.load));
 }
-// On a short screen on its side (an opened Duo in Safari, say), a long
-// name and its weight can fill a card in the landscape layout: the line of
-// coaching under it makes way, whole, rather than the card scrolling it out
-// of sight, then Up next over it in a rest (the clock says Rest), and at
-// the largest text, if it's still too full, the name comes down a size
-// (snug). Measured only when what's on the cards, the screen or a card's
-// size changes (Start shows them, in landscape). A card that isn't that
-// full keeps it all, and css/app.css only does any of it in landscape, so
+// The cards in the landscape layout are the height and width the screen
+// gives them, so what's on them has to fit:
+//   - at the larger text a long word ("Woodchops") can be wider than its
+//     card: the name comes down until its widest word fits whole (--fit),
+//     on both cards, so they still match;
+//   - on a short screen (an opened Duo in Safari, say) a long name and its
+//     weight can fill a card: the line of coaching under it makes way,
+//     whole, rather than the card scrolling it out of sight;
+//   - then, if a card is still too full, Up next over the names in a rest
+//     (the clock says Rest) on both cards;
+//   - and if one is still too full (mostly at the larger text sizes), both
+//     names come down a size (snug), and another if that's not enough.
+// Measured only when what's on the cards, the screen, the text size or a
+// card's size changes (Start shows them, in landscape). A card with the
+// room keeps it all, and css/app.css only does any of it in landscape, so
 // everywhere else looks as it always has.
 let roomKey = '';
 function makeRoom() {
@@ -3412,16 +3424,45 @@ function makeRoom() {
     els.exerciseGrid.className, els.exerciseGrid.textContent, els.swapA.hidden, els.swapB.hidden].join('|');
   if (key === roomKey) return;
   roomKey = key;
-  for (const card of els.exerciseGrid.querySelectorAll('.person')) {
-    const full = () => !!card.offsetParent && card.scrollHeight > card.clientHeight + 1;
-    const gives = [card.querySelector('.exercise-cue'), card.querySelector('.next-eyebrow')];
+  const all = [...els.exerciseGrid.querySelectorAll('.person')];
+  const cards = all.filter(card => card.offsetParent);
+  const gives = (card) => [card.querySelector('.exercise-cue'), card.querySelector('.next-eyebrow')];
+  for (const card of all) {
     card.classList.remove('snug');
-    for (const e of gives) e.classList.remove('makes-way');
-    for (const e of gives) {
-      if (!full()) break;
-      e.classList.add('makes-way');
+    card.style.removeProperty('--fit');
+    for (const e of gives(card)) e.classList.remove('makes-way');
+  }
+  const fitAt = (fit) => cards.forEach(card => card.style.setProperty('--fit', String(fit)));
+  // how many times too wide for its card the widest word on either is:
+  // with the words kept whole, how far the furthest line runs, to the
+  // fraction of a pixel (a word over by less than one still breaks)
+  const names = cards.flatMap(card => [...card.querySelectorAll('.exercise-name, .exercise-reps')]);
+  const over = () => {
+    names.forEach(e => { e.style.overflowWrap = 'normal'; });
+    let most = 1;
+    for (const e of names) {
+      const box = e.getBoundingClientRect(), text = document.createRange();
+      text.selectNodeContents(e);
+      for (const line of text.getClientRects()) if (box.width) most = Math.max(most, (line.right - box.left) / box.width);
     }
-    if (full()) card.classList.add('snug');
+    names.forEach(e => { e.style.overflowWrap = ''; });
+    return most;
+  };
+  let fit = 1;
+  for (let i = 0, by = over(); by > 1 && i < 4; i++) {
+    fit = Math.floor((fit / by) * 0.99 * 1000) / 1000;
+    fitAt(fit);
+    const now = over();
+    if (now >= by) break;            // not landscape: nothing changes size
+    by = now;
+  }
+  const full = (card) => card.scrollHeight > card.clientHeight + 1;
+  for (const card of cards) if (full(card)) gives(card)[0].classList.add('makes-way');
+  if (cards.some(full)) cards.forEach(card => gives(card)[1].classList.add('makes-way'));
+  if (cards.some(full)) cards.forEach(card => card.classList.add('snug'));
+  for (const size of [0.86, 0.76, 0.68]) {
+    if (!cards.some(full)) break;
+    fitAt(fit * size);
   }
 }
 window.addEventListener('resize', makeRoom, { passive: true });
@@ -5740,11 +5781,13 @@ els.btnReset.addEventListener('click', () => {
 els.showPhotos.addEventListener('change', (e) => {
   state.showPhotos = e.target.checked;
   document.body.classList.toggle('hide-photos', !state.showPhotos);
+  makeRoom();                        // (paused, there's no tick to do it)
   savePrefs();
 });
 els.showAlts.addEventListener('change', (e) => {
   state.showAlts = e.target.checked;
   document.body.classList.toggle('show-alternatives', state.showAlts);
+  makeRoom();
   savePrefs();
 });
 // The voice on top of the beeps (see setSound for the beeps themselves).
@@ -5785,6 +5828,8 @@ function applyTextScale() {
   document.querySelectorAll('.text-size .mini-btn').forEach(b => {
     b.classList.toggle('active', Number(b.dataset.scale) === state.textScale);
   });
+  // the cards fitted to it now, not at the next tick (none while paused)
+  makeRoom();
 }
 
 // =====================================================================
@@ -5965,7 +6010,8 @@ function showSettings() {
   renderPeoplePicker();
 }
 // The landscape layouts on trial before this release kept the one picked
-// under 'fit-land'. There's one layout now, for everyone, so it goes.
+// under 'fit-land', only ever on the trial's preview links (it never went
+// live). There's one layout now, so it goes; this can go in a later release.
 try { localStorage.removeItem('fit-land'); } catch (e) { /* storage off */ }
 loadPrefs();
 showSettings();
