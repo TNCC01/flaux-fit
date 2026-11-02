@@ -8,16 +8,23 @@
   did with it:
   - an iPhone: no service worker, no Add to Home Screen hint, a shared
     link that points at fit.flaux.com.au through the Share plugin, the
-    screen kept on from Start to the finish and let go on leaving, a tap
-    on each of 3, 2, 1 and on the next phase, the Apple Health question
-    on the first finish, then one save per finished workout while the
-    switch is on and none while it's off, and a backup through the
-    share sheet;
+    screen let go as the app loads, kept on from Start to the finish and
+    let go on leaving, a tap on each of 3, 2, 1 and on the next phase,
+    the Apple Health question on the first finish (brought into view,
+    with a link to the privacy policy), then one save per finished
+    workout while the switch is on and none while it's off, a reload
+    mid-workout and Resume, a backup through the share sheet, and the
+    privacy policy and support links under Your data;
   - the same, answering Not now, then not allowed;
+  - the question left unanswered: it goes with its finish screen, and
+    turning the switch on later doesn't save that old workout;
   - Android: no Apple Health anywhere, the backup through the share
-    sheet, and the back gesture;
+    sheet, and the back gesture (a sheet first, then the screen's Back);
   - and the website, with no Capacitor at all and with Capacitor that
     isn't native: the bridge does nothing, and the shared link opens.
+    This serves the app's www/, with the bridge in it, to show the
+    bridge does nothing outside the app. The website itself, which
+    never has the bridge, is scripts/e2e.mjs's.
 
     cd app && npm test          (node sync.mjs, then this)
 
@@ -39,6 +46,8 @@ if (!fs.existsSync(path.join(WWW, 'native-bridge.js'))) { console.error('No www/
 const PORT = Number(process.env.PORT) || 5141;
 const URL = `http://127.0.0.1:${PORT}/`;
 const SITE = 'https://fit.flaux.com.au/#w=';
+const PRIVACY = 'https://fit.flaux.com.au/privacy.html';
+const SUPPORT = 'https://fit.flaux.com.au/support.html';
 const SCHEMA = Number(fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8').match(/^const PREFS_SCHEMA = (\d+)/m)[1]);
 
 // ---------------------------------------------------------- static server
@@ -160,6 +169,11 @@ try {
   assert(await count(ios, 'SplashScreen', 'hide') === 1, 'the splash goes once FIT has drawn');
   ok('no Add to Home Screen hint, no Full screen button, the splash let go');
 
+  step = 'the screen is let go as the app loads';
+  assert(await count(ios, 'KeepAwake', 'allowSleep') === 1 && await count(ios, 'KeepAwake', 'keepAwake') === 0,
+         'one allowSleep, in case a page before this one (a web view iOS ended) kept the screen on');
+  ok('KeepAwake let go as the page loads');
+
   step = 'the Apple Health switch is with the settings';
   await openToday(ios);
   assert(await ios.evaluate(() => {
@@ -187,7 +201,7 @@ try {
   step = 'Start keeps the screen on, with a tap';
   await ios.click('#btnStart');
   await waitCalls(ios, 'KeepAwake', 'keepAwake', 1);
-  assert(await count(ios, 'KeepAwake', 'allowSleep') === 0, 'not let go yet');
+  assert(await count(ios, 'KeepAwake', 'allowSleep') === 1, 'not let go yet (only the once, as it loaded)');
   assert(await count(ios, 'Haptics', 'impact') === 1, 'one tap as it starts');
   ok('Start: KeepAwake on, one haptic');
 
@@ -207,10 +221,16 @@ try {
   ok(`haptics: 3, 2, 1, then the ${next.kind} phase`);
 
   step = 'the first finish asks about Apple Health';
+  await ios.setViewportSize({ width: 320, height: 568 });   // the smallest iPhone iOS 15 runs on, where it's below Done
   await runToEnd(ios);
-  await waitCalls(ios, 'KeepAwake', 'allowSleep', 1);
+  await waitCalls(ios, 'KeepAwake', 'allowSleep', 2);
   assert(await count(ios, 'Haptics', 'notification') === 1, 'a success tap at the end');
   assert(await visible(ios, '#healthAsk'), 'the question, on the finish screen');
+  const askInView = () => { const r = document.getElementById('healthAsk').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight + 1; };
+  assert(!(await ios.evaluate(askInView)), 'below Done at first');
+  await ios.waitForFunction(askInView, null, { timeout: 5000 });          // then brought up
+  assert(await ios.$eval('#healthAsk a', a => a.href) === PRIVACY, 'with a link to the privacy policy');
+  await ios.setViewportSize({ width: 390, height: 844 });
   assert(await count(ios, 'FitHealth', 'saveWorkout') === 0 && await count(ios, 'FitHealth', 'requestAuthorization') === 0, 'nothing asked of Health until it is answered');
   const finishedAt = Date.now();
   const expect = await ios.evaluate(() => ({ style: styleIdOf(state.workout), ran: Math.round(timeDone()) }));
@@ -225,7 +245,7 @@ try {
   assert(Object.keys(saved).sort().join() === 'activity,end,start', 'and nothing else: ' + JSON.stringify(saved));
   await ios.waitForFunction(() => document.getElementById('workoutNote').textContent === 'Saved to Apple Health.');
   assert(!(await visible(ios, '#healthAsk')) && await ios.$eval('#healthOn', e => e.checked), 'the question goes, and the switch is on');
-  ok(`Apple Health: asked on the first finish, then one save (${saved.activity}, ${expect.ran} s, ending as it finished)`);
+  ok(`Apple Health: asked on the first finish (brought into view, with the privacy policy), then one save (${saved.activity}, ${expect.ran} s, ending as it finished)`);
 
   step = 'with the switch on, each finish saves once';
   await ios.click('#btnAgain');                     // Start over
@@ -234,7 +254,7 @@ try {
   await waitCalls(ios, 'FitHealth', 'saveWorkout', 2);
   await sleep(300);
   assert(await count(ios, 'FitHealth', 'saveWorkout') === 2 && !(await visible(ios, '#healthAsk')), 'one more save, and no question');
-  assert(await count(ios, 'KeepAwake', 'allowSleep') === 2, 'the screen let go at that finish too');
+  assert(await count(ios, 'KeepAwake', 'allowSleep') === 3, 'the screen let go at that finish too');
   ok('a second finish: one more save, no question, the screen let go');
 
   step = 'leaving a workout lets the screen go';
@@ -243,7 +263,7 @@ try {
   await ios.click('#btnBack');
   await ios.click('#btnBack');                      // Menu takes two taps once it's going
   await ios.waitForSelector('#welcomeView.active');
-  await waitCalls(ios, 'KeepAwake', 'allowSleep', 3);
+  await waitCalls(ios, 'KeepAwake', 'allowSleep', 4);
   assert(await count(ios, 'FitHealth', 'saveWorkout') === 2, 'a workout left part-way is not saved');
   ok('left part-way: the screen let go, nothing saved');
 
@@ -274,11 +294,37 @@ try {
   assert(await count(ios, 'Haptics', 'notification') === 0, 'and there is no success tap');
   ok('skipped through inside a minute: nothing saved, no success tap');
 
+  step = 'a reload mid-workout, then Resume';
+  await ios.click('#btnStart');                     // Done
+  await ios.waitForSelector('#welcomeView.active');
+  await openToday(ios);
+  await ios.click('#btnStart');
+  await waitCalls(ios, 'KeepAwake', 'keepAwake', 2);
+  await ios.reload();                               // as when iOS ends the web view and the app loads FIT again
+  await ios.waitForSelector('#welcomeView.active');
+  assert(await count(ios, 'KeepAwake', 'allowSleep') === 1 && await count(ios, 'KeepAwake', 'keepAwake') === 0, 'the screen let go as FIT loads again');
+  await ios.click('#btnResumeRun');
+  await ios.waitForSelector('#workoutView.active');
+  assert(await count(ios, 'KeepAwake', 'keepAwake') === 0 && await ios.evaluate(() => !state.running), 'not held while it waits for a tap');
+  await ios.click('#btnStart');                     // Resume
+  await waitCalls(ios, 'KeepAwake', 'keepAwake', 1);
+  assert(await count(ios, 'Haptics', 'impact') === 1, 'held again from Resume, with a tap');
+  await runToEnd(ios);
+  await waitCalls(ios, 'FitHealth', 'saveWorkout', 1);
+  const [resumed] = (await calls(ios, 'FitHealth', 'saveWorkout')).map(c => c.args[0]);
+  const ranResumed = await ios.evaluate(() => Math.round(timeDone()));
+  assert(resumed.end - resumed.start === ranResumed * 1000, `the finish saved as one workout of ${ranResumed} s: ` + JSON.stringify(resumed));
+  assert(await count(ios, 'KeepAwake', 'allowSleep') === 2, 'and the screen let go at the finish');
+  ok('a reload mid-workout: the screen let go, Resume holds it again, and the finish is saved');
+
   step = 'a backup goes through the share sheet';
   await ios.click('#btnStart');                     // Done
   await ios.click('#pathLibrary');
   await ios.waitForSelector('#libraryView.active');
   assert((await ios.$eval('.data-about', e => e.textContent)).startsWith('The app keeps its own data'), 'Your data says the app keeps its own');
+  const links = await ios.$$eval('#yourData .app-links a', as => as.map(a => [a.textContent, a.href]));
+  assert(JSON.stringify(links) === JSON.stringify([['Privacy policy', PRIVACY], ['Help and support', SUPPORT]]), 'the privacy policy and support, at its foot: ' + JSON.stringify(links));
+  assert(await visible(ios, '#yourData .app-links'), 'on show');
   await ios.click('#btnBackup');
   await waitCalls(ios, 'Share', 'share', 1);
   const [written] = (await calls(ios, 'Filesystem', 'writeFile')).map(c => c.args[0]);
@@ -287,7 +333,7 @@ try {
   const backupShare = (await calls(ios, 'Share', 'share')).pop().args[0];
   assert(backupShare.files.length === 1 && backupShare.files[0] === 'file:///cache/' + encodeURIComponent(written.path), 'shared from there: ' + JSON.stringify(backupShare));
   assert((await ios.$eval('.data-note', e => e.textContent)).includes('Files or iCloud Drive'), 'and it says where to keep it');
-  ok('backup: written to the cache, shared through the sheet');
+  ok('backup: written to the cache, shared through the sheet; the privacy policy and support links under Your data');
   await iosContext.close();
 
   // =================================== an iPhone that says Not now, then no
@@ -311,6 +357,31 @@ try {
   ok('Not now: nothing asked of Health; turned on but not allowed: off again, and how to allow it');
   await noContext.close();
 
+  // ============================ an iPhone that leaves the question unanswered
+  const { context: laterContext, page: later } = await device('iPhone, later', { platform: 'ios', native: true, health: true });
+  step = 'the question left unanswered goes with its finish screen';
+  await openToday(later);
+  await startAndFinish(later);
+  assert(await visible(later, '#healthAsk'), 'asked at the first finish');
+  await later.click('#btnStart');                   // Done, without answering
+  await later.waitForSelector('#welcomeView.active');
+  await openToday(later);
+  await later.click('#btnStart');
+  while (await later.evaluate(() => !isFinished())) await later.click('#btnSkip');
+  await sleep(300);
+  assert(await later.evaluate(() => endedEarly()) && !(await visible(later, '#healthAsk')), 'not on the finish screen of a session skipped through');
+  await later.click('#healthOn');                   // turned on later, from the settings
+  await waitCalls(later, 'FitHealth', 'requestAuthorization', 1);
+  await sleep(300);
+  assert(await later.$eval('#healthOn', e => e.checked) && await count(later, 'FitHealth', 'saveWorkout') === 0,
+         'on, and the workout the question was about is not saved without a word');
+  await later.click('#btnAgain');                   // Start over
+  await runToEnd(later);
+  await waitCalls(later, 'FitHealth', 'saveWorkout', 1);
+  await later.waitForFunction(() => document.getElementById('workoutNote').textContent === 'Saved to Apple Health.');
+  ok('left unanswered: the question goes with its finish screen, and turned on later only the next finish is saved');
+  await laterContext.close();
+
   // ========================================================== Android
   const { context: androidContext, page: android } = await device('Android', { platform: 'android', native: true, health: false });
   step = 'Android: no Apple Health';
@@ -327,6 +398,7 @@ try {
   await android.click('#btnBackup');
   await waitCalls(android, 'Share', 'share', 1);
   assert((await android.$eval('.data-note', e => e.textContent)).includes('Google Drive'), 'it says where to keep it');
+  assert(await android.$$eval('#yourData .app-links a', as => as.map(a => a.href).join()) === `${PRIVACY},${SUPPORT}`, 'the privacy policy and support links');
   ok('Android: backup through the share sheet, not a download');
 
   step = 'Android: the back gesture';
@@ -338,11 +410,16 @@ try {
   await waitCalls(android, 'App', 'minimizeApp', 1);
   await openToday(android);
   await android.click('#btnStart');
+  await android.click('#btnNextBlock');             // Up next, a sheet over the workout
+  await android.waitForSelector('#nextSheet', { state: 'visible' });
+  await back();
+  assert(await android.evaluate(() => document.getElementById('nextSheet').hidden && state.view === 'workout' && state.running), 'a sheet open: back closes it, and the workout carries on');
+  assert(await android.$eval('#btnBack', e => e.textContent) !== 'Tap again', "and that isn't the first of Menu's two taps");
   await back();
   assert(await android.$eval('#btnBack', e => e.textContent) === 'Tap again' && await android.evaluate(() => state.view === 'workout'), 'mid-workout it asks first, like Menu');
   await back();
   await android.waitForSelector('#welcomeView.active');
-  ok('Android back: the screen\'s own Back, Menu\'s two taps mid-workout, and away from home');
+  ok('Android back: the screen\'s own Back, a sheet closed first, Menu\'s two taps mid-workout, and away from home');
   await androidContext.close();
 
   // ========================================================== the website
@@ -354,6 +431,7 @@ try {
     await web.waitForFunction(() => navigator.serviceWorker.getRegistration().then(r => !!r), null, { timeout: 10000 });
     assert(!(await web.$('#healthToggle')) && !(await web.evaluate(() => [...document.querySelectorAll('style')].some(s => s.textContent.includes('health-ask')))), 'no Health switch, no app styles');
     assert(await web.evaluate(() => finish.toString().includes('stopTimer') && shareUrlFor.toString().includes('location.origin')), "FIT's own functions, unwrapped");
+    assert(await web.evaluate(() => !dataSection().querySelector('.app-links')), 'and no app links under Your data');
     await web.goto(URL + shared.url.slice(shared.url.indexOf('#')));
     await web.waitForSelector('#workoutView.active');
     assert((await web.$eval('#workoutNote', e => e.textContent)).startsWith('Opened from a shared link'), 'the link shared from the app opens the workout');

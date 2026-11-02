@@ -12,9 +12,13 @@ which the website's service worker fetches, so don't):
 - Privacy policy: https://fit.flaux.com.au/privacy.html
 - Support: https://fit.flaux.com.au/support.html
 
-Both pages are new in this branch and go live with the website's next
-deploy. They're linked from nowhere on the site yet, and not in the
-service worker's offline files on purpose.
+Both pages are new on this branch. They go live when it's merged to
+`main` and Vercel deploys, and both have to load before either store
+gets the app (README, Release). The app links to both at the foot of
+Your data, and to the privacy policy from the Apple Health question, as
+Apple asks of every app (guideline 5.1.1). Nothing on the website links
+to them yet, and they're not in the service worker's offline files, on
+purpose.
 
 ## App Store Connect (iOS and iPadOS)
 
@@ -55,7 +59,7 @@ WHAT'S IN IT
 - A fresh workout each day for your time (10 to 60 minutes) and your gear
 - Short bursts, long efforts, EMOM, AMRAP, For Time, or a mix, with a proper warm-up and cool-down
 - Training with a mate: a card each, side by side, with your own reps and level
-- A voice coach that says what's next, and a beep for every change
+- A voice coach that says what's next, a beep for every change, and on iPhone a tap you can feel
 - Moving 3D figures for the moves: tap one to turn it, slow it down and read how to do it
 - Swap any move for one like it, before you start or during a rest
 - Surf Fit: six weeks back to paddle fitness, with paddling, pop-ups and legs, and easy days built in
@@ -118,9 +122,11 @@ Review notes:
 ```
 FIT is a workout timer. There is no account or sign-in, and nothing to buy.
 
-To try it: answer the two first-visit questions (who's training, and what gear), then tap Start on the home screen's Today card, and Start again on the workout. Everything works offline once installed; the app makes no network requests.
+To try it: answer the two first-visit questions (who's training, and what gear), then tap Start on the home screen's Today card, and Start again on the workout. Every file FIT uses is inside the app, so it works in airplane mode from the first launch; the app makes no network requests.
 
-Workouts are generated on the device from FIT's own library for the time and gear chosen. A voice coach (the device's built-in speech) says what's next, and the screen stays awake during a workout.
+Workouts are generated on the device from FIT's own library for the time and gear chosen. A voice coach (the device's built-in speech) says what's next, the iPhone gives a haptic tap at each change (firm as work starts, lighter for the rest, and a tick on each of the last three seconds), and the screen stays awake during a workout.
+
+Privacy policy in the app: at the foot of Saved & ready-made, under Your data, and on the Apple Health question.
 
 Apple Health: after the first workout you finish, FIT asks whether to save workouts to Apple Health. "Save to Apple Health" shows Apple's permission sheet, which asks for write access to Workouts only; FIT reads nothing. Each finished workout is then saved as one HKWorkout (its type, start and end; no calories or heart rate). It can be turned off any time under the workout ("Save to Apple Health"). To reach a finish quickly, tap "Skip block" until the end (a session skipped inside its first minute isn't saved, so let it run a minute first).
 ```
@@ -151,8 +157,32 @@ with the Apple Health question; a 3D move. Upload with
 | Content rating (IARC) | All answers No: Everyone / PEGI 3 | |
 | Target audience | 18 and over (keeps FIT out of the Families programme; nothing is for children) | |
 
-Full description: the App Store one, with the APPLE HEALTH paragraph
-taken out (the Android app doesn't write to Health Connect yet).
+Full description: the App Store one without what Android doesn't have
+yet. No APPLE HEALTH paragraph (no Health Connect until v1.1), and no
+voice coach: Android's web view has no speech, so FIT hides the voice
+coach there. Put it back once Android has a text-to-speech plugin
+(README, Later).
+
+```
+FIT builds a timed workout for the time and gear you've got, then runs the clock, shows what's next and how to do each move. For one person, or two training side by side.
+
+Tell it how long you've got and what's in the garage, from just bodyweight to kettlebells, dumbbells, a barbell, rings and a box. FIT picks the moves, the reps and the style, and swaps anything that needs gear you haven't got for a move that doesn't.
+
+WHAT'S IN IT
+- A fresh workout each day for your time (10 to 60 minutes) and your gear
+- Short bursts, long efforts, EMOM, AMRAP, For Time, or a mix, with a proper warm-up and cool-down
+- Training with a mate: a card each, side by side, with your own reps and level
+- A beep for every change, and on a phone a buzz you can feel
+- Moving 3D figures for the moves: tap one to turn it, slow it down and read how to do it
+- Swap any move for one like it, before you start or during a rest
+- Surf Fit: six weeks back to paddle fitness, with paddling, pop-ups and legs, and easy days built in
+- Stretch routines, named classics like Power Hour, your favourites, and every session you've done
+
+YOURS, ON YOUR DEVICE
+No account, no ads, no subscriptions, nothing to buy. FIT works offline, keeps the screen awake while you train, and keeps everything on your device. Share a workout as a link and it opens the same on any phone, no app needed.
+
+Check with your doctor before starting if you have an injury or health condition, and stop if anything hurts.
+```
 
 Data safety form:
 - Does the app collect or share any of the required user data types? **No.**
@@ -183,4 +213,8 @@ Assets still to make (paths are what `app/scripts/play-publish.mjs upload-graphi
 3. TestFlight and Play internal testing; check Apple Health on a real
    iPhone (a finished workout appears in Health > Browse > Activity >
    Workouts).
-4. Paste this kit into both listings, upload the shots, submit.
+4. Before submitting (README, Release): layout A is the website's
+   default, the branch is merged to `main` and both pages above load on
+   the live site, and Mac and Vision Pro availability decided (unticked
+   unless FIT has been tried there).
+5. Paste this kit into both listings, upload the shots, submit.

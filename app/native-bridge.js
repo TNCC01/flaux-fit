@@ -80,9 +80,14 @@
   // may not be there, or may not hold, so FIT is handed one that keeps the
   // screen on with the KeepAwake plugin. The app's isn't let go in the
   // background, so FIT never needs to ask again on the way back.
+  // The screen kept on belongs to the app, not the page: if iOS ends the
+  // web view mid-workout, the app loads FIT again and nothing would ever
+  // let it go (an iPad in its folio would stay lit). So a page starts by
+  // letting it go, and Resume holds it again.
   // =====================================================================
   const KeepAwake = plugin('KeepAwake');
   if (KeepAwake) {
+    quietly(() => KeepAwake.allowSleep());
     const held = new Set();
     define(navigator, 'wakeLock', {
       async request(type = 'screen') {
@@ -143,9 +148,10 @@
   // =====================================================================
   // LOOKS
   // The Add to Home Screen hint and the Full screen button are for FIT in
-  // a browser; the app is already full screen. And the one-time Apple
-  // Health question (see HEALTH) sits under Save and Share on the finish
-  // screen, and only there.
+  // a browser; the app is already full screen. The one-time Apple Health
+  // question (see HEALTH) sits under Save and Share on the finish screen,
+  // and only there. And the privacy policy and support links sit at the
+  // foot of Your data (see LINKS AND YOUR DATA).
   // =====================================================================
   const looks = document.createElement('style');
   looks.textContent = `
@@ -156,6 +162,9 @@
     .health-ask-title { font-weight: 700; font-size: 1.05rem; }
     .health-ask-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
     .health-ask-actions button { flex: 1 1 12rem; font-size: 1rem; padding: 0.85rem; }
+    .health-ask a, .app-links a { color: var(--teal-bright); font-weight: 700; text-underline-offset: 3px; white-space: nowrap; }
+    .app-links { color: var(--muted); font-size: 0.95rem; margin-top: 1.2rem; padding: 0 0.25rem; }
+    .app-links a { display: inline-block; padding: 0.5rem 0; }
   `;
   document.head.appendChild(looks);
 
@@ -191,9 +200,15 @@
   // at the website, not at the app's own address (capacitor://localhost
   // on an iPhone or iPad, https://localhost on Android). Your data says
   // the app keeps its own, apart from FIT in a browser, which is what it
-  // is there to move. And a backup goes to the share sheet on Android
-  // too, where the browser's download has nowhere to go.
+  // is there to move. A backup goes to the share sheet on Android too,
+  // where the browser's download has nowhere to go. And the foot of Your
+  // data links to the privacy policy and support pages on the website,
+  // as the stores ask of an app (Apple's guideline 5.1.1). Capacitor
+  // opens a link to anywhere but the app's own address in the browser,
+  // so a plain link leaves the app where it was.
   // =====================================================================
+  const PRIVACY = `${SITE}/privacy.html`;
+  const SUPPORT = `${SITE}/support.html`;
   function hookLinksAndData() {
     hook('shareUrlFor', (shareUrlFor) => function () {
       const url = shareUrlFor.apply(this, arguments);
@@ -204,6 +219,10 @@
       const section = dataSection.apply(this, arguments);
       const about = section.querySelector('.data-about');
       if (about) about.textContent = 'The app keeps its own data, apart from FIT in a web browser, so this is how you bring yours across, or move it to another device.';
+      const links = document.createElement('p');
+      links.className = 'app-links';
+      links.innerHTML = `<a href="${PRIVACY}">Privacy policy</a> · <a href="${SUPPORT}">Help and support</a>`;
+      section.appendChild(links);
       return section;
     });
     hook('copyData', (copyData) => function (after, say) {
@@ -286,6 +305,13 @@
   // belongs to the device too. Android has no plugin yet (Health Connect
   // is v1.1), so none of this shows there.
   //
+  // The question is about the workout on the finish screen it's on. Left
+  // unanswered, it goes with that screen (Done, Start over), and so does
+  // the workout it was about: a yes later doesn't quietly save a session
+  // that's no longer on screen. It's asked again at the next finish. On a
+  // phone in portrait it sits below Done, so the first time it's asked
+  // it's brought into view.
+  //
   // What's saved: the kind of workout (FIT's style, as Apple's kinds, see
   // ACTIVITY), and when it ran. FIT's clock doesn't count a pause, so the
   // workout ends as it finished and starts the minutes it ran before
@@ -340,6 +366,7 @@
       }
     };
     let waiting = null;                                // the workout the question is about
+    let broughtIntoView = false;                       // the question, scrolled to once
 
     // ----------------------------- the question, on the first finish screen
     const question = document.createElement('div');
@@ -347,10 +374,14 @@
     question.id = 'healthAsk';
     question.hidden = true;
     question.innerHTML = `<p class="health-ask-title">Save your workouts to Apple Health?</p>
-      <p class="picker-hint">FIT can add each workout you finish to the Health app: the kind of workout, when, and how long. It doesn't read anything from Health.</p>
+      <p class="picker-hint">FIT can add each workout you finish to the Health app: the kind of workout, when, and how long. It doesn't read anything from Health. <a href="${PRIVACY}">Privacy policy</a></p>
       <div class="health-ask-actions"><button id="btnHealthYes">Save to Apple Health</button>
       <button class="secondary" id="btnHealthNo">Not now</button></div>`;
     document.getElementById('preStart').appendChild(question);
+    // gone with its finish screen, unanswered, and the workout with it
+    new MutationObserver(() => {
+      if (!finishedOnScreen()) { waiting = null; question.hidden = true; }
+    }).observe(document.getElementById('workoutView'), { attributes: true, attributeFilter: ['class'] });
 
     // ------------------------------------------- the switch, in the settings
     const row = document.querySelector('#workoutView .toggle-row');
@@ -400,7 +431,19 @@
 
     health.finished = (workout) => {
       const on = healthOn();
-      if (on === null) { waiting = workout; question.hidden = false; return; }
+      if (on === null) {
+        waiting = workout;
+        question.hidden = false;
+        if (!broughtIntoView) {
+          broughtIntoView = true;
+          // just enough to show it (none at all where it's on screen
+          // already, as in landscape), after a moment on the finish
+          setTimeout(() => {
+            if (!question.hidden && finishedOnScreen()) question.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }, 800);
+        }
+        return;
+      }
       if (on) save(workout);
     };
   }
