@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<!--
+  © 2026 Wayne Cavanagh / Flaux. All rights reserved.
+  FIT's support page, for the website and the App Store and Google Play
+  app (FIT by Flaux). The stores link here: https://fit.flaux.com.au/support.html
+  Not part of the app's offline files (sw.js), and linked from nowhere in
+  the app itself.
+-->
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#050a0a">
+<title>Support, FIT by Flaux</title>
+<meta name="description" content="Help with FIT, the Flaux workout timer: sound, the screen, moving your data, Apple Health, and how to get in touch.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+  :root { --bg: #050a0a; --card: #0f1c1c; --border: #1f3333; --text: #f0fdfa; --muted: #94a3b8; --teal: #14b8a6; --teal-bright: #2dd4bf; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+    padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--teal-bright); text-decoration: none; margin-bottom: 20px; }
+  .brand svg { width: 34px; height: 34px; }
+  .brand b { font-size: 1.25rem; letter-spacing: 0.04em; color: var(--text); }
+  .brand span { display: block; font-size: 0.68rem; letter-spacing: 0.22em; color: var(--muted); font-weight: 700; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px 20px; }
+  h1 { font-size: 1.6rem; line-height: 1.2; margin-bottom: 8px; }
+  .lead { color: var(--muted); }
+  h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--teal-bright); margin: 24px 0 8px; }
+  p { font-size: 1rem; margin-bottom: 10px; }
+  strong { color: var(--teal-bright); font-weight: 600; }
+  a { color: var(--teal-bright); }
+  .back { display: inline-block; margin-top: 20px; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <a class="brand" href="/">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="42" r="16" fill="currentColor"/><path d="M20 22 V14 a4 4 0 0 1 4-4 h16 a4 4 0 0 1 4 4 V22" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>
+    <div><b>FIT</b><span>BY FLAUX</span></div>
+  </a>
+  <div class="card">
+    <h1>Support</h1>
+    <p class="lead">FIT builds a timed workout for the time and gear you've got, for one or two people, then runs the clock and calls out what's next.</p>
+
+    <h2>Getting started</h2>
+    <p>The first time, FIT asks who's training and what gear you have. After that, the home screen has today's workout ready: pick how long, tap <strong>Start</strong>. To change the gear, the style or what you'd rather leave out, tap <strong>Change</strong>.</p>
+
+    <h2>I can't hear the beeps</h2>
+    <p>The sound settings are at the foot of the workout screen. On an iPhone, <strong>Beeps over my music</strong> plays alongside Spotify or other music but needs the ringer on: with the silent switch on, you won't hear FIT. <strong>Beeps even on silent</strong> plays through the silent switch, but pauses your music while you train. Check the volume too, and that <strong>No sound</strong> isn't picked.</p>
+    <p>The voice coach (it says what's next) uses your device's own voice, so it follows the volume and language set on the device.</p>
+
+    <h2>Will the screen stay on?</h2>
+    <p>Yes. From Start until the workout ends, pauses included, FIT keeps the screen awake, then lets it sleep again as normal. On the website that needs a browser that allows it, which current Safari and Chrome do; the app always can.</p>
+
+    <h2>Moving to the app, or another device</h2>
+    <p>The app, the website and each device keep their own data. To move yours, open <strong>Saved &amp; ready-made</strong> where your data is now and tap <strong>Copy to another device</strong> (or <strong>Save a backup</strong> for a file). Then, on the new one, open Saved &amp; ready-made, tap <strong>Restore</strong>, and paste it in or choose the file. It shows what it found before it replaces anything, and <strong>Put back what was here before</strong> undoes it.</p>
+
+    <h2>Apple Health</h2>
+    <p>On iPhone and iPad, the app can add each workout you finish to Apple Health: the kind of workout, when, and how long. It asks after your first finished workout. To turn it on or off later, use <strong>Save to Apple Health</strong> at the foot of the workout screen.</p>
+    <p>If it says FIT isn't allowed: open the Health app, tap your picture, then <strong>Apps</strong>, <strong>FIT by Flaux</strong>, and turn on Workouts. FIT never reads anything from Health. On Android, the app doesn't save to Health Connect yet.</p>
+
+    <h2>Training with a mate</h2>
+    <p>Pick 2 people and FIT runs the same timer with a card for each of you, side by side, each with your own moves and reps. To send a workout to someone, tap <strong>Share</strong>: the link opens the same workout on their phone or in their browser, no app or account needed.</p>
+
+    <h2>Contact</h2>
+    <p>Anything else, or something not working? Email <a href="mailto:hello@flaux.ai">hello@flaux.ai</a> with your device, whether it's the app or the website, and what you expected to happen.</p>
+    <p>Check with your doctor before starting if you have an injury or health condition, and stop if anything hurts.</p>
+  </div>
+  <a class="back" href="/">&larr; Back to FIT</a>
+</main>
+</body>
+</html>

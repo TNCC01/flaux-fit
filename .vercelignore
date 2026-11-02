@@ -1,0 +1,3 @@
+# The store app's wrapper (see app/README.md): the website copied into a
+# Capacitor project, never served from fit.flaux.com.au.
+app/

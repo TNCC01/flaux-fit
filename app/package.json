@@ -1,0 +1,31 @@
+{
+  "name": "fit-by-flaux-app",
+  "private": true,
+  "version": "1.0.0",
+  "description": "FIT by Flaux, the store app: a Capacitor wrapper around the FIT website, with Apple Health",
+  "scripts": {
+    "sync:www": "node sync.mjs",
+    "ios:sync": "npm run sync:www && cap sync ios",
+    "ios:open": "cap open ios",
+    "android:sync": "npm run sync:www && cap sync android",
+    "android:open": "cap open android",
+    "test": "npm run sync:www && node test-bridge.mjs"
+  },
+  "dependencies": {
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "~8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "~8.6.0",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "~8.6.0",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
+    "fit-health": "file:plugins/fit-health"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "~8.6.0"
+  }
+}

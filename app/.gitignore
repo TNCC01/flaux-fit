@@ -1,0 +1,9 @@
+node_modules/
+# made on the Mac by npx cap add and node sync.mjs (anchored, so the
+# Health plugin's own plugins/fit-health/ios/ is kept)
+/www/
+/ios/
+/android/
+/keys/
+/build/*.xcarchive/
+/build/export*/
