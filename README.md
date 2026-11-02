@@ -419,6 +419,22 @@ rather than hardcoded.
   stays hidden until one is tapped). A shorter spell just carries on
 - A phone on its side gets its own layout: the timer and its buttons on
   the left, the two people side by side on the right, all on one screen
+- An iPad on its side (in its keyboard case, say) and a folding phone
+  opened out get one of their own too: the big clock and its buttons on
+  the left, both people on the right with their figures the card's full
+  height, and Up next along the bottom, all on one screen. On a fold
+  opened out it's two even halves, the fold in the gap (a column either
+  side of it, where the screen says where its fold is), and an iPad's
+  two-thirds Split View window, with the iPad on its side, gets it too
+  (about 778 x 820, or 1014 x 1024 on the biggest). So does a browser
+  window on a computer that size. Nothing moves from one part of a session
+  to the next: the clock, the people and Up next stay where they are from
+  work to rest, and on a fold a session with laps or a Surf check keeps
+  the one arrangement throughout. A name with a word too wide for its card
+  (at the larger text) comes down until the word fits whole, the same on
+  both cards; a name too long for its card on a short screen has the line
+  of coaching under it make way, whole, rather than cut it off. An iPad
+  upright, a narrower Split View and every phone are as they were
 - The badge by the workout's name ("1 person · Add a mate", "Wayne & Dave
   · Just me?") is a button until Start: a tap changes one person for two
   and back, the same moves shared out again, for when a mate turns up (or
@@ -596,7 +612,9 @@ replaying a favourite, the interval preference surviving a replay, history,
 the timer recovering time after a suspension, exclusions, stretch, text
 size, a share link opened in a fresh browser context, corrupt preferences,
 picking a session back up after a reload and coming back after time away,
-a phone-width layout and a phone on its side, favourites and history
+a phone-width layout and a phone on its side, the layout for an iPad
+on its side and an opened fold (and everything else as it was),
+favourites and history
 keeping their moves through a library change, backing up, copying and
 restoring your data on a second device (and putting it back), the finish
 screen's summary and How was that? (two Too easy taps lifting one

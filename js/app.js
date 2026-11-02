@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v21';
+const RELEASE = 'fit-v26';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -2455,6 +2455,9 @@ function openWorkout(workout) {
   els.workoutTitle.textContent = run ? run.day : workout.name;
   els.peopleBadge.textContent = peopleText();
   els.exerciseGrid.classList.toggle('solo', state.people === 1);
+  // laps in it (an AMRAP, For Time): in landscape on a Duo, the one
+  // arrangement for all of it, warm-up aside (css/app.css)
+  els.workoutView.classList.toggle('laps', state.sequence.some(x => x.amrap || x.forTime));
   els.personB.style.display = state.people === 1 ? 'none' : '';
   els.labelA.textContent = state.people === 1 ? 'You' : personName('a');
   els.labelB.textContent = personName('b');
@@ -3297,19 +3300,20 @@ function render() {
   let label = phase.amrap ? 'AMRAP' : phase.emom ? 'EMOM'
     : phase.changeover ? 'Change over' : phase.check && phase.kind === 'rest' && !phase.stationIdx ? 'Get ready'
     : (PHASE_LABEL[phase.kind] || '');
-  els.timeDisplay.textContent = fmt(Math.ceil(state.remainingInPhase));
+  let clockSec = Math.ceil(state.remainingInPhase);
   if (phase.forTime) {
     // the clock counts up while you race it; once everyone's done it counts
     // down the rest of the cap
     const done = allDone(phase);
     label = done ? 'Rest' : 'For time';
-    if (!done) els.timeDisplay.textContent = fmt(Math.floor(phaseElapsed(phase)));
+    if (!done) clockSec = Math.floor(phaseElapsed(phase));
   } else if (phase.hold) {
     // a paddle hold counts up, and stops at the longest once everyone's done
     const done = allDone(phase), s = state.scores[phase.blockIdx] || {};
     label = done ? 'Done' : 'Hold';
-    els.timeDisplay.textContent = fmt(done ? Math.max(s.a || 0, s.b || 0) : Math.floor(phaseElapsed(phase)));
+    clockSec = done ? Math.max(s.a || 0, s.b || 0) : Math.floor(phaseElapsed(phase));
   }
+  showClock(clockSec, phase.duration);
   els.totalTime.textContent = `Total ${fmt(state.elapsedTotal)} / ${fmt(state.totalDuration)}`;
   // the phase and block are read out as they change (aria-live), so only
   // write them when they do, not five times a second
@@ -3333,12 +3337,15 @@ function render() {
     if (nxt) { dispA = nxt.a; dispB = nxt.b; }
   }
   els.workoutView.classList.toggle('resting', restLike);
+  // a Surf check's test or the rest after it, for the landscape layout to
+  // give its count and "As many as you can" the room (css/app.css)
+  els.workoutView.classList.toggle('checking', !!phase.check);
   // a rest (or the warm-up) is the time to look at what's coming
   const prep = restLike || phase.kind === 'warmup';
   document.getElementById('btnNextBlock').hidden = !(prep && upcomingBlock());
   if (!prep) closeNextSheet();
 
-  els.exerciseA.textContent = dispA ? (dispA.display || dispA.name) : '';
+  showName(els.exerciseA, dispA);
   els.repsA.textContent = dispA ? (dispA.reps || '') : '';
   const showA = shownFor('a', dispA);
   setText(els.levelA, levelLine('a', showA));
@@ -3346,7 +3353,7 @@ function render() {
   setAlt(els.alternativeA, showA ? showA.alt : '');
   updateAnim(els.animA, showA);
   if (state.people === 2 && dispB) {
-    els.exerciseB.textContent = dispB.display || dispB.name;
+    showName(els.exerciseB, dispB);
     els.repsB.textContent = dispB.reps || '';
     const showB = shownFor('b', dispB);
     setText(els.levelB, levelLine('b', showB));
@@ -3371,6 +3378,99 @@ function render() {
   // once it's going, only Share is left of the pre-start strip (css)
   els.preStart.classList.toggle('underway', state.running || state.elapsedTotal > 0);
   renderPeopleBadge();
+  makeRoom();
+}
+
+// The clock, as "0:19", with its length on it (data-len, 4 for "0:19" and
+// 5 for "20:00"), so the landscape layout (css/app.css) can size each to
+// fit. The length is the longest the phase reads (most, its seconds), so an
+// 11-minute AMRAP keeps the one size all the way down, rather than growing
+// at 9:59. Written only when it changes, not five times a second.
+function showClock(sec, most = sec) {
+  const t = fmt(sec), el = els.timeDisplay;
+  const len = String(Math.max(t.length, fmt(most).length));
+  if (el.dataset.len !== len) el.dataset.len = len;
+  if (el.textContent !== t) el.textContent = t;
+}
+// A person's move on their card: "Goblet squats · 15kg", with the weight
+// in a span of its own when it has one, so the landscape layout can put
+// it on a line of its own in the person's colour. The text is the same.
+function showName(el, d) {
+  const text = d ? (d.display || d.name) : '';
+  if (el.textContent === text) return;
+  if (!(d && d.load && d.display === `${d.name} · ${d.load}`)) { el.textContent = text; return; }
+  const part = (cls, t) => { const s = document.createElement('span'); s.className = cls; s.textContent = t; return s; };
+  el.replaceChildren(part('ex-base', d.name), part('load-sep', ' · '), part('load', d.load));
+}
+// The cards in the landscape layout are the height and width the screen
+// gives them, so what's on them has to fit:
+//   - at the larger text a long word ("Woodchops") can be wider than its
+//     card: the name comes down until its widest word fits whole (--fit),
+//     on both cards, so they still match;
+//   - on a short screen (an opened Duo in Safari, say) a long name and its
+//     weight can fill a card: the line of coaching under it makes way,
+//     whole, rather than the card scrolling it out of sight;
+//   - then, if a card is still too full, Up next over the names in a rest
+//     (the clock says Rest) on both cards;
+//   - and if one is still too full (mostly at the larger text sizes), both
+//     cards are snug (a lap's lines closer, and on a fold its figure makes
+//     way), then their names or laps come down a size, and another if
+//     that's not enough.
+// Measured only when what's on the cards, the screen, the text size or a
+// card's size changes (Start shows them, in landscape). A card with the
+// room keeps it all, and css/app.css only does any of it in landscape, so
+// everywhere else looks as it always has.
+let roomKey = '';
+function makeRoom() {
+  const key = [innerWidth, innerHeight, state.textScale, els.workoutView.className, document.body.className,
+    els.exerciseGrid.className, els.exerciseGrid.textContent, els.swapA.hidden, els.swapB.hidden].join('|');
+  if (key === roomKey) return;
+  roomKey = key;
+  const all = [...els.exerciseGrid.querySelectorAll('.person')];
+  const cards = all.filter(card => card.offsetParent);
+  const gives = (card) => [card.querySelector('.exercise-cue'), card.querySelector('.next-eyebrow')];
+  for (const card of all) {
+    card.classList.remove('snug');
+    card.style.removeProperty('--fit');
+    for (const e of gives(card)) e.classList.remove('makes-way');
+  }
+  const fitAt = (fit) => cards.forEach(card => card.style.setProperty('--fit', String(fit)));
+  // how many times too wide for its card the widest word on either is:
+  // with the words kept whole, how far the furthest line runs, to the
+  // fraction of a pixel (a word over by less than one still breaks)
+  const names = cards.flatMap(card => [...card.querySelectorAll('.exercise-name, .exercise-reps')]);
+  const over = () => {
+    names.forEach(e => { e.style.overflowWrap = 'normal'; });
+    let most = 1;
+    for (const e of names) {
+      const box = e.getBoundingClientRect(), text = document.createRange();
+      text.selectNodeContents(e);
+      for (const line of text.getClientRects()) if (box.width) most = Math.max(most, (line.right - box.left) / box.width);
+    }
+    names.forEach(e => { e.style.overflowWrap = ''; });
+    return most;
+  };
+  let fit = 1;
+  for (let i = 0, by = over(); by > 1 && i < 4; i++) {
+    fit = Math.floor((fit / by) * 0.99 * 1000) / 1000;
+    fitAt(fit);
+    const now = over();
+    if (now >= by) break;            // not landscape: nothing changes size
+    by = now;
+  }
+  const full = (card) => card.scrollHeight > card.clientHeight + 1;
+  for (const card of cards) if (full(card)) gives(card)[0].classList.add('makes-way');
+  if (cards.some(full)) cards.forEach(card => gives(card)[1].classList.add('makes-way'));
+  if (cards.some(full)) cards.forEach(card => card.classList.add('snug'));
+  for (const size of [0.86, 0.76, 0.68]) {
+    if (!cards.some(full)) break;
+    fitAt(fit * size);
+  }
+}
+window.addEventListener('resize', makeRoom, { passive: true });
+if (window.ResizeObserver) {
+  const cards = new ResizeObserver(() => { roomKey = ''; makeRoom(); });
+  els.exerciseGrid.querySelectorAll('.person').forEach(card => cards.observe(card));
 }
 
 // "+1 rep: you said too easy", under a target that a person's level moved
@@ -3621,7 +3721,7 @@ function finish() {
   setTimeout(() => { if (!state.running) releaseAudio(); }, 2000);
   clearBleed();
   disarmBack();
-  els.workoutView.classList.remove('resting');
+  els.workoutView.classList.remove('resting', 'checking');
   els.workoutView.classList.add('finished');
   // never started, or skipped through inside a minute: nobody did
   // anything, so no cards saying well done
@@ -3632,6 +3732,7 @@ function finish() {
   els.timerCard.className = 'timer-card';
   setText(els.phaseLabel, 'Done');
   els.timeDisplay.textContent = '✓';
+  els.timeDisplay.dataset.len = '1';
   // the time it ran, out of the whole: all of it unless something was
   // skipped (the last tick can land a fraction short of the end, and that
   // isn't "19:59 / 20:00")
@@ -5318,7 +5419,8 @@ function checkFinish(who) {
     count.dataset.test = k;
     count.innerHTML = t.hold ? `<div class="count-now check-time"><b>${checkValue(t, v)}</b> ${v ? 'held' : 'not timed'}</div>` : countButtons(t, v);
     const change = document.createElement('div');
-    change.className = 'check-change';
+    // (marked when it's a first, so the landscape layout can say it once)
+    change.className = v && !last ? 'check-change first' : 'check-change';
     change.setAttribute('role', 'status');
     change.textContent = !v ? '' : last ? checkChange(t, v, last) : 'Your first one: the number to beat.';
     row.append(head, count, change);
@@ -5681,11 +5783,13 @@ els.btnReset.addEventListener('click', () => {
 els.showPhotos.addEventListener('change', (e) => {
   state.showPhotos = e.target.checked;
   document.body.classList.toggle('hide-photos', !state.showPhotos);
+  makeRoom();                        // (paused, there's no tick to do it)
   savePrefs();
 });
 els.showAlts.addEventListener('change', (e) => {
   state.showAlts = e.target.checked;
   document.body.classList.toggle('show-alternatives', state.showAlts);
+  makeRoom();
   savePrefs();
 });
 // The voice on top of the beeps (see setSound for the beeps themselves).
@@ -5721,9 +5825,13 @@ document.querySelectorAll('.text-size .mini-btn').forEach(btn => {
 });
 function applyTextScale() {
   document.documentElement.style.setProperty('--ex-scale', String(state.textScale));
+  // for the landscape layout to make room at the largest (css/app.css)
+  document.documentElement.dataset.scale = String(state.textScale);
   document.querySelectorAll('.text-size .mini-btn').forEach(b => {
     b.classList.toggle('active', Number(b.dataset.scale) === state.textScale);
   });
+  // the cards fitted to it now, not at the next tick (none while paused)
+  makeRoom();
 }
 
 // =====================================================================
@@ -5903,6 +6011,10 @@ function showSettings() {
   applyTextScale();
   renderPeoplePicker();
 }
+// The landscape layouts on trial before this release kept the one picked
+// under 'fit-land', only ever on the trial's preview links (it never went
+// live). There's one layout now, so it goes; this can go in a later release.
+try { localStorage.removeItem('fit-land'); } catch (e) { /* storage off */ }
 loadPrefs();
 showSettings();
 setupFullscreen();
