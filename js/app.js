@@ -40,7 +40,7 @@ window.addEventListener('error', function retry() {
 // first tap on Start, so it says which release it's from, and one that
 // doesn't match fails here, while the page loads, for the check above.
 // An older exercises.js or generator.js works beside this one.
-const RELEASE = 'fit-v25';
+const RELEASE = 'fit-v26';
 if (typeof WORKOUTS_RELEASE !== 'string' || WORKOUTS_RELEASE !== RELEASE) {
   throw new Error('FIT scripts from more than one release');
 }
@@ -3413,7 +3413,9 @@ function showName(el, d) {
 //   - then, if a card is still too full, Up next over the names in a rest
 //     (the clock says Rest) on both cards;
 //   - and if one is still too full (mostly at the larger text sizes), both
-//     names come down a size (snug), and another if that's not enough.
+//     cards are snug (a lap's lines closer, and on a fold its figure makes
+//     way), then their names or laps come down a size, and another if
+//     that's not enough.
 // Measured only when what's on the cards, the screen, the text size or a
 // card's size changes (Start shows them, in landscape). A card with the
 // room keeps it all, and css/app.css only does any of it in landscape, so

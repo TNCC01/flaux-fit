@@ -4458,6 +4458,39 @@ try {
         assert(!moved.length, `${how}, ${width} x ${height}: nothing moves through the session, but ${moved.slice(0, 4).join('; ')}`);
       }
     }
+    // on a Duo (in Safari and as the app), a whole AMRAP and For Time
+    // session, the cool-down too: from the warm-up's end to the last
+    // stretch Up next and the buttons keep their place (Skip cool-down as
+    // tall as Skip block), and wherever the line over the clock is no
+    // taller than somewhere else in the session (the warm-up too), the
+    // clock is no smaller there: what's under the clock never squeezes it
+    for (const how of ['amrap', 'fortime']) {
+      await open(how, "x.kind === 'warmup'");
+      for (const [width, height] of [[951, 585], [951, 620], [951, 669]]) {
+        await L.setViewportSize({ width, height });
+        const seen = await ev(async () => {
+          stopTimer();
+          const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+          const out = [];
+          for (let i = 0; i < state.sequence.length; i++) {
+            const ph = state.sequence[i];
+            seekTo(i); render(); await frame();
+            out.push({ i, kind: ph.kind, over: document.querySelector('#workoutView .block-info').getBoundingClientRect().height,
+                       px: parseFloat(getComputedStyle(els.timeDisplay).fontSize),
+                       next: document.getElementById('upcoming').getBoundingClientRect().top, pause: els.btnStart.getBoundingClientRect().top });
+          }
+          return out;
+        });
+        const after = seen.filter(x => x.kind !== 'warmup');
+        const moved = after.filter(x => Math.abs(x.next - after[0].next) > 1 || Math.abs(x.pause - after[0].pause) > 1)
+          .map(x => `${x.kind} ${x.i}: Up next ${Math.round(x.next - after[0].next)}px, Pause ${Math.round(x.pause - after[0].pause)}px`);
+        const squeezed = seen.flatMap(a => seen.filter(b => a.over <= b.over + 0.5 && a.px < b.px - 0.5)
+          .map(b => `${a.kind} ${a.i} ${Math.round(a.px)}px under a line ${Math.round(a.over)}px tall, ${b.kind} ${b.i} ${Math.round(b.px)}px under ${Math.round(b.over)}px`));
+        assert(!moved.length && !squeezed.length,
+               `${how}, ${width} x ${height}, a whole session: Up next and the buttons keep their place (${moved.slice(0, 3).join('; ')}), the clock never squeezed (${squeezed.slice(0, 3).join('; ')})`);
+        if (how === 'amrap' && height === 585) note(`a Duo in Safari, through an AMRAP session: the clock at ${[...new Set(seen.map(x => Math.round(x.px)))].join(', ')}px`);
+      }
+    }
 
     // back after time away on a Duo in Safari, which doesn't say where its
     // fold is: the question over the clock's half, Go back and I kept going
@@ -4559,6 +4592,44 @@ try {
         assert(!cut.length && !hidden.length, `${width} x ${height}, ${how}: each lap whole and in sight: ${JSON.stringify({ cut, hidden })}`);
       }
     }
+    // and at every text size, on an iPad in Safari (11-inch, and a mini as
+    // an app and in Safari), a Duo in Safari, Split View and another fold,
+    // through every lap of several AMRAP and For Time sessions for two: no
+    // lap card scrolls, and every line of the lap and the count's buttons
+    // are in sight (a lap that fills its card closes up, on a fold gives up
+    // its figure, then comes down a size: makeRoom)
+    for (const how of ['amrap', 'fortime']) {
+      for (const [width, height] of [[1180, 740], [1133, 744], [1133, 650], [951, 585], [951, 620], [778, 820], [884, 700]]) {
+        await L.setViewportSize({ width, height });
+        for (const scale of [1, 1.2, 1.45]) {
+          const full = await ev(([how, scale]) => {
+            const out = [];
+            state.textScale = scale; applyTextScale();
+            for (const seed of [4242, 3, 7, 11]) {
+              state.people = 2;
+              buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: how, minutes: 20 }, seed);
+              els.btnStart.click();
+              stopTimer();
+              for (let i = 0; i < state.sequence.length; i++) {
+                if (!(state.sequence[i].amrap || state.sequence[i].forTime)) continue;
+                seekTo(i); render();
+                for (const card of els.exerciseGrid.querySelectorAll('.person')) {
+                  if (!card.offsetParent) continue;
+                  const foot = card.getBoundingClientRect().top + card.clientTop + card.clientHeight;
+                  const lost = [...card.querySelectorAll('.circuit li, .round-counter button')]
+                    .filter(e => e.getClientRects().length && (e.getBoundingClientRect().bottom > foot + 1 || e.scrollWidth > e.clientWidth + 1))
+                    .map(e => e.textContent.trim().replace(/\s+/g, ' '));
+                  if (card.scrollHeight > card.clientHeight + 1 || lost.length) out.push(`seed ${seed}, ${card.className}, ${card.scrollHeight - card.clientHeight}px over: ${lost.join(' | ')}`);
+                }
+              }
+            }
+            return out;
+          }, [how, scale]);
+          assert(!full.length, `${how}, text at ${scale}, ${width} x ${height}: no lap card scrolls, every lap line and button in sight, but ${full.slice(0, 3).join('; ')}`);
+        }
+      }
+    }
+    await ev(() => { state.textScale = 1; applyTextScale(); resetWorkout(); });
     // a Surf check's end: each person's three results, the paddle hold too,
     // on screen and none of them cut off inside the card
     await open('check', 'x.hold');
@@ -4700,7 +4771,7 @@ try {
       }
     }
     await lx.close();
-    ok('landscape: a link with ?land=b opens FIT, with no switch, and the layout the trial kept is cleared; on an iPad on its side (11-inch, 13-inch and mini, as an app and in Safari), a Duo opened flat (951 x 585, 620 and 669), other folds (884 x 700, 800 x 830, 984 x 1092), two-thirds Split View (778 x 820) and a computer\'s window (1440 x 900) the clock is on the left and both people on the right, a fold\'s middle clear, with the clock, both names, their moves and Pause, Skip and Reset on one screen in work (Up next too), a rest, an AMRAP and a Surf check count, and at the largest text; Up next is never cut short; every move, for two and for one, in work and a rest, at every text size, on an iPad, a Duo and Split View: no card scrolls, the name in sight and no word broken over two lines (a long word brings the name down, both cards alike), a long name\'s cue making way whole; paused, the text size and demos fit the cards at once; as an app, Pause and Up next line up above the home bar with nothing below peeking in; through a session (an AMRAP, For Time and a Surf check on a fold too) Up next keeps its place, and the clock its size and place, and the cards their foot, from work to rest, count to count and stretch to stretch; the time away question clear of a Duo\'s middle; a part of ten minutes or more keeps the clock its size; the clock fits at 0:19 and 20:00; paused, Swap is on no name or figure; a lap is never cut short; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it and the time away question clear of it; an iPad upright, Split View, the Duo closed and every phone, and the home screen and setup at every size, are as they were');
+    ok('landscape: a link with ?land=b opens FIT, with no switch, and the layout the trial kept is cleared; on an iPad on its side (11-inch, 13-inch and mini, as an app and in Safari), a Duo opened flat (951 x 585, 620 and 669), other folds (884 x 700, 800 x 830, 984 x 1092), two-thirds Split View (778 x 820) and a computer\'s window (1440 x 900) the clock is on the left and both people on the right, a fold\'s middle clear, with the clock, both names, their moves and Pause, Skip and Reset on one screen in work (Up next too), a rest, an AMRAP and a Surf check count, and at the largest text; Up next is never cut short; every move, for two and for one, in work and a rest, at every text size, on an iPad, a Duo and Split View: no card scrolls, the name in sight and no word broken over two lines (a long word brings the name down, both cards alike), a long name\'s cue making way whole; paused, the text size and demos fit the cards at once; as an app, Pause and Up next line up above the home bar with nothing below peeking in; through a session (an AMRAP, For Time and a Surf check on a fold too) Up next keeps its place, and the clock its size and place, and the cards their foot, from work to rest, count to count and stretch to stretch; on a Duo, through a whole AMRAP and For Time session, the cool-down too, Up next and the buttons keep their place and the clock is never squeezed; the time away question clear of a Duo\'s middle; a part of ten minutes or more keeps the clock its size; the clock fits at 0:19 and 20:00; paused, Swap is on no name or figure; a lap is never cut short, and at every text size, through several AMRAP and For Time sessions on an iPad, a Duo and Split View, no lap card scrolls; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it and the time away question clear of it; an iPad upright, Split View, the Duo closed and every phone, and the home screen and setup at every size, are as they were');
   }
 
   step = 'opens offline after the first visit';

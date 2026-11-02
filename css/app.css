@@ -1219,13 +1219,14 @@ body.show-alternatives .alternative.has-alt { display: block; }
     margin-bottom: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.25rem;
   }
   html:root #workoutView .person-head > .swap-btn { position: static; flex: none; }
-  /* Every name's size here is times --fit, which makeRoom (js/app.js) puts
-     on the cards: under 1 where a word is too wide for its card at that
-     size ("Woodchops" at the largest text), so the name comes down until
-     the word fits whole, the same on both cards; and a size down on both
-     (snug) if a card is still too full once its cue and Up next have made
-     way. Only until that's measured, a word too wide breaks rather than
-     run off the card's edge. */
+  /* Every name's size here (and a lap's) is times --fit, which makeRoom
+     (js/app.js) puts on the cards: under 1 where a word is too wide for its
+     card at that size ("Woodchops" at the largest text), so the name comes
+     down until the word fits whole, the same on both cards; and if a card
+     is still too full once its cue and Up next have made way, both are
+     snug (a lap's lines closer, below) and then a size down. Only until
+     that's measured, a word too wide breaks rather than run off the card's
+     edge. */
   html:root #workoutView :is(.exercise-name, .exercise-reps) { overflow-wrap: break-word; }
 
   /* A Surf check's end: each test on a line, its name, the number to beat
@@ -1357,10 +1358,13 @@ body.show-alternatives .alternative.has-alt { display: block; }
   html:root #workoutView .load { display: block; color: var(--teal-bright); }
   html:root #workoutView .person.b .load { color: var(--accent-b); }
 
-  /* an AMRAP lap reads as lines ("8 reps KB sumo deadlifts"), not columns */
+  /* an AMRAP lap reads as lines ("8 reps KB sumo deadlifts"), not columns,
+     times --fit (each size's below too), so a lap that fills its card at
+     the larger text comes down a size, on both cards (For Time's last move
+     never cut off) */
   html:root #workoutView .circuit:not([hidden]) { display: block; }
   html:root #workoutView .circuit li {
-    display: block; font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.2));
+    display: block; font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.2) * var(--fit, 1));
     padding-top: 0.2rem; padding-bottom: 0.2rem;
   }
   html:root #workoutView .round-counter:not([hidden]) { flex-wrap: wrap; gap: 0.4rem 0.5rem; }
@@ -1525,6 +1529,10 @@ body.show-alternatives .alternative.has-alt { display: block; }
        card, the count and +1 on one line, the lap a little closer */
     html:root #workoutView .exercise-grid:not(.solo) .person.amrap { grid-template-columns: minmax(0, 1fr) minmax(0, 0.42fr); }
     html:root #workoutView .exercise-grid:not(.solo) .person.amrap .exercise-cue { display: none; }
+    /* (a lap too full for its card, at the larger text: the figure makes
+       way and the lap has the card, as on a short fold, makeRoom) */
+    html:root #workoutView .exercise-grid:not(.solo) .person.amrap.snug { grid-template-columns: minmax(0, 1fr); }
+    html:root #workoutView .exercise-grid:not(.solo) .person.amrap.snug > .ex-anim { display: none; }
     html:root #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count):not([hidden]) { flex-wrap: nowrap; margin: 0.1rem 0 0.2rem; }
     html:root #workoutView .exercise-grid:not(.solo) .round-counter button { min-height: 2.9rem; }
     html:root #workoutView .exercise-grid:not(.solo) .count-now b { font-size: 1.8rem; }
@@ -1534,7 +1542,7 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html:root #workoutView .exercise-grid:not(.solo) .round-counter:not(.check-count) .count-now span { flex-basis: 100%; margin-top: 0; }
     html:root #workoutView .exercise-grid:not(.solo) .circuit:not([hidden]) { margin: 0.1rem 0 0; }
     html:root #workoutView .exercise-grid:not(.solo) .circuit li {
-      font-size: calc(1.05rem * min(var(--ex-scale), 1.2)); padding-top: 0.08rem; padding-bottom: 0.08rem;
+      font-size: calc(1.05rem * min(var(--ex-scale), 1.2) * var(--fit, 1)); padding-top: 0.08rem; padding-bottom: 0.08rem;
     }
     /* and not as tall: the lap and its count take the whole card (tap one
        for its figure in 3D, as ever) */
@@ -1544,6 +1552,14 @@ body.show-alternatives .alternative.has-alt { display: block; }
       /* (in a Surf check's test too: the test's standard is by the clock) */
       html:root #workoutView.checking .exercise-grid:not(.solo) .exercise-cue { display: none; }
       html:root #workoutView .exercise-grid:not(.solo) .circuit li { padding-top: 0.06rem; padding-bottom: 0.06rem; }
+      /* the clock as big as its half's width allows from the warm-up's
+         end to the last stretch, under it Up next too (a session with
+         laps): the rows a little closer, its card's room above and below
+         the clock given to the clock, and Skip cool-down on one line, so
+         the buttons are as tall in the cool-down as in a block */
+      html:root #workoutView.active { row-gap: 0.5rem; }
+      html:root #workoutView > .timer-card { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+      html:root #workoutView .controls { grid-template-columns: 1.2fr 1.2fr 0.75fr; }
     }
   }
 
@@ -1570,7 +1586,7 @@ body.show-alternatives .alternative.has-alt { display: block; }
     /* a lap for each of two: the lap and its count have the card (tap one
        for its figure in 3D, as ever) */
     html:root #workoutView .exercise-grid:not(.solo) .person.amrap > .ex-anim { display: none; }
-    html:root #workoutView .circuit li { font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.05)); }
+    html:root #workoutView .circuit li { font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.05) * var(--fit, 1)); }
     /* the question after time away, as small as it goes over the top bar,
        and the line on how a style works makes way for it */
     html:root #workoutView > .away-bar { padding: 0.4rem 0.75rem; }
@@ -1599,8 +1615,10 @@ body.show-alternatives .alternative.has-alt { display: block; }
   html:root #workoutView:has(> .timer-card:is(.cooldown, .stretch)) .person > .ex-anim:empty { display: none; }
 
   /* a card a long name has filled: the cue makes way, whole, then Up next
-     (makeRoom in js/app.js) */
+     (makeRoom in js/app.js); and a lap that's still too full has its lines
+     a little closer before they come down a size */
   html:root #workoutView .person > :is(.exercise-cue, .next-eyebrow).makes-way { display: none; }
+  html:root #workoutView .person.snug .circuit li { padding-top: 0.06rem; padding-bottom: 0.06rem; }
 }
 
 /* The eight times in even rows: two of four on a phone, one row once the
