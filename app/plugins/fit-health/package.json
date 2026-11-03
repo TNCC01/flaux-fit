@@ -1,0 +1,24 @@
+{
+  "name": "fit-health",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "FIT's own Apple Health plugin: asks to write workouts, nothing else, and saves each finished session. iOS only.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "Package.swift",
+    "ios/Sources"
+  ],
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

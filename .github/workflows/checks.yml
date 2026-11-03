@@ -26,5 +26,12 @@ jobs:
       - name: Browser suite
         run: node scripts/e2e.mjs
 
+      # The store app wraps some of js/app.js's functions by name (see
+      # app/native-bridge.js), so a change to one can quietly break the
+      # app's haptics, Apple Health or backups. Needs no app/node_modules:
+      # it uses the Playwright installed above.
+      - name: The store app's bridge, with a stand-in for Capacitor
+        run: node app/sync.mjs && node app/test-bridge.mjs
+
       - name: 3D movements load, reach and stay above the floor
         run: node scripts/move-check.mjs --quick --all-required
