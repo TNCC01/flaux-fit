@@ -1483,11 +1483,16 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html:root #workoutView.resting .exercise-grid.solo :is(.exercise-name, .exercise-reps) {
       font-size: calc(clamp(2rem, 4.2vw, 2.8rem) * var(--ex-scale) * var(--fit, 1));
     }
-    /* Skip block on one line in a half (a two-thirds Split View window) */
-    html:root #workoutView .controls { grid-template-columns: 1.4fr 1fr 1fr; }
+    /* every label on one line in a half, Skip cool-down and Reset's "Tap
+       again" too, so the buttons are as tall from the first phase to the
+       last and nothing over them moves when a label changes: Skip has the
+       room its longest label needs, in a narrower half (a two-thirds Split
+       View) the words are a little smaller, and in a wider font still a
+       label takes the width it needs from Pause */
+    html:root #workoutView .controls { grid-template-columns: 1.15fr 1.2fr 0.8fr; }
     html:root #workoutView.finished .controls { grid-template-columns: 2fr 1fr; }
     html:root #workoutView.asking-away .controls { grid-template-columns: 1fr 1fr; }
-    html:root #workoutView .controls button { font-size: 1.05rem; padding: 0.8rem 0.3rem; }
+    html:root #workoutView .controls button { font-size: min(1.05rem, 1.8vw); padding: 0.8rem 0.3rem; white-space: nowrap; }
     html:root #workoutView .person { padding: 0.7rem 0.9rem; }
     html:root #workoutView .person-head { margin-bottom: 0.2rem; }
     html:root[data-scale='1.45'] #workoutView .person .exercise-cue { display: none; }
@@ -1554,12 +1559,21 @@ body.show-alternatives .alternative.has-alt { display: block; }
       html:root #workoutView .exercise-grid:not(.solo) .circuit li { padding-top: 0.06rem; padding-bottom: 0.06rem; }
       /* the clock as big as its half's width allows from the warm-up's
          end to the last stretch, under it Up next too (a session with
-         laps): the rows a little closer, its card's room above and below
-         the clock given to the clock, and Skip cool-down on one line, so
-         the buttons are as tall in the cool-down as in a block */
+         laps): the rows a little closer, and its card's room above and
+         below the clock given to the clock */
       html:root #workoutView.active { row-gap: 0.5rem; }
       html:root #workoutView > .timer-card { padding-top: 0.5rem; padding-bottom: 0.5rem; }
-      html:root #workoutView .controls { grid-template-columns: 1.2fr 1.2fr 0.75fr; }
+      /* and with Up next under the clock, a count and its bar on one line,
+         "6 left" making way (the count and the bar say it), so the block's
+         line over the clock is no taller in a timed section, saying how its
+         style works too, than in a lap one, and the clock keeps its size
+         through a mix */
+      html:root #workoutView.active.laps:has(> .pre-start.underway):not(.finished):not(:has(> .timer-card.warmup)) .round-dots:has(> .round-row) {
+        display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.3rem 0.75rem;
+      }
+      html:root #workoutView.active.laps:has(> .pre-start.underway):not(.finished):not(:has(> .timer-card.warmup)) .round-dots > .round-row { display: contents; }
+      html:root #workoutView.active.laps:has(> .pre-start.underway):not(.finished):not(:has(> .timer-card.warmup)) .round-dots .remaining-tag { display: none; }
+      html:root #workoutView.active.laps:has(> .pre-start.underway):not(.finished):not(:has(> .timer-card.warmup)) .round-dots > .round-hint { grid-column: 1 / -1; }
     }
   }
 
@@ -1575,7 +1589,8 @@ body.show-alternatives .alternative.has-alt { display: block; }
       font-size: 0.85rem; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
     }
     html:root #workoutView .phase-label { font-size: 1.1rem; }
-    html:root #workoutView .controls button { padding: 0.7rem 0.3rem; font-size: 1.05rem; }
+    /* (1.05rem, and in a narrower half a little smaller, as above) */
+    html:root #workoutView .controls button { padding: 0.7rem 0.3rem; font-size: min(1.05rem, 1.8vw); }
     html:root #workoutView .ex-anim { min-height: 3.5rem; }
     html:root #workoutView .exercise-cue:not(:empty) {
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
@@ -1587,6 +1602,12 @@ body.show-alternatives .alternative.has-alt { display: block; }
        for its figure in 3D, as ever) */
     html:root #workoutView .exercise-grid:not(.solo) .person.amrap > .ex-anim { display: none; }
     html:root #workoutView .circuit li { font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.05) * var(--fit, 1)); }
+    /* with Show alternatives on, a lap that fills its card has the injury
+       alt closer under it and a size down, as its lines are, and For
+       Time's "3 rounds of" makes way, as the count says "Round 1 of 3", so
+       the card never scrolls, paused with Swap showing too */
+    html:root #workoutView .person.amrap.snug .alternative { margin-top: 0.3rem; padding-top: 0.3rem; font-size: 0.85rem; line-height: 1.3; }
+    html:root body.show-alternatives #workoutView .person.amrap.snug:has(.alternative.has-alt) .circuit li.lap-head { display: none; }
     /* the question after time away, as small as it goes over the top bar,
        and the line on how a style works makes way for it */
     html:root #workoutView > .away-bar { padding: 0.4rem 0.75rem; }
