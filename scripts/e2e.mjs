@@ -4212,11 +4212,13 @@ try {
 
     // a workout for two, started, at a phase found by a test; each look goes
     // back to the start of that phase first, so a slow machine never
-    // measures the one after it (landAt, -1 once it's moved on)
+    // measures the one after it (landAt, -1 once it's moved on); a style
+    // for 20 minutes, or a mix ({ mix, minutes })
     const open = async (how, find, people = 2) => {
       await ev(([how, people]) => {
         state.people = people;
         if (how === 'check') { state.programRun = null; openWorkout(SURF_CHECK); }
+        else if (how.mix) buildAndOpen({ ...requestFromState(), people, goal: undefined, intervalId: 'mix', mix: how.mix, minutes: how.minutes }, 4242);
         else buildAndOpen({ ...requestFromState(), people, goal: undefined, intervalId: how, minutes: 20 }, 4242);
       }, [how, people]);
       await L.click('#btnStart');
@@ -4458,36 +4460,72 @@ try {
         assert(!moved.length, `${how}, ${width} x ${height}: nothing moves through the session, but ${moved.slice(0, 4).join('; ')}`);
       }
     }
-    // on a Duo (in Safari and as the app), a whole AMRAP and For Time
-    // session, the cool-down too: from the warm-up's end to the last
-    // stretch Up next and the buttons keep their place (Skip cool-down as
-    // tall as Skip block), and wherever the line over the clock is no
-    // taller than somewhere else in the session (the warm-up too), the
-    // clock is no smaller there: what's under the clock never squeezes it
-    for (const how of ['amrap', 'fortime']) {
-      await open(how, "x.kind === 'warmup'");
-      for (const [width, height] of [[951, 585], [951, 620], [951, 669]]) {
+    // on a Duo (in Safari and as the app) and in a two-thirds Split View, a
+    // whole AMRAP and For Time session and a mix with laps in it (FIT's own
+    // mix, and Surf Fit's Engine day), the cool-down too: from the warm-up's
+    // end to the last stretch Up next and the buttons keep their place, and
+    // wherever the line over the clock is no taller than somewhere else in
+    // the session (the warm-up too), the clock is no smaller there: what's
+    // under the clock never squeezes it; on a Duo the clock is as big as its
+    // half's width allows (170px) all the way, in a mix's timed part that
+    // says how its style works too; and in every part each button's label
+    // is on one line and inside its button, Skip warm-up and Skip cool-down,
+    // and Reset's "Tap again" too (nothing moving while it shows)
+    const MIXES = { 'FIT mix': { mix: ['emom', 'short', 'amrap'], minutes: 30 }, 'Engine': { mix: ['emom', 'amrap'], minutes: 25 } };
+    const DUO = [[951, 585], [951, 620], [951, 669]];
+    for (const [how, people, sizes] of [['amrap', 2, [...DUO, [778, 820]]], ['fortime', 2, [...DUO, [778, 820]]],
+                                        ['FIT mix', 2, [...DUO, [778, 820]]], ['Engine', 2, DUO], ['FIT mix', 1, [[951, 585]]]]) {
+      await open(MIXES[how] || how, "x.kind === 'warmup'", people);
+      for (const [width, height] of sizes) {
         await L.setViewportSize({ width, height });
         const seen = await ev(async () => {
           stopTimer();
           const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+          const top = (e) => e.getBoundingClientRect().top;
+          // the buttons whose label is on more than one line, or runs past its
+          // button's edge, and the row of them running past its own box (labels
+          // too wide for the row between them)
+          const wrapped = () => {
+            const shown = [...document.querySelectorAll('#workoutView .controls button')].filter(b => b.getClientRects().length);
+            const out = shown.filter(b => {
+              const r = document.createRange();
+              r.selectNodeContents(b);
+              const t = r.getBoundingClientRect(), o = b.getBoundingClientRect();
+              return new Set([...r.getClientRects()].map(x => Math.round(x.top))).size > 1
+                || t.left < o.left + b.clientLeft - 0.5 || t.right > o.right - b.clientLeft + 0.5;
+            }).map(b => `"${b.textContent}"`);
+            const row = document.querySelector('#workoutView .controls').getBoundingClientRect(), last = shown[shown.length - 1];
+            if (last && last.getBoundingClientRect().right > row.right + 0.5) out.push(`the row past its box ("${last.textContent}" ${Math.round(last.getBoundingClientRect().right - row.right)}px)`);
+            return out;
+          };
           const out = [];
           for (let i = 0; i < state.sequence.length; i++) {
             const ph = state.sequence[i];
             seekTo(i); render(); await frame();
-            out.push({ i, kind: ph.kind, over: document.querySelector('#workoutView .block-info').getBoundingClientRect().height,
-                       px: parseFloat(getComputedStyle(els.timeDisplay).fontSize),
-                       next: document.getElementById('upcoming').getBoundingClientRect().top, pause: els.btnStart.getBoundingClientRect().top });
+            const x = { i, kind: ph.kind, over: document.querySelector('#workoutView .block-info').getBoundingClientRect().height,
+                        px: parseFloat(getComputedStyle(els.timeDisplay).fontSize),
+                        next: top(document.getElementById('upcoming')), pause: top(els.btnStart), wrapped: wrapped() };
+            // one tap on Reset: "Tap again" for two seconds (taken back here)
+            els.btnReset.click();
+            Object.assign(x, { tapped: els.btnReset.textContent, tapNext: top(document.getElementById('upcoming')), tapPause: top(els.btnStart) });
+            x.wrapped.push(...wrapped().filter(w => !x.wrapped.includes(w)));
+            disarmReset();
+            out.push(x);
           }
           return out;
         });
         const after = seen.filter(x => x.kind !== 'warmup');
         const moved = after.filter(x => Math.abs(x.next - after[0].next) > 1 || Math.abs(x.pause - after[0].pause) > 1)
-          .map(x => `${x.kind} ${x.i}: Up next ${Math.round(x.next - after[0].next)}px, Pause ${Math.round(x.pause - after[0].pause)}px`);
+          .map(x => `${x.kind} ${x.i}: Up next ${Math.round(x.next - after[0].next)}px, Pause ${Math.round(x.pause - after[0].pause)}px`)
+          .concat(seen.filter(x => x.tapped !== 'Tap again' || Math.abs(x.tapNext - x.next) > 1 || Math.abs(x.tapPause - x.pause) > 1)
+            .map(x => `${x.kind} ${x.i}, Reset tapped once ("${x.tapped}"): Up next ${Math.round(x.tapNext - x.next)}px, Pause ${Math.round(x.tapPause - x.pause)}px`));
         const squeezed = seen.flatMap(a => seen.filter(b => a.over <= b.over + 0.5 && a.px < b.px - 0.5)
-          .map(b => `${a.kind} ${a.i} ${Math.round(a.px)}px under a line ${Math.round(a.over)}px tall, ${b.kind} ${b.i} ${Math.round(b.px)}px under ${Math.round(b.over)}px`));
-        assert(!moved.length && !squeezed.length,
-               `${how}, ${width} x ${height}, a whole session: Up next and the buttons keep their place (${moved.slice(0, 3).join('; ')}), the clock never squeezed (${squeezed.slice(0, 3).join('; ')})`);
+          .map(b => `${a.kind} ${a.i} ${Math.round(a.px)}px under a line ${Math.round(a.over)}px tall, ${b.kind} ${b.i} ${Math.round(b.px)}px under ${Math.round(b.over)}px`))
+          .concat(width === 951 ? seen.filter(x => x.px < 170 - 1).map(x => `${x.kind} ${x.i} ${Math.round(x.px * 10) / 10}px, not 170, under a line ${Math.round(x.over)}px tall`) : []);
+        const wrapped = seen.filter(x => x.wrapped.length).map(x => `${x.kind} ${x.i}: ${x.wrapped.join(', ')}`);
+        assert(!moved.length && !squeezed.length && !wrapped.length,
+               `${how}${people === 1 ? ' for one' : ''}, ${width} x ${height}, a whole session: Up next and the buttons keep their place (${moved.slice(0, 3).join('; ')}), ` +
+               `the clock never squeezed (${squeezed.slice(0, 3).join('; ')}), every label on one line inside its button (${wrapped.slice(0, 3).join('; ')})`);
         if (how === 'amrap' && height === 585) note(`a Duo in Safari, through an AMRAP session: the clock at ${[...new Set(seen.map(x => Math.round(x.px)))].join(', ')}px`);
       }
     }
@@ -4597,21 +4635,33 @@ try {
     // through every lap of several AMRAP and For Time sessions for two: no
     // lap card scrolls, and every line of the lap and the count's buttons
     // are in sight (a lap that fills its card closes up, on a fold gives up
-    // its figure, then comes down a size: makeRoom)
+    // its figure, then comes down a size: makeRoom); on a Duo and an iPad
+    // mini in Safari with Show alternatives on too, each lap's injury alt
+    // under it; and then in the rest before a For Time block too (a block
+    // rest, and a mix's changeover), where the next lap is on the card but
+    // its count isn't yet, so "3 rounds of" over it is in sight, the only
+    // thing on screen that says how many
     for (const how of ['amrap', 'fortime']) {
       for (const [width, height] of [[1180, 740], [1133, 744], [1133, 650], [951, 585], [951, 620], [778, 820], [884, 700]]) {
         await L.setViewportSize({ width, height });
-        for (const scale of [1, 1.2, 1.45]) {
-          const full = await ev(([how, scale]) => {
+        for (const [scale, alts] of [[1, false], [1.2, false], [1.45, false], ...(height === 585 || height === 650 ? [[1, true], [1.2, true], [1.45, true]] : [])]) {
+          const full = await ev(([how, scale, alts]) => {
             const out = [];
             state.textScale = scale; applyTextScale();
-            for (const seed of [4242, 3, 7, 11]) {
+            state.showAlts = alts;
+            document.body.classList.toggle('show-alternatives', alts);
+            const sessions = [{ intervalId: how, minutes: 20 }, ...(how === 'fortime' && alts ? [{ intervalId: 'mix', mix: ['emom', 'fortime'], minutes: 30 }] : [])];
+            for (const req of sessions) for (const seed of [4242, 3, 7, 11]) {
               state.people = 2;
-              buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, intervalId: how, minutes: 20 }, seed);
+              buildAndOpen({ ...requestFromState(), people: 2, goal: undefined, ...req }, seed);
               els.btnStart.click();
               stopTimer();
               for (let i = 0; i < state.sequence.length; i++) {
-                if (!(state.sequence[i].amrap || state.sequence[i].forTime)) continue;
+                const ph = state.sequence[i];
+                let j = i + 1;
+                while (j < state.sequence.length && state.sequence[j].kind !== 'work') j++;
+                const before = alts && (ph.kind === 'rest' || ph.kind === 'blockrest') && !!state.sequence[j] && !!state.sequence[j].forTime;
+                if (!(ph.amrap || ph.forTime || before)) continue;
                 seekTo(i); render();
                 for (const card of els.exerciseGrid.querySelectorAll('.person')) {
                   if (!card.offsetParent) continue;
@@ -4619,17 +4669,21 @@ try {
                   const lost = [...card.querySelectorAll('.circuit li, .round-counter button')]
                     .filter(e => e.getClientRects().length && (e.getBoundingClientRect().bottom > foot + 1 || e.scrollWidth > e.clientWidth + 1))
                     .map(e => e.textContent.trim().replace(/\s+/g, ' '));
-                  if (card.scrollHeight > card.clientHeight + 1 || lost.length) out.push(`seed ${seed}, ${card.className}, ${card.scrollHeight - card.clientHeight}px over: ${lost.join(' | ')}`);
+                  const head = card.querySelector('.circuit li.lap-head');
+                  if (before && !(head && head.getClientRects().length)) lost.push(`"${head ? head.textContent : 'N rounds of'}" not shown`);
+                  if (card.scrollHeight > card.clientHeight + 1 || lost.length) {
+                    out.push(`${req.mix ? req.mix.join(' and ') + ', ' : ''}seed ${seed}${before ? `, ${ph.changeover ? 'the changeover' : 'the rest'} before For Time` : ''}, ${card.className}, ${card.scrollHeight - card.clientHeight}px over: ${lost.join(' | ')}`);
+                  }
                 }
               }
             }
             return out;
-          }, [how, scale]);
-          assert(!full.length, `${how}, text at ${scale}, ${width} x ${height}: no lap card scrolls, every lap line and button in sight, but ${full.slice(0, 3).join('; ')}`);
+          }, [how, scale, alts]);
+          assert(!full.length, `${how}, text at ${scale}${alts ? ', alternatives shown' : ''}, ${width} x ${height}: no lap card scrolls, every lap line and button in sight, but ${full.slice(0, 3).join('; ')}`);
         }
       }
     }
-    await ev(() => { state.textScale = 1; applyTextScale(); resetWorkout(); });
+    await ev(() => { state.textScale = 1; applyTextScale(); state.showAlts = false; document.body.classList.remove('show-alternatives'); resetWorkout(); });
     // a Surf check's end: each person's three results, the paddle hold too,
     // on screen and none of them cut off inside the card
     await open('check', 'x.hold');
@@ -4771,7 +4825,7 @@ try {
       }
     }
     await lx.close();
-    ok('landscape: a link with ?land=b opens FIT, with no switch, and the layout the trial kept is cleared; on an iPad on its side (11-inch, 13-inch and mini, as an app and in Safari), a Duo opened flat (951 x 585, 620 and 669), other folds (884 x 700, 800 x 830, 984 x 1092), two-thirds Split View (778 x 820) and a computer\'s window (1440 x 900) the clock is on the left and both people on the right, a fold\'s middle clear, with the clock, both names, their moves and Pause, Skip and Reset on one screen in work (Up next too), a rest, an AMRAP and a Surf check count, and at the largest text; Up next is never cut short; every move, for two and for one, in work and a rest, at every text size, on an iPad, a Duo and Split View: no card scrolls, the name in sight and no word broken over two lines (a long word brings the name down, both cards alike), a long name\'s cue making way whole; paused, the text size and demos fit the cards at once; as an app, Pause and Up next line up above the home bar with nothing below peeking in; through a session (an AMRAP, For Time and a Surf check on a fold too) Up next keeps its place, and the clock its size and place, and the cards their foot, from work to rest, count to count and stretch to stretch; on a Duo, through a whole AMRAP and For Time session, the cool-down too, Up next and the buttons keep their place and the clock is never squeezed; the time away question clear of a Duo\'s middle; a part of ten minutes or more keeps the clock its size; the clock fits at 0:19 and 20:00; paused, Swap is on no name or figure; a lap is never cut short, and at every text size, through several AMRAP and For Time sessions on an iPad, a Duo and Split View, no lap card scrolls; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it and the time away question clear of it; an iPad upright, Split View, the Duo closed and every phone, and the home screen and setup at every size, are as they were');
+    ok('landscape: a link with ?land=b opens FIT, with no switch, and the layout the trial kept is cleared; on an iPad on its side (11-inch, 13-inch and mini, as an app and in Safari), a Duo opened flat (951 x 585, 620 and 669), other folds (884 x 700, 800 x 830, 984 x 1092), two-thirds Split View (778 x 820) and a computer\'s window (1440 x 900) the clock is on the left and both people on the right, a fold\'s middle clear, with the clock, both names, their moves and Pause, Skip and Reset on one screen in work (Up next too), a rest, an AMRAP and a Surf check count, and at the largest text; Up next is never cut short; every move, for two and for one, in work and a rest, at every text size, on an iPad, a Duo and Split View: no card scrolls, the name in sight and no word broken over two lines (a long word brings the name down, both cards alike), a long name\'s cue making way whole; paused, the text size and demos fit the cards at once; as an app, Pause and Up next line up above the home bar with nothing below peeking in; through a session (an AMRAP, For Time and a Surf check on a fold too) Up next keeps its place, and the clock its size and place, and the cards their foot, from work to rest, count to count and stretch to stretch; on a Duo and in Split View, through a whole AMRAP and For Time session and a mix with laps in it (FIT\'s own, and the Engine day), the cool-down too, Up next and the buttons keep their place, every label on one line (Skip cool-down and Reset\'s "Tap again" too) and the row inside its box, and the clock is never squeezed, on a Duo 170px all the way; the time away question clear of a Duo\'s middle; a part of ten minutes or more keeps the clock its size; the clock fits at 0:19 and 20:00; paused, Swap is on no name or figure; a lap is never cut short, and at every text size, through several AMRAP and For Time sessions on an iPad, a Duo and Split View (alternatives shown too), no lap card scrolls, and in the rest before a For Time block how many rounds is in sight; a Surf check\'s end has every result in sight, both holds too; a fold that says where it folds has a column either side of it and the time away question clear of it; an iPad upright, Split View, the Duo closed and every phone, and the home screen and setup at every size, are as they were');
   }
 
   step = 'opens offline after the first visit';
