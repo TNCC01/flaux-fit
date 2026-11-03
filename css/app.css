@@ -1604,10 +1604,11 @@ body.show-alternatives .alternative.has-alt { display: block; }
     html:root #workoutView .circuit li { font-size: calc(clamp(1.1rem, 1.9vw, 1.6rem) * min(var(--ex-scale), 1.05) * var(--fit, 1)); }
     /* with Show alternatives on, a lap that fills its card has the injury
        alt closer under it and a size down, as its lines are, and For
-       Time's "3 rounds of" makes way, as the count says "Round 1 of 3", so
-       the card never scrolls, paused with Swap showing too */
+       Time's "3 rounds of" makes way while the count is on the card (it
+       says "Round 1 of 3"; in the rest before the block it isn't, so the
+       line stays), so the card never scrolls, paused with Swap showing too */
     html:root #workoutView .person.amrap.snug .alternative { margin-top: 0.3rem; padding-top: 0.3rem; font-size: 0.85rem; line-height: 1.3; }
-    html:root body.show-alternatives #workoutView .person.amrap.snug:has(.alternative.has-alt) .circuit li.lap-head { display: none; }
+    html:root body.show-alternatives #workoutView .person.amrap.snug:has(> .round-counter:not([hidden])):has(.alternative.has-alt) .circuit li.lap-head { display: none; }
     /* the question after time away, as small as it goes over the top bar,
        and the line on how a style works makes way for it */
     html:root #workoutView > .away-bar { padding: 0.4rem 0.75rem; }
